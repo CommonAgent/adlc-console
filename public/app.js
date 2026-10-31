@@ -253,7 +253,9 @@ function actionsHtml(stage) {
   const list = actionsFor(stage);
   if (!list.length) return "";
   const busy = state.pending !== null;
-  let h = `<div class="acts">${list.map((a, i) => `<button class="btn${i === 0 ? " p" : ""}" type="button" data-act="${esc(a.name)}"${busy ? " disabled" : ""}>${esc(state.pending === a.name ? "Sending…" : a.label)}</button>`).join("")}</div>`;
+  // Stop is never drawn as the main action, even when it is the only one.
+  const main = list.findIndex((a) => a.name !== "stop");
+  let h = `<div class="acts">${list.map((a, i) => `<button class="btn${i === main ? " p" : ""}" type="button" data-act="${esc(a.name)}"${busy ? " disabled" : ""}>${esc(state.pending === a.name ? "Sending…" : a.label)}</button>`).join("")}</div>`;
   const ask = list.find((a) => a.name === state.asking && a.needs?.length);
   if (ask) {
     h += `<form class="ask" data-ask="${esc(ask.name)}">${ask.needs.map((n) => {
@@ -318,7 +320,8 @@ function drawStage() {
     const url = safeUrl(s.where.url);
     const pr = prWords(s.where.url);
     const c = s.where.check;
-    const tone = s.state === "waiting_on_you" || s.state === "done" ? "good" : s.state === "refused" ? "back" : "";
+    // The check's own verdict colours its title; a stage still working on a refused push is not neutral.
+    const tone = c?.passed === true ? "good" : c?.passed === false ? "back" : s.state === "waiting_on_you" || s.state === "done" ? "good" : s.state === "refused" ? "back" : "";
     h += `<div class="sec"><h4>Where</h4><p>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(pr.text)}</a>` : esc(pr.text)}</p>
       ${c ? `<div class="check"><div class="t ${tone}">${esc(c.title)}</div>${esc(c.words)}${c.items?.length ? `<ul>${c.items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>` : ""}
       ${localCheckHtml()}
