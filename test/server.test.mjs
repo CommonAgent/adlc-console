@@ -95,6 +95,17 @@ test("a post from another page is refused", async () => {
   } finally { await s.done(); }
 });
 
+test("the list may ask for archived builds too, and no other query goes through", async () => {
+  const s = await setup();
+  try {
+    await hit(s.url, { path: "/api/v1/lifecycle/builds?archived=1", headers: { host: s.host } });
+    await hit(s.url, { path: "/api/v1/lifecycle/builds?archived=1&x=2", headers: { host: s.host } });
+    await hit(s.url, { path: "/api/v1/lifecycle/builds?other=1", headers: { host: s.host } });
+    await hit(s.url, { path: "/api/v1/lifecycle/builds/b1?archived=1", headers: { host: s.host } });
+    assert.deepEqual(s.svc.seen.map((x) => x.url), ["/v1/lifecycle/builds?archived=1", "/v1/lifecycle/builds?archived=1", "/v1/lifecycle/builds", "/v1/lifecycle/builds/b1"]);
+  } finally { await s.done(); }
+});
+
 test("only lifecycle paths go through the proxy", async () => {
   const s = await setup();
   try {
