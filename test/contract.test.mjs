@@ -126,6 +126,45 @@ test("the checks notice a build that breaks the contract", () => {
   assert.ok(problems.some((p) => p.includes("needs is a list")));
 });
 
+test("each build in the list says where it ended or is, in words", async () => {
+  const d = createDemoService();
+  const by = Object.fromEntries((await get(d, "/v1/lifecycle/builds")).body.builds.map((b) => [b.id, b]));
+  assert.equal(by.b_palindrome_judge.at.summary, "Waiting on you at Code");
+  assert.equal(by.b_tally_words.at.summary, "Installed · not checked for conformance yet");
+  assert.equal(by.b_word_tally.at.summary, "Stopped at Code");
+  for (const b of Object.values(by)) assert.equal(b.archived, false);
+  const one = (await get(d, "/v1/lifecycle/builds/b_word_tally")).body.build;
+  assert.equal(one.summary, "Stopped at Code");
+  assert.equal(one.paused, null);
+});
+
+test("an archived build leaves the list, comes back with ?archived=1, and can be put back", async () => {
+  const d = createDemoService();
+  const r = await post(d, "/v1/lifecycle/builds/b_word_tally/actions/archive");
+  assert.equal(r.status, 200);
+  assert.deepEqual(checkBuild(r.body, IDS), []);
+  assert.equal(r.body.build.archived, true);
+  assert.ok(r.body.build.actions.some((a) => a.name === "unarchive"));
+  const ids = async (q = "") => (await get(d, "/v1/lifecycle/builds", q)).body.builds.map((b) => b.id);
+  assert.ok(!(await ids()).includes("b_word_tally"));
+  const all = await get(d, "/v1/lifecycle/builds", "archived=1");
+  assert.deepEqual(checkBuildList(all.body), []);
+  assert.equal(all.body.builds.find((b) => b.id === "b_word_tally").archived, true);
+  await post(d, "/v1/lifecycle/builds/b_word_tally/actions/unarchive");
+  assert.ok((await ids()).includes("b_word_tally"));
+});
+
+test("the checks take the summary, the pause and archived when given, and notice the wrong kind", () => {
+  const list = (over) => ({ builds: [{ id: "b", name: "n", does: "d", version: "0.1.0", at: { stage: "code", state: "stopped", ...over.at }, updated: "2026-10-31T09:00:00Z", ...over.top }] });
+  assert.deepEqual(checkBuildList(list({ at: {}, top: {} })), []);
+  assert.deepEqual(checkBuildList(list({ at: { summary: "Stopped at Code" }, top: { archived: true } })), []);
+  assert.equal(checkBuildList(list({ at: { summary: 3 }, top: { archived: "yes" } })).length, 2);
+  const b = palindromeJudge();
+  assert.deepEqual(checkBuild({ build: { ...b, summary: "Installed · paused: failed conformance", paused: { at: "2026-10-31T22:10:00Z", why: "The conformance check failed." }, archived: false } }, IDS), []);
+  assert.deepEqual(checkBuild({ build: { ...b, paused: null } }, IDS), []);
+  assert.equal(checkBuild({ build: { ...b, summary: 1, paused: { why: "x" }, archived: 0 } }, IDS).length, 3);
+});
+
 test("a need may say it is optional, as true or false and nothing else", () => {
   const a = (optional) => ({ stage: "requirements", name: "approve", label: "Approve the spec", needs: [{ name: "repository", label: "Repository", kind: "repository", ...(optional === undefined ? {} : { optional }) }] });
   assert.deepEqual(checkAction(a(undefined), "a"), []);

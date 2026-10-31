@@ -61,6 +61,12 @@ select{padding:7px 8px;border:1px solid var(--line);border-radius:6px;background
 .b .n{font-weight:600;display:block}
 .b .s{font-size:12px;color:var(--muted);display:block}
 .b .s.w{color:var(--wait)}
+.b .s.p{color:var(--bad)}
+.b.ar .n{color:var(--muted);font-weight:500}
+.archt{display:block;margin:8px 0 0;font-size:12px}
+main .sum{margin:-10px 0 12px;font-weight:600}
+main .sum.paused{color:var(--bad)}
+main .pausedwhy{margin:-6px 0 14px;padding:8px 10px;border-radius:6px;background:var(--bad-bg);color:var(--fg);max-width:65ch;font-size:13px}
 .new{margin-top:12px;width:100%;padding:8px;border:1px dashed var(--line);background:none;color:var(--fg);border-radius:6px;font:inherit;cursor:pointer}
 .new.on{border-style:solid;border-color:var(--accent);color:var(--accent)}
 main{min-width:0}

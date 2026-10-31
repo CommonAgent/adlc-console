@@ -37,7 +37,7 @@ const store = {
 const state = {
   status: null, stages: [], byId: new Map(), builds: [], build: null, tries: [],
   sel: null, view: "build", error: "", lastTry: null, checks: new Map(), files: new Map(), pending: null, asking: null, wrongFor: null,
-  logAll: false,
+  logAll: false, showArchived: false,
 };
 
 // ---------- talking to the local server ----------
@@ -140,7 +140,8 @@ async function route() {
 }
 
 function pickBuild() {
-  const b = state.builds.find((x) => x.at?.state === "waiting_on_you") ?? state.builds[0];
+  const live = state.builds.filter((x) => !x.archived);
+  const b = live.find((x) => x.at?.state === "waiting_on_you") ?? live[0];
   return b?.id ?? null;
 }
 function defaultStage() {
@@ -182,6 +183,8 @@ function drawTop() {
 function railLine(b) {
   const name = def(b.at?.stage).name;
   if (state.status?.read_only && b.updated) return { text: `Updated ${day(b.updated)}`, wait: false };
+  // The service's own words for where the build ended or is, when it gives them.
+  if (typeof b.at?.summary === "string" && b.at.summary) return { text: b.at.summary, wait: b.at.state === "waiting_on_you", paused: /· paused/.test(b.at.summary) };
   if (b.at?.state === "stopped") return { text: `Stopped at ${name}`, wait: false };
   if (b.at?.state === "refused") return { text: `Refused at ${name}`, wait: false };
   return { text: `${name} · ${(WORD[b.at?.state] ?? "").toLowerCase()}`, wait: b.at?.state === "waiting_on_you" };
@@ -189,12 +192,16 @@ function railLine(b) {
 
 function drawRail() {
   const cur = state.view === "build" ? state.build?.id : null;
-  $("builds").innerHTML = state.builds.length
-    ? state.builds.map((b) => {
+  // Archived builds are hidden, behind a toggle at the foot of the list.
+  const archived = state.builds.filter((b) => b.archived).length;
+  const shown = state.showArchived ? state.builds : state.builds.filter((b) => !b.archived);
+  $("builds").innerHTML = (shown.length
+    ? shown.map((b) => {
       const l = railLine(b);
-      return `<a class="b${b.id === cur ? " on" : ""}" href="${hashFor(b.id)}" title="${esc(b.does)}"${b.id === cur ? ' aria-current="page"' : ""}><span class="n">${esc(b.name)}</span><span class="s${l.wait ? " w" : ""}">${esc(l.text)}</span></a>`;
+      return `<a class="b${b.id === cur ? " on" : ""}${b.archived ? " ar" : ""}" href="${hashFor(b.id)}" title="${esc(b.does)}"${b.id === cur ? ' aria-current="page"' : ""}><span class="n">${esc(b.name)}</span><span class="s${l.wait ? " w" : ""}${l.paused ? " p" : ""}">${b.archived ? "Archived · " : ""}${esc(l.text)}</span></a>`;
     }).join("")
-    : `<p class="none">No builds yet.</p>`;
+    : `<p class="none">${archived ? "Every build is archived." : "No builds yet."}</p>`)
+    + (archived ? `<button class="linkbtn archt" id="archt" type="button" aria-pressed="${state.showArchived}">${state.showArchived ? "Hide archived" : `Show archived (${archived})`}</button>` : "");
   $("new").classList.toggle("on", state.view === "new");
   $("new").hidden = Boolean(state.status?.read_only);
 }
@@ -215,6 +222,8 @@ function draw() {
     <div class="err" role="alert">${esc(state.error)}</div>
     <div class="head"><h1>${esc(b.name)}</h1>${canTry ? `<button class="try${state.sel === "try" ? " on" : ""}" id="try" type="button">Try it</button>` : ""}</div>
     <p class="does">${esc(b.does)}</p>
+    ${b.summary ? `<p class="sum${b.paused ? " paused" : ""}">${esc(b.summary)}${b.archived ? " · archived" : ""}</p>` : ""}
+    ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
     <div id="phases">${phases()}</div>
     ${buildLog()}`;
   drawStage();
@@ -470,7 +479,7 @@ function schedule() {
 }
 
 async function refreshBuilds() {
-  try { state.builds = (await api("/builds")).builds ?? []; } catch (e) { if (e.needKey) throw e; state.error = e.message; }
+  try { state.builds = (await api("/builds?archived=1")).builds ?? []; } catch (e) { if (e.needKey) throw e; state.error = e.message; }
 }
 
 async function loadFile(det) {
@@ -562,6 +571,7 @@ document.addEventListener("click", async (e) => {
   }
   if (t.closest("#new")) return go("#/new");
   if (t.closest("#logall")) { state.logAll = true; return draw(); }
+  if (t.closest("#archt")) { state.showArchived = !state.showArchived; return drawRail(); }
   if (t.closest("#forget")) {
     try { state.status = await call("/local/forget-key", { method: "POST" }); } catch (err) { state.error = err.message; }
     state.build = null; state.builds = [];
