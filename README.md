@@ -99,8 +99,12 @@ When your own coding agent holds the Code stage, the stage shows the pull
 request, the check's words, and a "Check my clone" box. Give it the folder
 your clone of the pull request's branch is in, and it runs that branch's own
 check, `node .adlc/check.mjs`, there, so you see a failure before you push.
-That is the only command it ever runs, and only in a folder that holds
-`.adlc/check.mjs`. The service key is not passed to it.
+The build folder is a folder of its own in the repository, `agents/<name>/`,
+so the console looks there first; you may also point straight at it. A
+repository can hold several hand-offs, an earlier one at its root among
+them, and a check whose folder says it is another agent's is refused rather
+than run. That is the only command it ever runs, and only in a folder that
+holds `.adlc/check.mjs`. The service key is not passed to it.
 
 ## Options
 

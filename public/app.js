@@ -537,7 +537,7 @@ async function runLocalCheck(folder) {
   store.set(`clone:${id}`, folder);
   state.checks.set(id, "running"); drawStage();
   try {
-    const r = await call("/local/check", { method: "POST", body: { folder } });
+    const r = await call("/local/check", { method: "POST", body: { folder, agent: state.build?.name ?? "" } });
     state.checks.set(id, r.result);
   } catch (e) {
     state.checks.set(id, { error: e.message });

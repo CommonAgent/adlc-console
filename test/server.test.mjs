@@ -173,6 +173,27 @@ test("the local check runs node .adlc/check.mjs in the named folder, without the
   } finally { await s.done(); }
 });
 
+test("the local check finds the build's own folder in a clone that holds several hand-offs, and never runs another agent's check", async () => {
+  // A hand-off goes to agents/<name>/ in its repository (AgentMesh technical
+  // debt 653); a repository may also hold an earlier hand-off at its root.
+  const s = await setup();
+  try {
+    const repo = join(HERE, "fixtures", "repo");
+    const top = await hit(s.url, { method: "POST", path: "/local/check", headers: { host: s.host }, body: { folder: repo, agent: "acro" } });
+    assert.equal(top.status, 200);
+    assert.match(top.json.result.output, /14 of 14 for acro/);
+    assert.equal(top.json.result.folder, join(repo, "agents", "acro"));
+    const inside = await hit(s.url, { method: "POST", path: "/local/check", headers: { host: s.host }, body: { folder: join(repo, "agents", "acro"), agent: "acro" } });
+    assert.match(inside.json.result.output, /14 of 14 for acro/);
+    const other = await hit(s.url, { method: "POST", path: "/local/check", headers: { host: s.host }, body: { folder: repo, agent: "palindrome-judge" } });
+    assert.equal(other.status, 400);
+    assert.match(other.json.error, /word-reverser, not palindrome-judge/);
+    // Without a name, or for a folder that does not say whose it is, as before.
+    const old = await hit(s.url, { method: "POST", path: "/local/check", headers: { host: s.host }, body: { folder: join(HERE, "fixtures", "clone"), agent: "acro" } });
+    assert.equal(old.json.result.passed, true);
+  } finally { await s.done(); }
+});
+
 test("the local check refuses a folder without the check, or a partial path", async () => {
   const s = await setup();
   try {
