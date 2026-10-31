@@ -422,14 +422,15 @@ function drawKey() {
 
 function drawNew() {
   drawTop();
+  const kept = state.newDraft ?? {};
   layout("solo");
   $("main").innerHTML = `<div class="err" role="alert">${esc(state.error)}</div>
     <h1>New build</h1><p class="does">Say what the agent should do, in your own words. The service takes it from there, and comes back to you at the gates that are yours.</p>
     <form class="form" id="new-form">
-      <label for="n-does">What should it do?<textarea id="n-does" required placeholder="Say whether a sentence is a palindrome, ignoring spaces, punctuation and letter case."></textarea></label>
-      <label for="n-refuses">What should it refuse to do? <span>Optional</span><textarea id="n-refuses"></textarea></label>
-      <label for="n-more">Anything else it should know <span>Optional</span><textarea id="n-more"></textarea></label>
-      <label for="n-name">Its name <span>Optional. Lowercase words joined by hyphens, such as palindrome-judge.</span><input type="text" id="n-name" autocomplete="off" spellcheck="false"></label>
+      <label for="n-does">What should it do?<textarea id="n-does" required placeholder="Say whether a sentence is a palindrome, ignoring spaces, punctuation and letter case.">${esc(kept.does ?? "")}</textarea></label>
+      <label for="n-refuses">What should it refuse to do? <span>Optional</span><textarea id="n-refuses">${esc(kept.refuses ?? "")}</textarea></label>
+      <label for="n-more">Anything else it should know <span>Optional</span><textarea id="n-more">${esc(kept.more ?? "")}</textarea></label>
+      <label for="n-name">Its name <span>Optional. Lowercase words joined by hyphens, such as palindrome-judge.</span><input type="text" id="n-name" value="${esc(kept.name ?? "")}" autocomplete="off" spellcheck="false"></label>
       <div class="acts tight"><button class="btn p" type="submit"${state.pending === "new" ? " disabled" : ""}>${state.pending === "new" ? "Starting…" : "Start the build"}</button><a class="btn" href="#/">Cancel</a></div>
     </form>`;
   $("stage").innerHTML = "";
@@ -598,9 +599,12 @@ document.addEventListener("submit", async (e) => {
       if (v) body[k] = v;
     }
     state.pending = "new";
+    // What the person wrote stays in the form if the service refuses the start.
+    state.newDraft = { does: $("n-does").value, refuses: $("n-refuses").value, more: $("n-more").value, name: $("n-name").value };
     try {
       const r = await api("/builds", { method: "POST", body });
       state.pending = null;
+      state.newDraft = null;
       await refreshBuilds();
       state.build = r.build;
       return go(hashFor(r.build.id));
