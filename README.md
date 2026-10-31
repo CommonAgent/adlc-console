@@ -40,6 +40,42 @@ npx adlc-console --service https://api.example.com
 For example, the AgentMesh development service is
 `--service https://api.dev.agentmesh.ai`.
 
+## Point it at a GitHub org or repository
+
+The console can also read agent repositories straight from GitHub, with no
+lifecycle service:
+
+```
+npx adlc-console --github AgentMesh-Community            every agent repository in an org (or a user's)
+npx adlc-console --github AgentMesh-Community/spec-writer one repository
+```
+
+A repository counts as an agent when it has `agent-repo.json` (format
+`agent-repository-v1`, naming its `package`, `agentdoc`, `tests` and `source`).
+Older repositories without it count when they hold `package/descriptor.json`
+or `spec.json`.
+
+What the repository holds is shown as stages:
+
+- Requirements: the descriptor, the plugin, each skill's SKILL.md, and the spec if there is one.
+- Test: the tests folder, or a line saying the repository holds no tests.
+- Code: the scripts.
+- Docs: agentdoc.json.
+- Publish: the repository itself, with its address.
+- Release: its releases, or its tags when there are no releases.
+
+Every other stage shows as not offered. Each merged pull request that touched
+a stage's files is one of that stage's rounds, with what its checks
+concluded. Files open in the page, read from GitHub at the commit shown.
+This view is read-only: there are no buttons, and Try it is hidden.
+
+It works without a token, within GitHub's limit of about 60 reads an hour
+for readers without one; the page says plainly when that limit is used up.
+To read more, or to read private repositories, give it a GitHub token in
+`GITHUB_TOKEN` or with `--github-token-file <path>`. Like the service key,
+the token stays in the console's local server, is never shown in the page,
+and is sent only to GitHub.
+
 ## Give it a key
 
 The service decides how you make a key for your own account. Give it to the
@@ -73,6 +109,8 @@ That is the only command it ever runs, and only in a folder that holds
 --key-file <path>   read the service key from this file
 --stages <path>     read the stages from this file instead of the copy shipped here
 --port <n>          listen on this port (default: any free port)
+--github <name>     read agent repositories on GitHub: an org, a user, or owner/repo
+--github-token-file <path>  read a GitHub token from this file (or set GITHUB_TOKEN)
 --no-open           print the address but do not open the browser
 --demo              made-up builds, no service needed
 ```

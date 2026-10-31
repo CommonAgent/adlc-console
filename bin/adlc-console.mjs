@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// npx adlc-console [--service <url>] [--key-file <path>] [--demo] [--port <n>] [--no-open]
+// npx adlc-console [--service <url> | --github <org or owner/repo> | --demo] [--key-file <path>] [--github-token-file <path>] [--port <n>] [--no-open]
 
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { createConsoleServer, serviceLabel } from "../lib/server.mjs";
 import { createKeyStore } from "../lib/keys.mjs";
 import { createDemoService } from "../lib/demo.mjs";
+import { createGitHubSource, parseTarget } from "../lib/github.mjs";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const DEFAULT_SERVICE = "https://api.agentmesh.ai";
@@ -18,9 +19,14 @@ lifecycle, and lets you act at the gates that are yours.
 
   npx adlc-console                     start it and open the page
   npx adlc-console --demo              start it with made-up builds, no service needed
+  npx adlc-console --github <org>      read the agent repositories in a GitHub org
 
   --service <url>     the lifecycle service to read (default ${DEFAULT_SERVICE})
   --key-file <path>   read the service key from this file
+  --github <name>     read agent repositories on GitHub instead: an org, a user, or owner/repo
+  --github-token-file <path>
+                      read a GitHub token from this file (or set GITHUB_TOKEN); without
+                      one, GitHub allows about 60 reads an hour
   --stages <path>     read the stages from this file instead of the copy shipped here
   --port <n>          listen on this port (default: any free port)
   --no-open           print the address but do not open the browser
@@ -49,6 +55,8 @@ async function main() {
       options: {
         service: { type: "string" },
         "key-file": { type: "string" },
+        github: { type: "string" },
+        "github-token-file": { type: "string" },
         stages: { type: "string" },
         port: { type: "string" },
         demo: { type: "boolean", default: false },
@@ -84,10 +92,22 @@ async function main() {
     process.exit(2);
   }
 
-  const app = createConsoleServer({
-    service, keys, stages, version: pkg.version,
-    demo: opts.demo ? createDemoService() : null,
-  });
+  let source = null;
+  if (opts.demo) source = createDemoService();
+  else if (opts.github) {
+    try { parseTarget(opts.github); } catch (e) { console.error(e.message); process.exit(2); }
+    let token = (process.env.GITHUB_TOKEN || "").trim();
+    if (opts["github-token-file"]) {
+      try { token = readFileSync(opts["github-token-file"], "utf8").trim(); } catch {
+        console.error(`The GitHub token file ${opts["github-token-file"]} could not be read.`);
+        process.exit(2);
+      }
+    }
+    if (token && !/^[!-~]{8,4096}$/.test(token)) { console.error("The GitHub token does not look like a token."); process.exit(2); }
+    source = createGitHubSource({ target: opts.github, token: token || null, version: pkg.version });
+  }
+
+  const app = createConsoleServer({ service, keys, stages, version: pkg.version, source });
   const port = opts.port ? Number(opts.port) : 0;
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     console.error("The port must be a number from 1 to 65535.");
@@ -95,7 +115,7 @@ async function main() {
   }
   const url = await app.listen(port);
   console.log(`adlc console is at ${url}`);
-  console.log(opts.demo ? "Showing made-up builds (demo)." : `Reading builds from ${serviceLabel(service)}.`);
+  console.log(source ? `Reading builds from ${source.label}${source.kind === "github" ? (source.keyFrom ? ", with your token" : ", without a token") : ""}.` : `Reading builds from ${serviceLabel(service)}.`);
   console.log("Press Ctrl+C to stop it.");
   if (!opts["no-open"]) openBrowser(url);
 
