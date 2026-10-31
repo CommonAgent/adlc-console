@@ -225,7 +225,10 @@ function draw() {
     ${b.summary ? `<p class="sum${b.paused ? " paused" : ""}">${esc(b.summary)}${b.archived ? " · archived" : ""}</p>` : ""}
     ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
     <div id="phases">${phases()}</div>
+    ${timeline()}
     ${buildLog()}`;
+  // The bars placed through the CSSOM: the page's policy takes no style attribute.
+  for (const i of document.querySelectorAll(".timeline .track i")) { i.style.left = `${i.dataset.l}%`; i.style.width = `${i.dataset.w}%`; }
   drawStage();
   if (b.stages.some((s) => s.state === "working")) schedule();
 }
@@ -245,6 +248,40 @@ function phases() {
       return `<button class="c ${cls}${on ? " sel" : ""}" type="button" data-stage="${esc(d.id)}" aria-pressed="${on}" aria-label="${esc(`${d.name}, ${WORD[s.state] ?? ""}${s.runs > 1 ? `, ran ${s.runs} times` : ""}`)}"><i>${pad(d.number)}</i>${esc(d.name)}${mark ? `<b>${mark}</b>` : ""}${s.runs > 1 ? `<u>×${s.runs}</u>` : ""}</button>`;
     }).join("")}</div></div>`;
   }).join("");
+}
+
+/** "4 min", "35 s", "2 h 5 min": a duration as a person says it. */
+function span(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+}
+
+const KIND = { agent: "an agent working", person: "waiting on a person", external: "waiting on something outside the run" };
+
+/** The build's run, one row per step per round, ordered by start, with how
+ *  long each took (build.timeline, added to the contract in 0.1). */
+function timeline() {
+  const bars = Array.isArray(state.build.timeline) ? state.build.timeline : [];
+  if (!bars.length) return "";
+  const t0 = Math.min(...bars.map((x) => Date.parse(x.start)));
+  const t1 = Math.max(...bars.map((x) => (x.end ? Date.parse(x.end) : Date.now())));
+  const whole = Math.max(1, t1 - t0);
+  const rows = bars.map((x) => {
+    const a = Date.parse(x.start);
+    const e = x.end ? Date.parse(x.end) : Date.now();
+    const left = ((a - t0) / whole) * 100;
+    const width = Math.max(0.6, ((e - a) / whole) * 100);
+    const took = x.duration_ms === null || x.duration_ms === undefined ? "still open, " + span(e - a) + " so far" : span(x.duration_ms);
+    return '<li class="' + esc(x.kind) + '"><div class="bl"><b>' + esc(x.phase) + (x.round ? " · round " + (x.round + 1) : "") + "</b><span>" + esc(took) + "</span></div>"
+      + '<div class="track" aria-hidden="true"><i data-l="' + left.toFixed(2) + '" data-w="' + width.toFixed(2) + '"></i></div>'
+      + '<div class="bk">' + esc(KIND[x.kind] ?? x.kind) + (x.holder ? " · " + esc(x.holder) : "") + " · " + esc(x.status) + "</div></li>";
+  }).join("");
+  return '<section class="timeline"><h2>How long each step took</h2><p class="does">' + esc(span(whole)) + " from the first step to the last. Steps that ran at the same time overlap.</p><ol class=\"bars\">" + rows + "</ol></section>";
 }
 
 function buildLog() {
