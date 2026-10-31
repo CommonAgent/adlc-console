@@ -31,7 +31,7 @@ GET  /v1/lifecycle/builds/:id
          log: [{ at, said }],
          where: { kind: "pull_request", url, check: { title, words, items: [..] } } | null
        }],
-       actions: [{ stage, name, label, needs: [{ name, label, kind }] }],
+       actions: [{ stage, name, label, needs: [{ name, label, kind, optional? }] }],   // optional: true when it may be left empty, and is then not sent
        log: [{ at, said }]
      } }
 

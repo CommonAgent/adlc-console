@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { createDemoService } from "../lib/demo.mjs";
 import { STAGE_IDS, palindromeJudge } from "../lib/fixture.mjs";
-import { checkBuildList, checkBuild, checkTry, checkTries } from "../lib/contract.mjs";
+import { checkBuildList, checkBuild, checkTry, checkTries, checkAction } from "../lib/contract.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const DOC = JSON.parse(await readFile(join(HERE, "..", "standards", "stages.json"), "utf8"));
@@ -124,4 +124,11 @@ test("the checks notice a build that breaks the contract", () => {
   assert.ok(problems.some((p) => p.includes("newest first")));
   assert.ok(problems.some((p) => p.includes("size is a count")));
   assert.ok(problems.some((p) => p.includes("needs is a list")));
+});
+
+test("a need may say it is optional, as true or false and nothing else", () => {
+  const a = (optional) => ({ stage: "requirements", name: "approve", label: "Approve the spec", needs: [{ name: "repository", label: "Repository", kind: "repository", ...(optional === undefined ? {} : { optional }) }] });
+  assert.deepEqual(checkAction(a(undefined), "a"), []);
+  assert.deepEqual(checkAction(a(true), "a"), []);
+  assert.equal(checkAction(a("yes"), "a").length, 1);
 });

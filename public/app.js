@@ -259,7 +259,9 @@ function actionsHtml(stage) {
     h += `<form class="ask" data-ask="${esc(ask.name)}">${ask.needs.map((n) => {
       const id = `need-${esc(n.name)}`;
       const long = /words|text|long|reason|why|comment/i.test(n.kind);
-      return `<label for="${id}">${esc(n.label)}</label>${long ? `<textarea id="${id}" name="${esc(n.name)}" required></textarea>` : `<input type="text" id="${id}" name="${esc(n.name)}" required autocomplete="off">`}`;
+      // A need the service marks optional may be left empty, and is then not sent.
+      const req = n.optional === true ? "" : " required";
+      return `<label for="${id}">${esc(n.label)}${n.optional === true ? " <span>Optional</span>" : ""}</label>${long ? `<textarea id="${id}" name="${esc(n.name)}"${req}></textarea>` : `<input type="text" id="${id}" name="${esc(n.name)}"${req} autocomplete="off">`}`;
     }).join("")}<div class="acts tight"><button class="btn p" type="submit">${esc(ask.label)}</button><button class="btn" type="button" data-cancel>Cancel</button></div></form>`;
   }
   return h;
@@ -618,7 +620,7 @@ document.addEventListener("submit", async (e) => {
   if (f.id === "clone-form") return runLocalCheck($("clone").value);
   if (f.dataset.ask) {
     const needs = {};
-    for (const x of f.querySelectorAll("[name]")) needs[x.name] = x.value;
+    for (const x of f.querySelectorAll("[name]")) if (x.value.trim() || x.required) needs[x.name] = x.value;
     return act(f.dataset.ask, needs);
   }
 });
