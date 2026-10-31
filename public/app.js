@@ -365,7 +365,8 @@ function drawTry() {
   const prw = pr ? prWords(pr.where.url) : null;
   const inst = installed();
   const coder = stageOf("code")?.holder?.kind === "your_agent" ? "your coding agent" : null;
-  const choice = store.get(`against:${b.id}`) ?? (pr ? "pull_request" : "installed");
+  // Once the agent is installed it is what a person tries first; the pull request stays a choice.
+  const choice = store.get(`against:${b.id}`) ?? (inst ? "installed" : "pull_request");
   const against = (choice === "pull_request" && pr) || (choice === "installed" && inst) ? choice : pr ? "pull_request" : "installed";
   let h = `<h2>Try it</h2><h3>${esc(b.name)}</h3><p class="who">Send it what a person would, and see what it answers.</p>`;
   if (!pr && !inst) {
@@ -390,11 +391,14 @@ function drawTry() {
     if (listed.kept) acts = `<p class="meta">Kept as a test.</p>`;
     else if (listed.sent_back) acts = `<p class="meta">Sent back${coder ? ` to ${coder}` : ""}.</p>`;
     else {
-      acts = `<div class="acts"><button class="btn" type="button" data-keep="${esc(latest.id)}">Keep as a test</button><button class="btn" type="button" data-wrong="${esc(latest.id)}">That's wrong</button></div>`;
+      // Keep writes a test on the open pull request, so it is offered only for a try of the
+      // pull request's scripts while Code still waits on it (the contract: never for a try of the installed agent).
+      const keepable = latest.against === "pull_request" && ["working", "waiting_on_you"].includes(stageOf("code")?.state);
+      acts = `<div class="acts">${keepable ? `<button class="btn" type="button" data-keep="${esc(latest.id)}">Keep as a test</button>` : ""}<button class="btn" type="button" data-wrong="${esc(latest.id)}">That's wrong</button></div>`;
       if (state.wrongFor === latest.id) {
         acts += `<form class="ask" id="wrong-form" data-tid="${esc(latest.id)}"><label for="why">What should it have said? You can leave this empty.</label><textarea id="why"></textarea><div class="acts tight"><button class="btn p" type="submit">Send it back</button><button class="btn" type="button" data-cancel>Cancel</button></div></form>`;
       }
-      acts += `<p class="meta">Keep as a test adds it to the suite, so every later push is checked against it. That's wrong sends it back${coder ? ` to ${coder}` : ""} as a comment on the pull request.</p>`;
+      acts += `<p class="meta">${keepable ? "Keep as a test adds it to the suite, so every later push is checked against it. " : ""}That's wrong sends it back${coder ? ` to ${coder}` : ""} as a comment on the pull request.</p>`;
     }
     h += `<div class="sec"><h4>It answered</h4><p class="meta">You sent: ${esc(latest.say)}</p><div class="reply">${esc(latest.answer)}</div><div class="meta">${esc(meta)}</div>${acts}</div>`;
   }
