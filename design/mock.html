@@ -1,0 +1,327 @@
+<title>ADLC Console</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: builds rail on the left, one build's 24 stages by phase in the middle, the chosen stage opened on the right. */
+:root{
+  --bg:#f4f5f2; --panel:#ffffff; --line:#dfe2dc; --fg:#1b1f1c; --muted:#677068;
+  --accent:#2f6f4f; --wait:#b5651d; --wait-bg:#fbefe3; --done-bg:#e6f0ea; --off:#a9afa9; --code:#f0f2ee;
+  --sans:"Instrument Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#151816; --panel:#1d211e; --line:#2e342f; --fg:#e6e9e5; --muted:#949c95;
+  --accent:#7cc39c; --wait:#e8a25f; --wait-bg:#3a2a1b; --done-bg:#1f3328; --off:#5d645e; --code:#171a18; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#151816; --panel:#1d211e; --line:#2e342f; --fg:#e6e9e5; --muted:#949c95;
+  --accent:#7cc39c; --wait:#e8a25f; --wait-bg:#3a2a1b; --done-bg:#1f3328; --off:#5d645e; --code:#171a18; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px}
+.app{display:grid;grid-template-columns:148px minmax(0,1fr) minmax(0,460px);gap:16px;max-width:1400px;margin:0 auto;align-items:start}
+.rail{padding:10px 8px!important;font-size:12.5px}
+.rail h2{padding:0 6px}
+.rail .b{margin:0;padding:6px}
+.rail .b .s{font-size:11px}
+.rail .b .n,.rail .b .s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rail .new{margin-top:8px;padding:6px;font-size:12.5px}
+.head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.try{padding:7px 12px;border-radius:6px;border:1px solid var(--accent);background:var(--panel);color:var(--accent);font:inherit;font-weight:600;cursor:pointer;white-space:nowrap}
+.try.on{background:var(--accent);color:var(--panel)}
+.tin{display:grid;gap:8px}
+.tin textarea{width:100%;box-sizing:border-box;min-height:64px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit;resize:vertical}
+.tin select{padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit;max-width:100%}
+.reply{border:1px solid var(--line);border-radius:6px;padding:10px;font-family:var(--mono);font-size:12.5px;background:var(--code)}
+.meta{font-size:12px;color:var(--muted);margin-top:4px}
+.sec .tries{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:12.5px}
+.tries li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.tries code{font-family:var(--mono);color:var(--muted)}
+.rail,.stage{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+.top{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.top b{color:var(--fg);font-weight:500}
+.rail h2,.stage h2,.sec h4{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:500}
+.b{display:block;padding:8px 10px;border-radius:6px;margin:0 -10px;color:inherit;text-decoration:none}
+.b.on{background:var(--bg)}
+.b .n{font-weight:600;display:block}
+.b .s{font-size:12px;color:var(--muted)}
+.b .s.w{color:var(--wait)}
+.new{margin-top:12px;width:100%;padding:8px;border:1px dashed var(--line);background:none;color:var(--fg);border-radius:6px;font:inherit;cursor:pointer}
+main{min-width:0}
+main h1{margin:0 0 2px;font-size:22px;font-weight:600}
+main .does{color:var(--muted);margin:0 0 16px;max-width:65ch}
+.phase{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.phase>span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-top:7px}
+.st{display:flex;flex-wrap:wrap;gap:6px}
+.c{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:5px;border:1px solid var(--line);background:var(--panel);font-size:13px;color:var(--fg);cursor:pointer;font-family:inherit}
+.c i{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.c b{font-weight:600;font-size:12px;margin-left:2px;color:var(--muted)}
+.c.done{background:var(--done-bg);border-color:transparent}
+.c.done b{color:var(--accent)}
+.c.wait{background:var(--wait-bg);border-color:var(--wait);color:var(--wait);font-weight:600}
+.c.wait b{color:var(--wait)}
+.c.off{color:var(--off);border-style:dashed;background:transparent}
+.c.off b{color:var(--off);font-weight:400}
+.c.sel{outline:2px solid var(--accent);outline-offset:1px}
+.c u{text-decoration:none;font-family:var(--mono);font-size:10.5px;padding:0 5px;border-radius:99px;background:var(--panel);color:var(--muted);border:1px solid var(--line)}
+.rounds{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.rounds li{border-left:3px solid var(--line);padding:2px 0 2px 10px;margin:0}
+.rounds li.back{border-left-color:var(--wait)}
+.rounds li.done{border-left-color:var(--accent)}
+.rh{display:flex;justify-content:space-between;gap:8px;font-size:12px}
+.rh span{font-family:var(--mono);color:var(--muted)}
+.rv{font-weight:600;font-size:13px;margin:1px 0 2px}
+.back .rv{color:var(--wait)}
+.done .rv{color:var(--accent)}
+.rounds p{margin:0;color:var(--muted);font-size:12.5px}
+.stage h3{margin:0;font-size:19px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--muted)}
+.pill.done{background:var(--done-bg);color:var(--accent)}
+.pill.wait{background:var(--wait-bg);color:var(--wait)}
+.who{font-size:13px;color:var(--muted);margin:3px 0 0}
+.sec{border-top:1px solid var(--line);padding-top:12px;margin-top:12px;font-size:13px}
+.sec p{margin:0 0 6px;max-width:62ch}
+.sec ul{margin:4px 0 0;padding-left:18px}
+.sec li{margin:2px 0}
+.met{color:var(--accent);font-weight:600}
+.notyet{color:var(--muted)}
+.sec a{color:var(--accent)}
+.files{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
+details{border:1px solid var(--line);border-radius:6px;min-width:0;overflow:hidden}
+summary{cursor:pointer;padding:7px 10px;font-family:var(--mono);font-size:12px;display:flex;justify-content:space-between;gap:8px;list-style:none}
+summary::-webkit-details-marker{display:none}
+summary span{color:var(--muted)}
+details[open] summary{border-bottom:1px solid var(--line)}
+pre{margin:0;padding:10px;background:var(--code);font-family:var(--mono);font-size:11.5px;line-height:1.5;overflow-x:auto;max-height:320px;border-radius:0 0 6px 6px;white-space:pre}
+.check{border:1px solid var(--line);border-radius:6px;padding:10px;font-size:13px}
+.check .t{font-weight:600;color:var(--accent);margin-bottom:4px}
+.check ul{color:var(--muted)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btn{padding:9px 14px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font:inherit;font-weight:600;cursor:pointer}
+.btn.p{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.sec .log{margin:0;padding:0;list-style:none!important;font-size:12px;color:var(--muted);display:grid;gap:4px}
+.log li{margin:0}
+.log time{font-family:var(--mono);margin-right:6px}
+.local{margin-top:10px;font-family:var(--mono);font-size:12px;background:var(--code);border-radius:6px;padding:8px 10px;color:var(--muted);overflow-x:auto}
+@media (max-width:1100px){.app{grid-template-columns:minmax(0,1fr) minmax(0,440px)}.rail{grid-column:1/-1;order:3}}
+@media (max-width:820px){.app{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:480px){.phase{grid-template-columns:minmax(0,1fr)}.phase>span{padding:0}}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="app">
+  <div class="top"><span><b>adlc console</b> · AgentMesh dev</span><span>platform@agentmesh.ai</span></div>
+
+  <nav class="rail">
+    <h2>Builds</h2>
+    <a class="b on" href="#"><span class="n">palindrome-judge</span><span class="s w">Code · waiting on you</span></a>
+    <a class="b" href="#"><span class="n">tally-words</span><span class="s">Deploy · done</span></a>
+    <a class="b" href="#"><span class="n">word-tally</span><span class="s">Stopped at Code</span></a>
+    <button class="new" id="new">New build</button>
+  </nav>
+
+  <main>
+    <div class="head"><h1>palindrome-judge</h1><button class="try" id="try">Try it</button></div>
+    <p class="does">Says whether a sentence is a palindrome, ignoring spaces, punctuation and letter case. Replies yes or no with the cleaned letters.</p>
+    <div id="phases"></div>
+  </main>
+
+  <aside class="stage" id="stage"></aside>
+</div>
+
+<script>
+const PHASES = ["Define","Make","Ship","Prove","Use","Run","Change"];
+const F = {
+descriptor: `{
+  "format": "agent-descriptor-v1",
+  "version": "0.1.0",
+  "does": "Says whether a sentence is a palindrome, ignoring spaces, punctuation and letter case.",
+  "offerings": [{
+    "id": "judge-a-sentence",
+    "name": "Judge a sentence",
+    "does": "Replies yes or no, with the letters it compared.",
+    "inputs": [{ "name": "sentence", "type": "text" }],
+    "outputs": [{ "name": "verdict", "type": "text" }],
+    "how": "program"
+  }],
+  "will_not": ["Judge anything but the letters and digits it was sent"],
+  "price": "free"
+}`,
+runtime: `{
+  "format": "agent-runtime-requirements-v1",
+  "kind": "plugin-on-harness",
+  "systems": [],
+  "calls_model": false
+}`,
+skill: `---
+name: judge-a-sentence
+---
+When a sentence arrives, run scripts/judge.mjs with it.
+Reply with its answer as it is. Never add a verdict of your own.`,
+suite: `import test from "node:test";
+import assert from "node:assert/strict";
+import { judge } from "../scripts/judge.mjs";
+
+test("a palindrome with spaces and capitals is a yes", () => {
+  assert.equal(judge("Never odd or even"), "yes: neveroddoreven");
+});
+test("punctuation is ignored", () => {
+  assert.equal(judge("A man, a plan, a canal: Panama!"), "yes: amanaplanacanalpanama");
+});
+test("a sentence that is not one is a no", () => {
+  assert.equal(judge("Hello there"), "no: hellothere");
+});
+// ... 11 more`,
+script: `// judge.mjs: yes or no, with the letters and digits compared.
+export function judge(sentence) {
+  const kept = String(sentence ?? "").toLowerCase().replace(/[^\\p{L}\\p{N}]/gu, "");
+  if (!kept) return "no: nothing to compare";
+  const same = kept === [...kept].reverse().join("");
+  return \`\${same ? "yes" : "no"}: \${kept}\`;
+}`,
+findings: `# Review of palindrome-judge 0.1.0, pull request #5 at 0da3161
+open: 0
+noted: 1
+
+## Noted
+- scripts/judge.mjs:3. Letters with accents are kept as they are, so
+  "Ésope reste ici et se repose" compares é with e and says no. The spec
+  does not say either way; left as written.`,
+security: `{
+  "verdict": "pass",
+  "reaches": [],
+  "secrets_read": [],
+  "spend_ceiling": "10 USD per day",
+  "never_dos": [
+    "reaches no address",
+    "reads no credential",
+    "writes no file outside its own folder"
+  ],
+  "grants": "nothing"
+}`
+};
+const S = [
+ {n:1,p:0,name:"Requirements",st:"done",who:"spec-writer",runs:2,
+  rounds:[["Round 2","9:04 AM","Approved","done","The spec writer added the cleaned letters to the reply. You answered its 2 questions: the name and the price."],
+          ["Round 1","8:58 AM","You asked for changes","back","“Say which letters it compared, not only yes or no.”"]],
+  given:"What you wrote in the boxes when you started the build.",
+  out:["The statement of the job: what it does, takes, hands back and will not do. It reaches nothing outside AgentMesh and is free."],
+  files:[["agent-descriptor.json","1.0 KB",F.descriptor],["agent-runtime-requirements.json","0.2 KB",F.runtime],["judge-a-sentence.SKILL.md","0.2 KB",F.skill]],
+  done:"A package could be built from it, and nothing unsettled was invented.",met:true,
+  log:[["9:05 AM","You approved the statement of the job."],["9:04 AM","You answered the spec writer's 2 questions: its name and its price."],["9:02 AM","The spec came back."]]},
+ {n:2,p:0,name:"Architecture and Design",st:"done",who:"spec-writer",
+  given:"The statement of the job.",
+  out:["One step, a program: scripts/judge.mjs takes the sentence and hands back the verdict.","No system to bind in any environment: it reaches nothing."],
+  done:"Every system is named and bound, and every step uses only those systems.",met:true,log:[["9:02 AM","The design came back with the spec."]]},
+ {n:3,p:0,name:"Impact",st:"off",what:"Says which agents and solutions depend on a change, and whether each still works. A new agent has nothing depending on it."},
+ {n:4,p:0,name:"Source",st:"off",what:"Looks in the catalog for an agent that already does each step, before anything is built."},
+ {n:5,p:1,name:"Test",st:"done",who:"test-writer",
+  given:"The statement of the job, without the design or any code.",
+  out:["The suite: 2 test files, 14 tests.","It failed all 14 against empty stand-ins, so it can tell a real script from nothing."],
+  files:[["test/judge.test.mjs","1.9 KB",F.suite],["test/declarations.test.mjs","1.1 KB","// checks the four agent files agree with each other\n// ... 4 tests"]],
+  done:"The suite fails against empty stand-ins, and notices each program removed.",met:true,
+  log:[["9:10 AM","2 test files came back."],["9:06 AM","The test writer was asked."]]},
+ {n:6,p:1,name:"Code",st:"wait",who:"your coding agent, Claude Code",code:true,runs:3,
+  rounds:[["Push 3 · 0da3161","9:38 AM","Ready for your OK","done","All 14 tests passed. Both reviewers passed it."],
+          ["Push 2 · b2f9d10","9:27 AM","code-critic refused","back","scripts/judge.mjs:4. An empty sentence says “yes”, so a message with only punctuation is called a palindrome. Sent back to your coding agent as a comment on the pull request."],
+          ["Push 1 · c5a1e02","9:19 AM","3 tests failed","back","“punctuation is ignored”, “digits count as letters”, “accented capitals are lowered”. The security reviewer was not asked: the tests come first."]],
+  given:"The statement, the suite and a stub of each script, as a build folder on a branch.",
+  files:[["scripts/judge.mjs","0.3 KB",F.script]],
+  done:"The suite passes, and each script removed is noticed.",met:true,
+  log:[["9:41 AM","The check said Ready for your OK."],["9:38 AM","Your coding agent pushed 1 script."],["9:12 AM","The build folder went to pull request #5."]]},
+ {n:7,p:1,name:"Review",st:"done",who:"code-critic",runs:2,
+  rounds:[["On push 3","9:40 AM","Nothing open","done","One thing noted and left."],["On push 2","9:29 AM","1 finding open","back","An empty sentence says yes. Back to Code."]],
+  given:"The pull request's scripts at 0da3161, with the diff from the stubs.",
+  out:["Nothing open. One thing noted and left, because the spec does not decide it."],
+  files:[["review-findings.md","0.4 KB",F.findings]],
+  done:"No finding is left open.",met:true,log:[["9:40 AM","code-critic reviewed the scripts and left nothing open."]]},
+ {n:8,p:1,name:"Security review",st:"done",who:"security-reviewer",runs:2,
+  rounds:[["On push 3","9:41 AM","Passed","done","Nothing changed in what it reaches."],["On push 2","9:29 AM","Passed","done","It reaches nothing and reads no credential."]],
+  given:"The package at 0da3161 and its spending limit.",
+  out:["It passes: it reaches nothing, reads no credential, and grants nothing."],
+  files:[["security-statement.json","0.3 KB",F.security]],
+  done:"Every reach is declared, and the statement is signed.",met:true,log:[["9:41 AM","The security reviewer passed it."]]},
+ {n:9,p:2,name:"Package",st:"todo",who:"package-maker",given:"The merged commit, once you accept the pull request.",
+  out:["The package, packed the same way every time, so anyone can repack it and compare."],done:"The package's digest matches a repack of the same commit.",met:false},
+ {n:10,p:2,name:"Release",st:"todo",who:"package-maker",given:"The package.",out:["A signed build record naming who held each stage, including your coding agent at Code."],done:"The build record is signed.",met:false},
+ {n:11,p:2,name:"Deploy",st:"todo",who:"deployment-manager",given:"The package and your approval of the install.",out:["The agent running as palindrome-judge.platform@agentmesh.ai, and a signed deployment record."],done:"It answers on the network under its name.",met:false},
+ {n:12,p:3,name:"Conformance",st:"todo",who:"conformance-checker",given:"The running agent and its declaration.",out:["A signed verdict: conforms, does not conform, or inconclusive."],done:"It does what it declared and nothing it refused.",met:false},
+ {n:13,p:3,name:"Acceptance",st:"todo",who:"you",tryit:true,given:"The running agent, or before that the pull request's scripts in the sandbox.",out:["Your word that it is what you asked for, and any tries you kept as tests."],done:"You say it is what you wanted.",met:false},
+ {n:14,p:4,name:"Docs",st:"off",what:"Writes the agent's page from its declaration: what it does, takes, costs and refuses."},
+ {n:15,p:4,name:"Publish",st:"off",what:"Puts the agent in a catalog where other people can find and use it."},
+ {n:16,p:4,name:"Retract",st:"off",what:"Takes a published agent out of the catalog."},
+ {n:17,p:5,name:"Monitor",st:"off",what:"Watches the running agent: whether it answers, how fast, and what fails."},
+ {n:18,p:5,name:"Eval",st:"off",what:"Measures how well the agent's answers hold up over time."},
+ {n:19,p:5,name:"Incident response",st:"off",what:"Records what went wrong, what was done, and what changes."},
+ {n:20,p:5,name:"Cost",st:"off",what:"What the agent spends, against the ceiling it declared."},
+ {n:21,p:6,name:"Update",st:"off",what:"A new version of the agent, back through the stages that change touches."},
+ {n:22,p:6,name:"Reconfigure",st:"off",what:"Changes a setting or binding of the running agent without a new version."},
+ {n:23,p:6,name:"Rollback",st:"off",what:"Puts the version before back."},
+ {n:24,p:6,name:"Decommission",st:"off",what:"Takes the agent down and retires its name and key."}
+];
+const MARK = {done:"✓",wait:"!",todo:"○",off:""};
+const WORD = {done:"Done",wait:"Waiting on you",todo:"Not started",off:"Not offered"};
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+let sel = 6;
+
+function phases() {
+  document.getElementById("phases").innerHTML = PHASES.map((ph, i) =>
+    `<div class="phase"><span>${ph}</span><div class="st">${S.filter((s) => s.p === i).map((s) =>
+      `<button class="c ${s.st}${s.n === sel ? " sel" : ""}" data-n="${s.n}"><i>${String(s.n).padStart(2, "0")}</i>${s.name}${MARK[s.st] ? `<b>${MARK[s.st]}</b>` : ""}${s.runs > 1 ? `<u>×${s.runs}</u>` : ""}</button>`).join("")}</div></div>`).join("");
+}
+function files(list) {
+  return `<div class="files">${list.map(([f, size, body], i) =>
+    `<details${i === 0 && list.length === 1 ? " open" : ""}><summary>${esc(f)}<span>${size}</span></summary><pre>${esc(body)}</pre></details>`).join("")}</div>`;
+}
+function tryPanel() {
+  document.getElementById("stage").innerHTML = `<h2>Try it</h2><h3>palindrome-judge</h3>
+    <p class="who">Send it what a person would, and see what it answers.</p>
+    <div class="sec tin"><label for="tsay"><h4>Send</h4></label>
+      <textarea id="tsay">Was it a car or a cat I saw?</textarea>
+      <select id="twhere"><option>The scripts on pull request #5 at 0da3161, in the sandbox</option><option disabled>The installed agent (not installed yet)</option></select>
+      <div class="acts" style="margin-top:0"><button class="btn p" id="tsend">Send</button></div></div>
+    <div class="sec"><h4>It answered</h4><div class="reply">yes: wasitacaroracatisaw</div>
+      <div class="meta">0.4 s in the sandbox, with no internet and no keys</div>
+      <div class="acts"><button class="btn" id="tkeep">Keep as a test</button><button class="btn" id="twrong">That's wrong</button></div>
+      <p class="meta">Keep as a test adds it to the suite, so every later push is checked against it. That's wrong sends it back to your coding agent as a comment on the pull request.</p></div>
+    <div class="sec"><h4>Earlier tries</h4><ul class="tries">
+      <li><span>Step on no pets</span><code>yes · kept as a test</code></li>
+      <li><span>...!!!</span><code>no: nothing to compare</code></li>
+      <li><span>Ésope reste ici et se repose</span><code>no · sent back</code></li></ul></div>`;
+}
+function stage() {
+  if (sel === "try") return tryPanel();
+  const s = S.find((x) => x.n === sel);
+  let h = `<h2>Stage ${String(s.n).padStart(2, "0")} · ${PHASES[s.p]}</h2>
+    <h3>${s.name} <span class="pill ${s.st}">${WORD[s.st]}</span></h3>`;
+  if (s.st === "off") {
+    h += `<div class="sec"><p>${esc(s.what)}</p><p class="notyet">AgentMesh dev does not run this stage yet.</p></div>`;
+  } else {
+    h += `<p class="who">${s.st === "todo" ? "Will be held by" : "Held by"} ${esc(s.who)}</p>`;
+    h += `<div class="sec"><h4>${s.st === "todo" ? "Will be given" : "Given"}</h4><p>${esc(s.given)}</p></div>`;
+    if (s.code) {
+      h += `<div class="sec"><h4>Where</h4><p><a href="#">AgentMesh-Dev-Test/handoff-proof, pull request #5</a></p>
+        <div class="check"><div class="t">Ready for your OK</div>All 14 tests passed. Blanking the 1 script made the suite fail.
+        <ul><li>code-critic reviewed the scripts and left nothing open.</li><li>The security reviewer passed it.</li></ul></div>
+        <div class="local">$ node .adlc/check.mjs<br>14 of 14 passing in your clone</div>
+        <div class="acts"><button class="btn p" id="accept">Accept the pull request</button><button class="btn" id="stop">Stop</button></div></div>`;
+    }
+    if (s.rounds) {
+      h += `<div class="sec"><h4>${s.rounds.length} rounds, newest first</h4><ol class="rounds">${s.rounds.map(([r, t, v, k, why]) =>
+        `<li class="${k}"><div class="rh"><b>${esc(r)}</b><span>${t}</span></div><div class="rv">${k === "back" ? "↩ " : "✓ "}${esc(v)}</div><p>${esc(why)}</p></li>`).join("")}</ol></div>`;
+    }
+    if (s.out || s.files) {
+      h += `<div class="sec"><h4>${s.st === "todo" ? "Will hand back" : "Handed back"}</h4>${(s.out || []).map((o) => `<p>${esc(o)}</p>`).join("")}${s.files ? files(s.files) : ""}</div>`;
+    }
+    if (s.tryit) h += `<div class="acts"><button class="btn p" data-tryit>Try it</button></div>`;
+    h += `<div class="sec"><h4>Done when</h4><p>${esc(s.done)}</p>${s.st === "todo" ? "" : `<p class="met">✓ Met</p>`}</div>`;
+    if (s.log) h += `<div class="sec"><h4>What happened</h4><ul class="log">${s.log.map(([t, w]) => `<li><time>${t}</time>${esc(w)}</li>`).join("")}</ul></div>`;
+  }
+  document.getElementById("stage").innerHTML = h;
+}
+document.getElementById("phases").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-n]"); if (!b) return;
+  sel = +b.dataset.n; document.getElementById("try").classList.remove("on"); phases(); stage();
+  if (matchMedia("(max-width:820px)").matches) document.getElementById("stage").scrollIntoView({behavior: "smooth"});
+});
+document.getElementById("try").addEventListener("click", (e) => { sel = "try"; e.currentTarget.classList.add("on"); phases(); stage(); });
+document.getElementById("stage").addEventListener("click", (e) => { if (e.target.closest("[data-tryit]")) document.getElementById("try").click(); });
+phases(); stage();
+</script>

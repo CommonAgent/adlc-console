@@ -1,0 +1,13 @@
+adlc console
+Copyright 2026 The adlc console authors
+
+This product is sponsored by AgentMesh (https://agentmesh.ai).
+
+This product includes the following fonts, each under the SIL Open Font
+License 1.1 (see public/fonts/):
+  - Instrument Sans, Copyright 2022 The Instrument Sans Project Authors
+  - IBM Plex Mono, Copyright 2017 IBM Corp.
+
+standards/stages.json is a copy of the 24 stages of the agentic development
+lifecycle, from https://agenticdevelopment.ai/stages.html (CommonAgent/adlc,
+Apache-2.0).

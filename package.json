@@ -1,0 +1,35 @@
+{
+  "name": "adlc-console",
+  "version": "0.1.0",
+  "description": "A small local page that shows a build's journey through the 24 stages of the agentic development lifecycle, and lets you act at the gates that are yours.",
+  "type": "module",
+  "bin": {
+    "adlc-console": "bin/adlc-console.mjs"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "public/",
+    "standards/",
+    "docs/contract.md",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node bin/adlc-console.mjs",
+    "demo": "node bin/adlc-console.mjs --demo",
+    "test": "node --test test/*.test.mjs",
+    "stages": "node scripts/vendor-stages.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": ["adlc", "agents", "lifecycle", "agentic development"],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CommonAgent/adlc-console.git"
+  },
+  "private": true
+}

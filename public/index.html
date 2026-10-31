@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ADLC Console</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/app.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="top"><span><b>adlc console</b> · <span id="svc">…</span></span><span id="who"></span></div>
+  <nav class="rail" id="rail" aria-label="Builds">
+    <h2>Builds</h2>
+    <div id="builds"></div>
+    <button class="new" id="new" type="button">New build</button>
+  </nav>
+  <main id="main"><p class="does">Loading…</p></main>
+  <aside class="stage" id="stage" aria-live="polite"></aside>
+</div>
+</body>
+</html>
