@@ -40,6 +40,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-
 .tin{display:grid;gap:8px}
 textarea,input[type=text],input[type=password]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
 textarea{min-height:64px;resize:vertical}
+::placeholder{color:var(--muted);opacity:.8}
 select{padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit;max-width:100%;width:100%}
 .reply{border:1px solid var(--line);border-radius:6px;padding:10px;font-family:var(--mono);font-size:12.5px;background:var(--code);white-space:pre-wrap;overflow-wrap:anywhere}
 .meta{font-size:12px;color:var(--muted);margin-top:4px}

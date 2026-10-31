@@ -462,6 +462,10 @@ async function act(name, needs = {}) {
     return problem(e);
   }
   state.pending = null;
+  // When the gate just answered is closed and another one now waits on the
+  // person, open that one.
+  const next = state.build.stages.find((s) => s.state === "waiting_on_you");
+  if (next && next.stage !== state.sel && !actionsFor(state.sel).length) return go(hashFor(state.build.id, next.stage));
   draw();
 }
 
