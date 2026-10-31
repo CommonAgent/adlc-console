@@ -14,6 +14,21 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
 const sentence = (s) => { const t = String(s ?? "").trim(); return t ? t[0].toUpperCase() + t.slice(1) + (/[.!?”"]$/.test(t) ? "" : ".") : ""; };
+// A field from stages.json: its list items are lines starting with "- ".
+function prose(text, lead = "") {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const head = lines.filter((l) => !l.startsWith("- ")).join(" ").trim();
+  const items = lines.filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
+  const first = sentence(`${lead}${head}`.trim());
+  const p = first ? `<p>${esc(items.length ? first.replace(/[.:]?$/, ":") : first)}</p>` : "";
+  return p + (items.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : "");
+}
+// One of the words a stage handed back: a bare web address becomes a link.
+function wordsHtml(w) {
+  const t = String(w).trim();
+  const url = /^https?:\/\/\S+$/.test(t) ? safeUrl(t) : null;
+  return url ? `<p><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a></p>` : `<p>${esc(w)}</p>`;
+}
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* fine */ } },
@@ -150,6 +165,8 @@ function drawTop() {
   else if (st?.key_from === "saved") who = `Using your saved key · <button class="linkbtn" id="forget" type="button">Forget it</button>`;
   else if (st?.key_from === "environment") who = "Using the key from your environment";
   else if (st?.key_from === "key file") who = "Using the key from your key file";
+  else if (st?.key_from === "github token") who = "Read-only · using your GitHub token";
+  else if (st?.source === "github") who = "Read-only · reading without a GitHub token";
   $("who").innerHTML = who;
 }
 
@@ -169,6 +186,7 @@ function drawRail() {
     }).join("")
     : `<p class="none">No builds yet.</p>`;
   $("new").classList.toggle("on", state.view === "new");
+  $("new").hidden = Boolean(state.status?.read_only);
 }
 
 function layout(kind) {
@@ -182,7 +200,7 @@ function draw() {
   if (state.view !== "build" || !state.build) return;
   layout("full");
   const b = state.build;
-  const canTry = Boolean(prStage()) || installed();
+  const canTry = state.status?.can_try !== false && (Boolean(prStage()) || installed());
   $("main").innerHTML = `
     <div class="err" role="alert">${esc(state.error)}</div>
     <div class="head"><h1>${esc(b.name)}</h1>${canTry ? `<button class="try${state.sel === "try" ? " on" : ""}" id="try" type="button">Try it</button>` : ""}</div>
@@ -272,15 +290,15 @@ function drawStage() {
   let h = `<h2>Stage ${pad(d.number)}${phaseName ? ` · ${phaseName}` : ""}</h2>
     <h3>${esc(d.name)} <span class="pill ${CLS[s.state] ?? ""}">${WORD[s.state] ?? ""}</span></h3>`;
   if (s.state === "not_offered") {
-    h += `<div class="sec">${d.hands_back ? `<p>${esc(sentence(`It hands back ${d.hands_back}`))}</p>` : ""}<p class="notyet">${esc(state.status?.demo ? "The demo" : state.status?.service ?? "This service")} does not run this stage yet.</p></div>`;
+    h += `<div class="sec">${d.hands_back ? prose(d.hands_back, "It hands back ") : ""}<p class="notyet">${esc(state.status?.source === "github" ? "A repository does not show this stage." : `${state.status?.demo ? "The demo" : state.status?.service ?? "This service"} does not run this stage yet.`)}</p></div>`;
     el.innerHTML = h;
     return;
   }
   const future = s.state === "not_started";
   const holder = holderWords(s.holder) || d.reference_holder || (d.role ? `a ${d.role}` : "");
   if (holder) h += `<p class="who">${future ? "Will be held by" : "Held by"} ${esc(holder)}</p>`;
-  const given = s.given || sentence(d.given);
-  if (given) h += `<div class="sec"><h4>${future ? "Will be given" : "Given"}</h4><p>${esc(given)}</p></div>`;
+  const given = s.given ? `<p>${esc(s.given)}</p>` : prose(d.given);
+  if (given) h += `<div class="sec"><h4>${future ? "Will be given" : "Given"}</h4>${given}</div>`;
 
   if (s.where?.kind === "pull_request") {
     const url = safeUrl(s.where.url);
@@ -301,9 +319,9 @@ function drawStage() {
   const words = s.handed_back?.words ?? [];
   const files = s.handed_back?.files ?? [];
   if (words.length || files.length) {
-    h += `<div class="sec"><h4>${future ? "Will hand back" : "Handed back"}</h4>${words.map((w) => `<p>${esc(w)}</p>`).join("")}${files.length ? filesHtml(files) : ""}</div>`;
+    h += `<div class="sec"><h4>${future ? "Will hand back" : "Handed back"}</h4>${words.map(wordsHtml).join("")}${files.length ? filesHtml(files) : ""}</div>`;
   } else if (future && d.hands_back) {
-    h += `<div class="sec"><h4>Will hand back</h4><p>${esc(sentence(d.hands_back))}</p></div>`;
+    h += `<div class="sec"><h4>Will hand back</h4>${prose(d.hands_back)}</div>`;
   }
 
   if (!s.where) h += actionsHtml(s.stage);
@@ -311,7 +329,7 @@ function drawStage() {
 
   if (d.done_when) {
     const met = s.done_when_met === true ? `<p class="met">✓ Met</p>` : s.done_when_met === false && !future ? `<p class="notyet">Not met yet</p>` : "";
-    h += `<div class="sec"><h4>Done when</h4><p>${esc(sentence(d.done_when))}</p>${met}</div>`;
+    h += `<div class="sec"><h4>Done when</h4>${prose(d.done_when)}${met}</div>`;
   }
   if (s.log?.length) h += `<div class="sec"><h4>What happened</h4><ul class="log">${s.log.map((e) => `<li><time>${esc(when(e.at))}</time>${esc(e.said)}</li>`).join("")}</ul></div>`;
   el.innerHTML = h;
@@ -408,7 +426,9 @@ function drawNew() {
 function drawEmpty() {
   drawTop();
   layout("solo");
-  $("main").innerHTML = `<div class="err" role="alert">${esc(state.error)}</div><h1>No builds yet</h1><p class="does">Start one with New build. Say what the agent should do, and follow it through the stages here.</p>`;
+  $("main").innerHTML = state.status?.read_only
+    ? `<div class="err" role="alert">${esc(state.error)}</div><h1>No agents here</h1><p class="does">${state.error ? "" : `${esc(state.status.service)} has no agent repositories: none holds agent-repo.json, a package descriptor, or spec.json.`}</p>`
+    : `<div class="err" role="alert">${esc(state.error)}</div><h1>No builds yet</h1><p class="does">Start one with New build. Say what the agent should do, and follow it through the stages here.</p>`;
   $("stage").innerHTML = "";
 }
 
@@ -594,6 +614,7 @@ async function start() {
     state.status = await call("/local/status");
     const doc = await call("/local/stages");
     state.stages = (Array.isArray(doc) ? doc : doc.stages ?? []).slice().sort((a, b) => a.number - b.number);
+    if (Array.isArray(doc.phases) && doc.phases.length) PHASES.splice(0, PHASES.length, ...doc.phases.map((p) => [p.id, p.name]));
     state.byId = new Map(state.stages.map((s) => [s.id, s]));
   } catch (e) {
     $("main").innerHTML = `<div class="err" role="alert">${esc(e.message)}</div>`;

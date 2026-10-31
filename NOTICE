@@ -9,5 +9,4 @@ License 1.1 (see public/fonts/):
   - IBM Plex Mono, Copyright 2017 IBM Corp.
 
 standards/stages.json is a copy of the 24 stages of the agentic development
-lifecycle, from https://agenticdevelopment.ai/stages.html (CommonAgent/adlc,
-Apache-2.0).
+lifecycle, from standards/stages.json in CommonAgent/adlc (Apache-2.0).

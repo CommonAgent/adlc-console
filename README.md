@@ -79,12 +79,10 @@ That is the only command it ever runs, and only in a folder that holds
 
 ## The stages
 
-The 24 stages come from `standards/stages.json`, shipped in this package. It
-is a copy built from https://agenticdevelopment.ai/stages.html until the
-lifecycle's own `standards/stages.json` lands in the adlc repository
-(CommonAgent/adlc); `npm run stages` refreshes it, from the adlc repository
-when the file is there and from the page until then. A new or changed stage
-reaches the console without a code change.
+The 24 stages come from `standards/stages.json`, shipped in this package: a
+copy of the lifecycle's own `standards/stages.json` in the adlc repository
+(CommonAgent/adlc). `npm run stages` refreshes the copy from there. A new or
+changed stage reaches the console without a code change.
 
 ## For service authors
 

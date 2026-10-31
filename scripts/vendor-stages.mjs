@@ -3,10 +3,11 @@
 // package ships.
 //
 // The stages' home is standards/stages.json in the adlc repository
-// (CommonAgent/adlc). Until that file exists, this script builds the same
-// fields from the stages page, https://agenticdevelopment.ai/stages.html.
+// (CommonAgent/adlc); this script copies it from there. If that file cannot
+// be read, it builds the same fields from the stages page,
+// https://agenticdevelopment.ai/stages.html, as a fallback.
 //
-//   node scripts/vendor-stages.mjs                 try the adlc repo, then the page
+//   node scripts/vendor-stages.mjs                 copy from the adlc repo (the page if that fails)
 //   node scripts/vendor-stages.mjs --page <file>   build from a saved copy of the page
 //
 // Only maintainers run this. The console itself never fetches the stages.
@@ -127,7 +128,7 @@ async function main() {
       ? await (await fetch(PAGE)).text()
       : await readFile(args[pageAt + 1], "utf8");
     doc = {
-      source: `Built from ${PAGE} on ${new Date().toISOString().slice(0, 10)}, until standards/stages.json lands in CommonAgent/adlc.`,
+      source: `Built from ${PAGE} on ${new Date().toISOString().slice(0, 10)}, because ${ADLC_RAW} could not be read.`,
       stages: parsePage(html),
     };
   }
