@@ -277,7 +277,7 @@ function timeline() {
     const left = ((a - t0) / whole) * 100;
     const width = Math.max(0.6, ((e - a) / whole) * 100);
     const took = x.duration_ms === null || x.duration_ms === undefined ? "still open, " + span(e - a) + " so far" : span(x.duration_ms);
-    return '<li class="' + esc(x.kind) + '"><div class="bl"><b>' + esc(x.phase) + (x.round ? " · round " + (x.round + 1) : "") + "</b><span>" + esc(took) + "</span></div>"
+    return '<li class="' + esc(x.kind) + '"><div class="bl"><b>' + esc(x.phase) + (x.round > 1 ? " · round " + x.round : "") + "</b><span>" + esc(took) + "</span></div>"
       + '<div class="track" aria-hidden="true"><i data-l="' + left.toFixed(2) + '" data-w="' + width.toFixed(2) + '"></i></div>'
       + '<div class="bk">' + esc(KIND[x.kind] ?? x.kind) + (x.holder ? " · " + esc(x.holder) : "") + " · " + esc(x.status) + "</div></li>";
   }).join("");
