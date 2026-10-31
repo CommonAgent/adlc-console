@@ -80,6 +80,13 @@ function when(at) {
   if (d.toDateString() === today.toDateString()) return time;
   return `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${time}`;
 }
+function day(at) {
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return "";
+  const o = { month: "short", day: "numeric" };
+  if (d.getFullYear() !== new Date().getFullYear()) o.year = "numeric";
+  return d.toLocaleDateString([], o);
+}
 function size(n) {
   if (!Number.isFinite(n)) return "";
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
@@ -140,6 +147,8 @@ function defaultStage() {
   const b = state.build;
   const s = b.stages.find((x) => x.state === "waiting_on_you")
     ?? b.stages.find((x) => x.state === "working" || x.state === "stopped" || x.state === "refused")
+    // A read-only source has nothing coming next; open what it holds.
+    ?? (state.status?.read_only ? b.stages.find((x) => x.state === "done") : null)
     ?? b.stages.find((x) => x.state === "not_started")
     ?? b.stages[0];
   return s?.stage ?? null;
@@ -172,6 +181,7 @@ function drawTop() {
 
 function railLine(b) {
   const name = def(b.at?.stage).name;
+  if (state.status?.read_only && b.updated) return { text: `Updated ${day(b.updated)}`, wait: false };
   if (b.at?.state === "stopped") return { text: `Stopped at ${name}`, wait: false };
   if (b.at?.state === "refused") return { text: `Refused at ${name}`, wait: false };
   return { text: `${name} · ${(WORD[b.at?.state] ?? "").toLowerCase()}`, wait: b.at?.state === "waiting_on_you" };
@@ -182,7 +192,7 @@ function drawRail() {
   $("builds").innerHTML = state.builds.length
     ? state.builds.map((b) => {
       const l = railLine(b);
-      return `<a class="b${b.id === cur ? " on" : ""}" href="${hashFor(b.id)}"${b.id === cur ? ' aria-current="page"' : ""}><span class="n">${esc(b.name)}</span><span class="s${l.wait ? " w" : ""}">${esc(l.text)}</span></a>`;
+      return `<a class="b${b.id === cur ? " on" : ""}" href="${hashFor(b.id)}" title="${esc(b.does)}"${b.id === cur ? ' aria-current="page"' : ""}><span class="n">${esc(b.name)}</span><span class="s${l.wait ? " w" : ""}">${esc(l.text)}</span></a>`;
     }).join("")
     : `<p class="none">No builds yet.</p>`;
   $("new").classList.toggle("on", state.view === "new");
@@ -295,8 +305,10 @@ function drawStage() {
     return;
   }
   const future = s.state === "not_started";
-  const holder = holderWords(s.holder) || d.reference_holder || (d.role ? `a ${d.role}` : "");
+  const holder = holderWords(s.holder);
   if (holder) h += `<p class="who">${future ? "Will be held by" : "Held by"} ${esc(holder)}</p>`;
+  else if (d.reference_holder) h += `<p class="who">Its reference agent is ${esc(d.reference_holder)}</p>`;
+  else if (d.role) h += `<p class="who">Its role: ${esc(d.role)}</p>`;
   const given = s.given ? `<p>${esc(s.given)}</p>` : prose(d.given);
   if (given) h += `<div class="sec"><h4>${future ? "Will be given" : "Given"}</h4>${given}</div>`;
 
