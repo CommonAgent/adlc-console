@@ -51,9 +51,34 @@ POST /v1/lifecycle/builds/:id/tries/:tid/keep      -> adds it to the suite as a 
 POST /v1/lifecycle/builds/:id/tries/:tid/wrong   { why? }  -> a comment on the pull request
 ```
 
+Added in lifecycle API 0.2 (CommonAgent/adlc, standards/lifecycle-api.schema.json):
+
+```
+GET    /v1/lifecycle/roles[?project=<name>]
+  -> { roles: [{ role, name, contract, offering, stages: [..],
+                 binding,          // { role, holder, scope?, since?, by? }; null exactly when from is unbound
+                 from,             // project | org | default | unbound
+                 reference_agent   // { kind: "reference_agent", name, handle } | null
+       }] }
+PUT    /v1/lifecycle/roles/:role[?project=<name>]   { holder: { kind, name, handle?, evidence?: { formats: [..], where? } } }
+  -> the roles answer; 400 { error } when the binding is refused
+DELETE /v1/lifecycle/roles/:role[?project=<name>]   -> the roles answer
+
+POST /v1/lifecycle/builds   adds project?       build adds project?
+stage.state adds not_bound | not_applicable     holder.kind adds contracted | outside_tool; holder adds handle?
+stage adds evidence?: [{ format, name, at, summary, file? }]
+```
+
 ## How the console reads it
 
-- A stage in stages.json that a build does not list is shown as not offered.
+- A stage in stages.json that a build does not list is shown as not offered,
+  and so is a stage in a state the console does not know.
+- A holder is drawn with its kind in words ("our reference agent", "your
+  agent", "contracted: <name>", "a person", "outside tool: <name>") and its
+  handle when there is one. not_bound links to the Roles page; not_applicable
+  is dimmed and says the stage doesn't apply to a process.
+- The Roles page shows the service's 400 words for a refused binding as they
+  are. The requester is always the person who asked, and has no form.
 - `holder` may be `null` for a stage that is not offered.
 - `size` is a count of bytes. Files are shown inline, fetched from the
   `files` path when opened; a file that is not text is not shown.

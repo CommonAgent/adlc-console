@@ -231,3 +231,55 @@ test("the page is served with a strict policy, and nothing outside it", async ()
     assert.equal(stages.json.stages.length, 24);
   } finally { await s.done(); }
 });
+
+test("roles are read, bound and set back through the proxy, with the project and nothing else", async () => {
+  const s = await setup();
+  const h = { host: s.host, "x-adlc-console": "1", "content-type": "application/json" };
+  try {
+    await hit(s.url, { path: "/api/v1/lifecycle/roles?project=finance&x=1", headers: { host: s.host } });
+    const put = await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/roles/code-critic?project=web", headers: h, body: { holder: { kind: "person", name: "Our review team" } } });
+    assert.equal(put.status, 200);
+    const del = await hit(s.url, { method: "DELETE", path: "/api/v1/lifecycle/roles/code-critic", headers: h });
+    assert.equal(del.status, 200);
+    assert.deepEqual(s.svc.seen.map((x) => `${x.method} ${x.url}`), [
+      "GET /v1/lifecycle/roles?project=finance",
+      "PUT /v1/lifecycle/roles/code-critic?project=web",
+      "DELETE /v1/lifecycle/roles/code-critic",
+    ]);
+    assert.deepEqual(JSON.parse(s.svc.seen[1].body), { holder: { kind: "person", name: "Our review team" } });
+    assert.equal(s.svc.seen[1].headers.authorization, `Bearer ${KEY}`);
+  } finally { await s.done(); }
+});
+
+test("PUT and DELETE reach only one role, and only from the page", async () => {
+  const s = await setup();
+  const h = { host: s.host, "x-adlc-console": "1", "content-type": "application/json" };
+  try {
+    assert.equal((await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/builds/b1", headers: h, body: {} })).status, 405);
+    assert.equal((await hit(s.url, { method: "DELETE", path: "/api/v1/lifecycle/roles", headers: h })).status, 405);
+    assert.equal((await hit(s.url, { method: "POST", path: "/api/v1/lifecycle/roles/code-critic", headers: h, body: {} })).status, 405);
+    assert.equal((await hit(s.url, { path: "/api/v1/lifecycle/roles/Code_Critic", headers: { host: s.host } })).status, 404);
+    assert.equal((await hit(s.url, { method: "DELETE", path: "/api/v1/lifecycle/roles/code-critic", headers: { host: s.host } })).status, 403);
+    assert.equal((await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/roles/code-critic", headers: { ...h, origin: "https://evil.example" }, body: {} })).status, 403);
+    assert.equal(s.svc.seen.length, 0);
+  } finally { await s.done(); }
+});
+
+test("the service's refusal of a binding reaches the page as written", async () => {
+  const words = "Give the supplier's handle on the mesh, so the stage's work can be sent to it.";
+  const s = await setup({ answer: () => ({ status: 400, body: { error: words } }) });
+  try {
+    const r = await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/roles/code-critic", headers: { host: s.host, "x-adlc-console": "1", "content-type": "application/json" }, body: { holder: { kind: "contracted", name: "Them" } } });
+    assert.equal(r.status, 400);
+    assert.equal(r.json.error, words);
+  } finally { await s.done(); }
+});
+
+test("the page's roles module is served", async () => {
+  const s = await setup();
+  try {
+    const r = await hit(s.url, { path: "/roles.js", headers: { host: s.host } });
+    assert.equal(r.status, 200);
+    assert.match(r.headers["content-type"], /javascript/);
+  } finally { await s.done(); }
+});

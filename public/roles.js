@@ -88,7 +88,9 @@ export function evidenceHtml(list, { when = (x) => x, fileHtml = null } = {}) {
 
 function listWords(items) {
   if (items.length <= 1) return items.join("");
-  return `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+  // "Requirements, and Architecture and Design": a comma where a name holds "and" itself.
+  const comma = items.length > 2 || items.some((i) => / and /.test(i)) ? "," : "";
+  return `${items.slice(0, -1).join(", ")}${comma} and ${items.at(-1)}`;
 }
 
 function fromWords(r, project, day) {
