@@ -169,3 +169,44 @@ button:focus-visible,summary:focus-visible,a:focus-visible,textarea:focus-visibl
 .timeline li.person .track i { opacity: .45; }
 .timeline li.external .track i { opacity: .3; }
 .timeline .bk { font-size: 13px; opacity: .8; overflow-wrap: anywhere; }
+
+/* Roles: who holds each role, the states a stage takes when nobody holds it or it doesn't apply, and evidence. */
+[hidden]{display:none!important}
+.rail .navl{display:block;text-align:center;text-decoration:none;margin-top:6px}
+.c .cn{display:inline-flex;flex-direction:column;align-items:flex-start}
+.c small{font-size:11px;font-weight:400;color:var(--muted);max-width:22ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c.unb{border-style:dashed;border-color:var(--wait);background:transparent}
+.c.unb b{color:var(--wait)}
+.c.na{opacity:.5;border-style:dotted;background:transparent;color:var(--muted)}
+.c.na .cn{text-decoration:line-through}
+.pill.unb{background:var(--wait-bg);color:var(--wait)}
+.sec.na{opacity:.65}
+.who .handle,.holder .handle{font-family:var(--mono);font-size:12px;font-weight:400}
+.proj{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;max-width:62ch;align-items:center;margin:8px 0 4px}
+.proj label{grid-column:1/-1;font-weight:600;font-size:13px}
+.proj label span{font-weight:400;color:var(--muted);font-size:12.5px}
+.proj a.btn{text-decoration:none}
+.roles{display:grid;gap:10px;margin-top:14px;max-width:80ch}
+.role{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.rtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.role h2{font-size:15px;margin:0;font-weight:600}
+.rtop a,.role .meta a{color:var(--accent);font-size:12.5px}
+.role .meta{margin:2px 0 0}
+.holder{margin:8px 0 2px;font-weight:600;overflow-wrap:anywhere}
+.holder.none{font-weight:400;color:var(--wait)}
+.holder.none::before{content:"? ";font-weight:600}
+.bind{margin-top:12px}
+.bind fieldset{border:0;padding:0;margin:0;display:grid;gap:4px;min-width:0}
+.bind legend{font-weight:600;font-size:13px;padding:0;margin-bottom:4px}
+.bind legend span{font-weight:400;color:var(--muted);font-size:12.5px}
+.form label.choice{display:flex;align-items:center;gap:6px;font-weight:400}
+.form label[hidden]{display:none}
+.evidence{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.evidence li{border-left:3px solid var(--line);padding:2px 0 2px 10px;margin:0;min-width:0}
+.eh{display:flex;justify-content:space-between;gap:8px}
+.eh b{overflow-wrap:anywhere}
+.eh span{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.ef{font-size:12px;color:var(--muted);margin:1px 0 4px}
+@media (max-width:480px){.proj{grid-template-columns:minmax(0,1fr)}}
+main .projof{margin:-10px 0 14px;font-size:13px;color:var(--muted)}
+main .projof a{color:var(--accent)}

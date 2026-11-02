@@ -126,6 +126,15 @@ copy of the lifecycle's own `standards/stages.json` in the adlc repository
 (CommonAgent/adlc). `npm run stages` refreshes the copy from there. A new or
 changed stage reaches the console without a code change.
 
+## Roles
+
+The Roles page lists each lifecycle role, the stages it holds, and who holds
+it: the service's reference agent, your own agent, a contracted supplier, a
+person, or an outside tool. You can choose a holder for the whole
+organization or for one project, and go back to the default. A stage held
+outside the service shows the evidence its holder handed in, such as security
+findings or a bill of materials.
+
 ## For service authors
 
 `docs/contract.md` lists every path the console calls and what it expects

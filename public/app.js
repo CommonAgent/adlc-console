@@ -6,12 +6,13 @@ const PHASES = [
   ["define", "Define"], ["make", "Make"], ["ship", "Ship"], ["prove", "Prove"],
   ["use", "Use"], ["run", "Run"], ["change", "Change"],
 ];
-const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop" };
-const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■" };
-const WORD = { done: "Done", waiting_on_you: "Waiting on you", not_started: "Not started", not_offered: "Not offered", working: "Working", refused: "Refused", stopped: "Stopped" };
+import { esc, safeUrl, stateOf, holderWords, holderHtml, stageNoticeHtml, evidenceHtml, rolesPageHtml, draftFor, holderFrom, needsHandle } from "./roles.js";
+
+const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop", not_bound: "unb", not_applicable: "na" };
+const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■", not_bound: "?", not_applicable: "" };
+const WORD = { done: "Done", waiting_on_you: "Waiting on you", not_started: "Not started", not_offered: "Not offered", working: "Working", refused: "Refused", stopped: "Stopped", not_bound: "Nobody holds it", not_applicable: "Doesn't apply" };
 
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pad = (n) => String(n).padStart(2, "0");
 const sentence = (s) => { const t = String(s ?? "").trim(); return t ? t[0].toUpperCase() + t.slice(1) + (/[.!?”"]$/.test(t) ? "" : ".") : ""; };
 // A field from stages.json: its list items are lines starting with "- ".
@@ -38,6 +39,7 @@ const state = {
   status: null, stages: [], byId: new Map(), builds: [], build: null, tries: [],
   sel: null, view: "build", error: "", lastTry: null, checks: new Map(), files: new Map(), pending: null, asking: null, wrongFor: null,
   logAll: false, showArchived: false,
+  roles: null, project: "", editingRole: null, roleDraft: null, roleErrors: new Map(), rolePending: null,
 };
 
 // ---------- talking to the local server ----------
@@ -48,10 +50,10 @@ class Problem extends Error {
 
 async function call(path, { method = "GET", body, text = false } = {}) {
   const init = { method, headers: { accept: text ? "text/plain" : "application/json" } };
-  if (method === "POST") {
+  if (method !== "GET") {
     init.headers["content-type"] = "application/json";
     init.headers["x-adlc-console"] = "1";
-    init.body = JSON.stringify(body ?? {});
+    if (method !== "DELETE") init.body = JSON.stringify(body ?? {});
   }
   let r;
   try { r = await fetch(path, init); } catch { throw new Problem("The console stopped answering. Is it still running?", 0); }
@@ -92,17 +94,9 @@ function size(n) {
   if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${Math.max(0.1, n / 1024).toFixed(1)} KB`;
 }
-function safeUrl(u) {
-  try { const x = new URL(u); return x.protocol === "https:" || x.protocol === "http:" ? x.href : null; } catch { return null; }
-}
 function prWords(url) {
   const m = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url || "");
   return m ? { text: `${m[1]}, pull request #${m[2]}`, short: `pull request #${m[2]}` } : { text: "The pull request", short: "the pull request" };
-}
-function holderWords(h) {
-  if (!h) return "";
-  if (h.kind === "person" && /^you$/i.test(h.name)) return "you";
-  return h.name;
 }
 const def = (id) => state.byId.get(id) ?? { id, number: 0, phase: "", name: id, role: "", given: "", hands_back: "", done_when: "" };
 const stageOf = (id) => state.build?.stages.find((s) => s.stage === id);
@@ -114,6 +108,7 @@ const installed = () => stageOf("deploy")?.state === "done";
 function parseHash() {
   const parts = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
   if (parts[0] === "new") return { view: "new" };
+  if (parts[0] === "roles") return { view: "roles", project: (parts[1] ?? "").trim() };
   if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null };
   return { view: "build", id: null, sel: null };
 }
@@ -125,6 +120,12 @@ async function route() {
   state.error = "";
   if (!state.status?.signed_in) return drawKey();
   if (h.view === "new") { state.view = "new"; drawRail(); return drawNew(); }
+  if (h.view === "roles") {
+    if (state.view !== "roles" || state.project !== h.project) { state.editingRole = null; state.roleErrors = new Map(); state.roles = null; }
+    state.view = "roles"; state.project = h.project;
+    drawRail();
+    return loadRoles();
+  }
   state.view = "build";
   const id = h.id || pickBuild();
   if (!id) { drawRail(); return drawEmpty(); }
@@ -187,7 +188,7 @@ function railLine(b) {
   if (typeof b.at?.summary === "string" && b.at.summary) return { text: b.at.summary, wait: b.at.state === "waiting_on_you", paused: /· paused/.test(b.at.summary) };
   if (b.at?.state === "stopped") return { text: `Stopped at ${name}`, wait: false };
   if (b.at?.state === "refused") return { text: `Refused at ${name}`, wait: false };
-  return { text: `${name} · ${(WORD[b.at?.state] ?? "").toLowerCase()}`, wait: b.at?.state === "waiting_on_you" };
+  return { text: `${name} · ${WORD[stateOf(b.at)].toLowerCase()}`, wait: b.at?.state === "waiting_on_you" };
 }
 
 function drawRail() {
@@ -204,6 +205,10 @@ function drawRail() {
     + (archived ? `<button class="linkbtn archt" id="archt" type="button" aria-pressed="${state.showArchived}">${state.showArchived ? "Hide archived" : `Show archived (${archived})`}</button>` : "");
   $("new").classList.toggle("on", state.view === "new");
   $("new").hidden = Boolean(state.status?.read_only);
+  // A read-only source holds no roles to choose.
+  $("roles-link").classList.toggle("on", state.view === "roles");
+  $("roles-link").hidden = Boolean(state.status?.read_only);
+  if (state.view === "roles") $("roles-link").setAttribute("aria-current", "page"); else $("roles-link").removeAttribute("aria-current");
 }
 
 function layout(kind) {
@@ -222,6 +227,7 @@ function draw() {
     <div class="err" role="alert">${esc(state.error)}</div>
     <div class="head"><h1>${esc(b.name)}</h1>${canTry ? `<button class="try${state.sel === "try" ? " on" : ""}" id="try" type="button">Try it</button>` : ""}</div>
     <p class="does">${esc(b.does)}</p>
+    ${typeof b.project === "string" && b.project ? `<p class="projof">Built for the project ${esc(b.project)}. <a href="${rolesHash(b.project)}">Who holds its roles</a></p>` : ""}
     ${b.summary ? `<p class="sum${b.paused ? " paused" : ""}">${esc(b.summary)}${b.archived ? " · archived" : ""}</p>` : ""}
     ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
     <div id="phases">${phases()}</div>
@@ -242,10 +248,14 @@ function phases() {
     if (!here.length) return "";
     return `<div class="phase"><span>${pname}</span><div class="st">${here.map((d) => {
       const s = known.get(d.id) ?? { stage: d.id, state: "not_offered", runs: 0 };
-      const cls = CLS[s.state] ?? "todo";
-      const mark = MARK[s.state] ?? "";
+      const st = stateOf(s);
+      const mark = MARK[st];
       const on = s.stage === state.sel;
-      return `<button class="c ${cls}${on ? " sel" : ""}" type="button" data-stage="${esc(d.id)}" aria-pressed="${on}" aria-label="${esc(`${d.name}, ${WORD[s.state] ?? ""}${s.runs > 1 ? `, ran ${s.runs} times` : ""}`)}"><i>${pad(d.number)}</i>${esc(d.name)}${mark ? `<b>${mark}</b>` : ""}${s.runs > 1 ? `<u>×${s.runs}</u>` : ""}</button>`;
+      // The holder in words; one held by anyone but the reference agent says so on the chip too.
+      const who = st === "not_offered" || st === "not_applicable" ? "" : holderWords(s.holder);
+      const handle = s.holder?.handle ? ` · ${s.holder.handle}` : "";
+      const shown = who && s.holder?.kind !== "reference_agent" ? `<small>${esc(who)}</small>` : "";
+      return `<button class="c ${CLS[st]}${on ? " sel" : ""}" type="button" data-stage="${esc(d.id)}" aria-pressed="${on}"${who ? ` title="${esc(`Held by ${who}${handle}`)}"` : ""} aria-label="${esc(`${d.name}, ${WORD[st]}${who ? `, held by ${who}` : ""}${s.runs > 1 ? `, ran ${s.runs} times` : ""}`)}"><i>${pad(d.number)}</i><span class="cn">${esc(d.name)}${shown}</span>${mark ? `<b>${mark}</b>` : ""}${s.runs > 1 ? `<u>×${s.runs}</u>` : ""}</button>`;
     }).join("")}</div></div>`;
   }).join("");
 }
@@ -315,11 +325,11 @@ function actionsHtml(stage) {
   return h;
 }
 
-function filesHtml(list) {
+function filesHtml(list, openOne = true) {
   return `<div class="files">${list.map((f, i) => {
     const key = `${state.build.id}\n${f.path}`;
     const got = state.files.get(key);
-    const open = list.length === 1 && i === 0;
+    const open = openOne && list.length === 1 && i === 0;
     return `<details data-file="${esc(f.path)}"${open ? " open" : ""}><summary><b>${esc(f.path)}</b><span>${esc(size(f.size))}</span></summary><pre>${got === undefined ? "Loading…" : esc(got)}</pre></details>`;
   }).join("")}</div>`;
 }
@@ -345,18 +355,24 @@ function drawStage() {
   const el = $("stage");
   if (state.sel === "try") return drawTry();
   const s = stageOf(state.sel) ?? { stage: state.sel, state: "not_offered" };
+  const st = stateOf(s);
   const d = def(state.sel);
   const phaseName = PHASES.find(([p]) => p === d.phase)?.[1] ?? "";
   let h = `<h2>Stage ${pad(d.number)}${phaseName ? ` · ${phaseName}` : ""}</h2>
-    <h3>${esc(d.name)} <span class="pill ${CLS[s.state] ?? ""}">${WORD[s.state] ?? ""}</span></h3>`;
-  if (s.state === "not_offered") {
+    <h3>${esc(d.name)} <span class="pill ${CLS[st]}">${WORD[st]}</span></h3>`;
+  if (st === "not_offered") {
     h += `<div class="sec">${d.hands_back ? prose(d.hands_back, "It hands back ") : ""}<p class="notyet">${esc(state.status?.source === "github" ? "A repository does not show this stage." : `${state.status?.demo ? "The demo" : state.status?.service ?? "This service"} does not run this stage yet.`)}</p></div>`;
     el.innerHTML = h;
     return;
   }
-  const future = s.state === "not_started";
-  const holder = holderWords(s.holder);
-  if (holder) h += `<p class="who">${future ? "Will be held by" : "Held by"} ${esc(holder)}</p>`;
+  if (st === "not_bound" || st === "not_applicable") {
+    const project = typeof state.build.project === "string" && state.build.project ? `/${encodeURIComponent(state.build.project)}` : "";
+    el.innerHTML = h + stageNoticeHtml(st, `#/roles${project}`);
+    return;
+  }
+  const future = st === "not_started";
+  const holder = holderHtml(s.holder);
+  if (holder) h += `<p class="who">${future ? "Will be held by" : "Held by"} ${holder}</p>`;
   else if (d.reference_holder) h += `<p class="who">Its reference agent is ${esc(d.reference_holder)}</p>`;
   else if (d.role) h += `<p class="who">Its role: ${esc(d.role)}</p>`;
   const given = s.given ? `<p>${esc(s.given)}</p>` : prose(d.given);
@@ -386,6 +402,8 @@ function drawStage() {
   } else if (future && d.hands_back) {
     h += `<div class="sec"><h4>Will hand back</h4>${prose(d.hands_back)}</div>`;
   }
+  // Evidence an outside holder handed in, as the service read it.
+  h += evidenceHtml(s.evidence, { when, fileHtml: (f) => filesHtml([f], false) });
 
   if (!s.where) h += actionsHtml(s.stage);
   if (s.stage === "acceptance" && (prStage() || installed())) h += `<div class="acts"><button class="btn${actionsFor(s.stage).length ? "" : " p"}" type="button" data-tryit>Try it</button></div>`;
@@ -486,6 +504,7 @@ function drawNew() {
       <label for="n-refuses">What should it refuse to do? <span>Optional</span><textarea id="n-refuses">${esc(kept.refuses ?? "")}</textarea></label>
       <label for="n-more">Anything else it should know <span>Optional</span><textarea id="n-more">${esc(kept.more ?? "")}</textarea></label>
       <label for="n-name">Its name <span>Optional. Lowercase words joined by hyphens, such as palindrome-judge.</span><input type="text" id="n-name" value="${esc(kept.name ?? "")}" autocomplete="off" spellcheck="false"></label>
+      <label for="n-project">Project <span>Optional. The roles chosen for this project hold its stages.</span><input type="text" id="n-project" value="${esc(kept.project ?? "")}" autocomplete="off" spellcheck="false"></label>
       <div class="acts tight"><button class="btn p" type="submit"${state.pending === "new" ? " disabled" : ""}>${state.pending === "new" ? "Starting…" : "Start the build"}</button><a class="btn" href="#/">Cancel</a></div>
     </form>`;
   $("stage").innerHTML = "";
@@ -591,6 +610,59 @@ async function runLocalCheck(folder) {
   if (state.build?.id === id && state.sel !== "try") drawStage();
 }
 
+// ---------- the Roles page ----------
+
+const rolesPath = (role = "") => `/roles${role ? `/${encodeURIComponent(role)}` : ""}${state.project ? `?project=${encodeURIComponent(state.project)}` : ""}`;
+const rolesHash = (project) => (project ? `#/roles/${encodeURIComponent(project)}` : "#/roles");
+
+async function loadRoles() {
+  try {
+    state.roles = await api(rolesPath());
+  } catch (e) {
+    if (e.needKey) return problem(e);
+    state.roles = null;
+    state.error = e.message;
+  }
+  drawRoles();
+}
+
+function drawRoles() {
+  drawTop();
+  layout("solo");
+  $("main").innerHTML = rolesPageHtml(state.roles, {
+    project: state.project, error: state.error, editing: state.editingRole, draft: state.roleDraft,
+    errors: state.roleErrors, pending: state.rolePending, readOnly: Boolean(state.status?.read_only),
+    formats: state.evidenceFormats, stageName: (id) => def(id).name, day,
+  });
+  $("stage").innerHTML = "";
+}
+
+function formValues(f) {
+  return {
+    kind: f.querySelector("[name=kind]:checked")?.value ?? "",
+    name: f.querySelector("[name=name]")?.value ?? "",
+    handle: f.querySelector("[name=handle]")?.value ?? "",
+    formats: [...f.querySelectorAll("[name=formats]:checked")].map((x) => x.value),
+    where: f.querySelector("[name=where]")?.value ?? "",
+  };
+}
+
+// PUT or DELETE one role. The service's refusal is shown on that role, in its own words.
+async function changeRole(role, method, body) {
+  state.rolePending = role; state.roleErrors.delete(role); drawRoles();
+  try {
+    state.roles = await api(rolesPath(role), { method, body });
+    state.editingRole = null; state.roleDraft = null; state.error = "";
+  } catch (e) {
+    state.rolePending = null;
+    if (e.needKey) return problem(e);
+    state.roleErrors.set(role, e.message);
+    return drawRoles();
+  }
+  state.rolePending = null;
+  drawRoles();
+}
+
 // ---------- events ----------
 
 document.addEventListener("click", async (e) => {
@@ -607,6 +679,18 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (t.closest("#new")) return go("#/new");
+  const bind = t.closest("[data-bind]");
+  if (bind) {
+    const r = state.roles?.roles?.find((x) => x.role === bind.dataset.bind);
+    if (!r) return;
+    state.editingRole = r.role; state.roleDraft = draftFor(r); state.roleErrors.delete(r.role);
+    drawRoles();
+    $("main").querySelector(`form.bind input[name=name]`)?.focus();
+    return;
+  }
+  const unbind = t.closest("[data-unbind]");
+  if (unbind) return changeRole(unbind.dataset.unbind, "DELETE");
+  if (t.closest("[data-cancel-bind]")) { state.roleErrors.delete(state.editingRole); state.editingRole = null; state.roleDraft = null; return drawRoles(); }
   if (t.closest("#logall")) { state.logAll = true; return draw(); }
   if (t.closest("#archt")) { state.showArchived = !state.showArchived; return drawRail(); }
   if (t.closest("#forget")) {
@@ -635,6 +719,11 @@ document.addEventListener("toggle", (e) => {
 
 document.addEventListener("change", (e) => {
   if (e.target.id === "twhere" && state.build) store.set(`against:${state.build.id}`, e.target.value);
+  // The handle is asked for only for your own agent or a contracted supplier.
+  if (e.target.name === "kind" && e.target.closest("form.bind")) {
+    const label = e.target.closest("form.bind").querySelector("[data-handle]");
+    if (label) label.hidden = !needsHandle(e.target.value);
+  }
 });
 
 document.addEventListener("submit", async (e) => {
@@ -650,13 +739,13 @@ document.addEventListener("submit", async (e) => {
   }
   if (f.id === "new-form") {
     const body = { does: $("n-does").value.trim() };
-    for (const [k, id] of [["refuses", "n-refuses"], ["more", "n-more"], ["name", "n-name"]]) {
+    for (const [k, id] of [["refuses", "n-refuses"], ["more", "n-more"], ["name", "n-name"], ["project", "n-project"]]) {
       const v = $(id).value.trim();
       if (v) body[k] = v;
     }
     state.pending = "new";
     // What the person wrote stays in the form if the service refuses the start.
-    state.newDraft = { does: $("n-does").value, refuses: $("n-refuses").value, more: $("n-more").value, name: $("n-name").value };
+    state.newDraft = { does: $("n-does").value, refuses: $("n-refuses").value, more: $("n-more").value, name: $("n-name").value, project: $("n-project").value };
     try {
       const r = await api("/builds", { method: "POST", body });
       state.pending = null;
@@ -665,6 +754,12 @@ document.addEventListener("submit", async (e) => {
       state.build = r.build;
       return go(hashFor(r.build.id));
     } catch (err) { state.pending = null; state.error = err.message; if (err.needKey) return problem(err); return drawNew(); }
+  }
+  if (f.id === "project-form") return go(rolesHash($("r-project").value.trim()));
+  if (f.matches("form.bind")) {
+    const values = formValues(f);
+    state.roleDraft = values;
+    return changeRole(f.dataset.role, "PUT", holderFrom(values));
   }
   if (f.id === "try-form") return sendTry($("tsay").value, $("twhere").value);
   if (f.id === "wrong-form") {
@@ -688,6 +783,7 @@ async function start() {
     state.stages = (Array.isArray(doc) ? doc : doc.stages ?? []).slice().sort((a, b) => a.number - b.number);
     if (Array.isArray(doc.phases) && doc.phases.length) PHASES.splice(0, PHASES.length, ...doc.phases.map((p) => [p.id, p.name]));
     state.byId = new Map(state.stages.map((s) => [s.id, s]));
+    state.evidenceFormats = Array.isArray(doc.evidence_formats) ? doc.evidence_formats : [];
   } catch (e) {
     $("main").innerHTML = `<div class="err" role="alert">${esc(e.message)}</div>`;
     return;
