@@ -1,7 +1,7 @@
 {
   "source": "https://raw.githubusercontent.com/CommonAgent/adlc/main/standards/stages.json",
-  "version": "1.0.0",
-  "about": "The 24 stages of the reference Agent Development Lifecycle, in order, in seven phases, as written on https://agenticdevelopment.ai/stages.html (the assets each stage makes are from https://agenticdevelopment.ai/assets.html). The site, the auditor and the console read this file; the site's tools/check-stages.mjs fails when the page and this file differ. Each stage: its role, the reference agent that holds it (null where none does; reference_holders lists every reference agent on its card), what it is given, what it hands back, when it is done, the asset it makes (assets lists every one), and person_gate, true where a person approves or decides at that stage. A list in a field is written as lines starting with \"- \". aliases are older names for a stage that still point at it. A change here is a new version.",
+  "version": "1.1.0",
+  "about": "The 24 stages of the reference Agent Development Lifecycle, in order, in seven phases, as written on https://agenticdevelopment.ai/stages.html (the assets each stage makes are from https://agenticdevelopment.ai/assets.html). The site, the auditor and the console read this file; the site's tools/check-stages.mjs fails when the page and this file differ. Each stage: its role, the reference agent that holds it (null where none does; reference_holders lists every reference agent on its card), what it is given, what it hands back, when it is done, the asset it makes (assets lists every one), and person_gate, true where a person approves or decides at that stage. A list in a field is written as lines starting with \"- \". aliases are older names for a stage that still point at it. A change here is a new version. Added in 1.1.0: roles lists every lifecycle role (its id, name, contract, offering, the stages it holds and its reference agent, null where none runs), each stage names the roles that hold it in role_ids, and evidence_formats lists the open formats an outside holder's evidence may arrive in.",
   "phases": [
     {
       "id": "define",
@@ -53,7 +53,11 @@
       "assets": [
         "Statement of the job"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "spec-writer",
+        "solution-planner"
+      ]
     },
     {
       "id": "architecture",
@@ -92,6 +96,11 @@
           "given": "the statement, and the architecture record",
           "hands_back": "the steps, what each is given and hands back, and whether each is a program or a judgment"
         }
+      ],
+      "role_ids": [
+        "spec-writer",
+        "solution-planner",
+        "solution-architect"
       ]
     },
     {
@@ -111,7 +120,10 @@
       "assets": [
         "Impact report"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "impact-analyst"
+      ]
     },
     {
       "id": "source",
@@ -132,7 +144,10 @@
       "assets": [
         "Catalog answers"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "catalog"
+      ]
     },
     {
       "id": "test",
@@ -153,7 +168,10 @@
       "assets": [
         "Test suite"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "test-writer"
+      ]
     },
     {
       "id": "code",
@@ -174,7 +192,10 @@
       "assets": [
         "Code"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "code-writer"
+      ]
     },
     {
       "id": "review",
@@ -193,7 +214,10 @@
       "assets": [
         "Review findings"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "code-critic"
+      ]
     },
     {
       "id": "security",
@@ -212,7 +236,10 @@
       "assets": [
         "Security statement"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "security-reviewer"
+      ]
     },
     {
       "id": "package",
@@ -235,6 +262,9 @@
       ],
       "aliases": [
         "build"
+      ],
+      "role_ids": [
+        "package-maker"
       ]
     },
     {
@@ -256,7 +286,10 @@
       "assets": [
         "Signed build record"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "package-maker"
+      ]
     },
     {
       "id": "deploy",
@@ -280,6 +313,9 @@
       ],
       "aliases": [
         "configure"
+      ],
+      "role_ids": [
+        "deployment-manager"
       ]
     },
     {
@@ -301,7 +337,10 @@
       "assets": [
         "Conformance verdict"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "conformance-checker"
+      ]
     },
     {
       "id": "acceptance",
@@ -320,7 +359,10 @@
       "assets": [
         "Acceptance"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "requester"
+      ]
     },
     {
       "id": "docs",
@@ -341,7 +383,11 @@
       "assets": [
         "AgentDoc"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "documenter",
+        "doc-writer"
+      ]
     },
     {
       "id": "publish",
@@ -362,7 +408,10 @@
       "assets": [
         "Published address"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "publisher"
+      ]
     },
     {
       "id": "retract",
@@ -381,7 +430,10 @@
       "assets": [
         "Retraction record"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "publisher"
+      ]
     },
     {
       "id": "monitor",
@@ -398,7 +450,10 @@
       "why": "A process being up says almost nothing; liveness is measured by an answer.",
       "reference_holders": [],
       "assets": [],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "watcher"
+      ]
     },
     {
       "id": "eval",
@@ -417,7 +472,10 @@
       "assets": [
         "Graded judgments"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "agent-critic"
+      ]
     },
     {
       "id": "incident",
@@ -438,7 +496,10 @@
       "assets": [
         "Incident records"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "incident-recorder"
+      ]
     },
     {
       "id": "cost",
@@ -457,7 +518,10 @@
       "assets": [
         "Receipts, usage and cost"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "watcher"
+      ]
     },
     {
       "id": "update",
@@ -478,7 +542,10 @@
       "assets": [
         "Change records"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "deployment-manager"
+      ]
     },
     {
       "id": "reconfigure",
@@ -499,7 +566,10 @@
       "assets": [
         "Change records"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "deployment-manager"
+      ]
     },
     {
       "id": "rollback",
@@ -518,7 +588,10 @@
       "assets": [
         "Change records"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "deployment-manager"
+      ]
     },
     {
       "id": "decommission",
@@ -539,7 +612,248 @@
       "assets": [
         "Decommission record"
       ],
-      "aliases": []
+      "aliases": [],
+      "role_ids": [
+        "deployment-manager"
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "id": "spec-writer",
+      "name": "Spec writer",
+      "contract": "https://agentroles.ai/spec-writer.html",
+      "offering": "role-spec-writer",
+      "stages": [
+        "requirements",
+        "architecture"
+      ],
+      "reference_agent": "spec-writer"
+    },
+    {
+      "id": "solution-planner",
+      "name": "Solution planner",
+      "contract": "https://agentroles.ai/solution-planner.html",
+      "offering": "role-solution-planner",
+      "stages": [
+        "requirements",
+        "architecture"
+      ],
+      "reference_agent": "solution-planner"
+    },
+    {
+      "id": "solution-architect",
+      "name": "Solution architect",
+      "contract": "https://agentroles.ai/solution-architect.html",
+      "offering": "role-solution-architect",
+      "stages": [
+        "architecture"
+      ],
+      "reference_agent": null
+    },
+    {
+      "id": "impact-analyst",
+      "name": "Impact analyst",
+      "contract": "https://agentroles.ai/impact-analyst.html",
+      "offering": "role-impact-analyst",
+      "stages": [
+        "impact"
+      ],
+      "reference_agent": null
+    },
+    {
+      "id": "catalog",
+      "name": "Catalog",
+      "contract": "https://agentroles.ai/catalog.html",
+      "offering": "role-catalog",
+      "stages": [
+        "source"
+      ],
+      "reference_agent": "catalog"
+    },
+    {
+      "id": "test-writer",
+      "name": "Test writer",
+      "contract": "https://agentroles.ai/test-writer.html",
+      "offering": "role-test-writer",
+      "stages": [
+        "test"
+      ],
+      "reference_agent": "test-writer"
+    },
+    {
+      "id": "code-writer",
+      "name": "Code writer",
+      "contract": "https://agentroles.ai/code-writer.html",
+      "offering": "role-code-writer",
+      "stages": [
+        "code"
+      ],
+      "reference_agent": "code-writer"
+    },
+    {
+      "id": "code-critic",
+      "name": "Code critic",
+      "contract": "https://agentroles.ai/code-critic.html",
+      "offering": "role-code-critic",
+      "stages": [
+        "review"
+      ],
+      "reference_agent": null
+    },
+    {
+      "id": "security-reviewer",
+      "name": "Security reviewer",
+      "contract": "https://agentroles.ai/security-reviewer.html",
+      "offering": "role-security-reviewer",
+      "stages": [
+        "security"
+      ],
+      "reference_agent": null
+    },
+    {
+      "id": "package-maker",
+      "name": "Package maker",
+      "contract": "https://agentroles.ai/package-maker.html",
+      "offering": "role-package-maker",
+      "stages": [
+        "package",
+        "release"
+      ],
+      "reference_agent": "package-maker"
+    },
+    {
+      "id": "deployment-manager",
+      "name": "Deployment manager",
+      "contract": "https://agentroles.ai/deployment-manager.html",
+      "offering": "role-deployment-manager",
+      "stages": [
+        "deploy",
+        "update",
+        "reconfigure",
+        "rollback",
+        "decommission"
+      ],
+      "reference_agent": "deployment-manager"
+    },
+    {
+      "id": "conformance-checker",
+      "name": "Conformance checker",
+      "contract": "https://agentroles.ai/conformance-checker.html",
+      "offering": "role-conformance-checker",
+      "stages": [
+        "conformance"
+      ],
+      "reference_agent": "conformance-checker"
+    },
+    {
+      "id": "requester",
+      "name": "Requester",
+      "contract": "https://agentroles.ai/requester.html",
+      "offering": "role-requester",
+      "stages": [
+        "acceptance"
+      ],
+      "reference_agent": null
+    },
+    {
+      "id": "documenter",
+      "name": "Documenter",
+      "contract": "https://agentroles.ai/documenter.html",
+      "offering": "role-documenter",
+      "stages": [
+        "docs"
+      ],
+      "reference_agent": "documenter"
+    },
+    {
+      "id": "doc-writer",
+      "name": "Doc writer",
+      "contract": "https://agentroles.ai/doc-writer.html",
+      "offering": "role-doc-writer",
+      "stages": [
+        "docs"
+      ],
+      "reference_agent": null
+    },
+    {
+      "id": "publisher",
+      "name": "Publisher",
+      "contract": "https://agentroles.ai/publisher.html",
+      "offering": "role-publisher",
+      "stages": [
+        "publish",
+        "retract"
+      ],
+      "reference_agent": "publisher"
+    },
+    {
+      "id": "watcher",
+      "name": "Watcher",
+      "contract": "https://agentroles.ai/watcher.html",
+      "offering": "role-watcher",
+      "stages": [
+        "monitor",
+        "cost"
+      ],
+      "reference_agent": null
+    },
+    {
+      "id": "agent-critic",
+      "name": "Agent critic",
+      "contract": "https://agentroles.ai/agent-critic.html",
+      "offering": "role-agent-critic",
+      "stages": [
+        "eval"
+      ],
+      "reference_agent": null
+    },
+    {
+      "id": "incident-recorder",
+      "name": "Incident recorder",
+      "contract": "https://agentroles.ai/incident-recorder.html",
+      "offering": "role-incident-recorder",
+      "stages": [
+        "incident"
+      ],
+      "reference_agent": "incident-recorder"
+    }
+  ],
+  "evidence_formats": [
+    {
+      "id": "sarif",
+      "format": "SARIF 2.1.0",
+      "read_for": "security / review findings: count by level, rule ids, file+line"
+    },
+    {
+      "id": "cyclonedx",
+      "format": "CycloneDX 1.4+ JSON",
+      "read_for": "bill of materials: components with versions"
+    },
+    {
+      "id": "spdx",
+      "format": "SPDX 2.3 JSON",
+      "read_for": "bill of materials: packages with versions"
+    },
+    {
+      "id": "slsa",
+      "format": "SLSA provenance (in-toto statement, predicateType slsa.dev/provenance)",
+      "read_for": "build provenance: subject digests, builder id"
+    },
+    {
+      "id": "in-toto",
+      "format": "any in-toto Statement v1",
+      "read_for": "subject digests, predicateType"
+    },
+    {
+      "id": "otel-genai",
+      "format": "OpenTelemetry trace JSON (OTLP/JSON) with gen_ai.* attributes",
+      "read_for": "spans, model calls, tokens, errors"
+    },
+    {
+      "id": "pact",
+      "format": "Pact verification result JSON",
+      "read_for": "contract checks: passed/failed interactions"
     }
   ]
 }
