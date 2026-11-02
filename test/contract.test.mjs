@@ -6,8 +6,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { createDemoService } from "../lib/demo.mjs";
-import { STAGE_IDS, palindromeJudge } from "../lib/fixture.mjs";
-import { checkBuildList, checkBuild, checkTry, checkTries, checkAction } from "../lib/contract.mjs";
+import { STAGE_IDS, palindromeJudge, expenseCheck } from "../lib/fixture.mjs";
+import { checkBuildList, checkBuild, checkTry, checkTries, checkAction, checkRoles } from "../lib/contract.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const DOC = JSON.parse(await readFile(join(HERE, "..", "standards", "stages.json"), "utf8"));
@@ -38,7 +38,7 @@ test("the build list has the contract's shape", async () => {
   const r = await get(d, "/v1/lifecycle/builds");
   assert.equal(r.status, 200);
   assert.deepEqual(checkBuildList(r.body), []);
-  assert.equal(r.body.builds.length, 3);
+  assert.equal(r.body.builds.length, 4);
 });
 
 test("every demo build has the contract's shape", async () => {
@@ -170,4 +170,121 @@ test("a need may say it is optional, as true or false and nothing else", () => {
   assert.deepEqual(checkAction(a(undefined), "a"), []);
   assert.deepEqual(checkAction(a(true), "a"), []);
   assert.equal(checkAction(a("yes"), "a").length, 1);
+});
+
+// ---------- 0.2: who holds each role, and evidence ----------
+
+const put = (d, path, body, q = "") => d.handle("PUT", path, new URLSearchParams(q), body);
+const del = (d, path, q = "") => d.handle("DELETE", path, new URLSearchParams(q), {});
+const ROLE_IDS = DOC.roles.map((r) => r.id);
+const roleOf = (body, id) => body.roles.find((r) => r.role === id);
+
+test("stages.json 1.1.0 lists the roles, each stage's role ids, and the evidence formats", () => {
+  assert.equal(DOC.version, "1.1.0");
+  assert.equal(DOC.roles.length, 19);
+  for (const r of DOC.roles) {
+    assert.equal(r.contract, `https://agentroles.ai/${r.id}.html`);
+    assert.equal(r.offering, `role-${r.id}`);
+    for (const s of r.stages) assert.ok(DOC.stages.find((x) => x.id === s).role_ids.includes(r.id), `${r.id} at ${s}`);
+  }
+  for (const s of DOC.stages) assert.ok(s.role_ids.length > 0 && s.role_ids.every((id) => ROLE_IDS.includes(id)), s.id);
+  assert.deepEqual(DOC.evidence_formats.map((f) => f.id), ["sarif", "cyclonedx", "spdx", "slsa", "in-toto", "otel-genai", "pact"]);
+  for (const f of DOC.evidence_formats) for (const k of ["id", "name", "read_for"]) assert.equal(typeof f[k], "string");
+});
+
+test("the roles answer has the contract's shape, for the organization and for a project", async () => {
+  const d = createDemoService();
+  const org = await get(d, "/v1/lifecycle/roles");
+  assert.equal(org.status, 200);
+  assert.deepEqual(checkRoles(org.body, ROLE_IDS), []);
+  assert.deepEqual(org.body.roles.map((r) => r.role), ROLE_IDS);
+  assert.equal(roleOf(org.body, "security-reviewer").from, "org");
+  assert.equal(roleOf(org.body, "code-writer").from, "default");
+  assert.equal(roleOf(org.body, "agent-critic").from, "unbound");
+  assert.equal(roleOf(org.body, "agent-critic").binding, null);
+  assert.deepEqual(roleOf(org.body, "requester").binding.holder, { kind: "person", name: "the person who asked" });
+  const fin = await get(d, "/v1/lifecycle/roles", "project=finance");
+  assert.deepEqual(checkRoles(fin.body, ROLE_IDS), []);
+  assert.equal(roleOf(fin.body, "code-writer").from, "project");
+  assert.equal(roleOf(fin.body, "code-writer").binding.holder.handle, "coder.finance@example.com");
+});
+
+test("binding a role, and going back to the default, keep the contract's shape", async () => {
+  const d = createDemoService();
+  const holder = { kind: "contracted", name: "Northwind Review", handle: "review.northwind@example.com", evidence: { formats: ["sarif"], where: "https://northwind.example.com" } };
+  const r = await put(d, "/v1/lifecycle/roles/code-critic", { holder });
+  assert.equal(r.status, 200);
+  assert.deepEqual(checkRoles(r.body, ROLE_IDS), []);
+  assert.equal(roleOf(r.body, "code-critic").from, "org");
+  assert.deepEqual(roleOf(r.body, "code-critic").binding.holder, holder);
+  // A project binding overrides the organization's, and going back leaves the organization's.
+  const p = await put(d, "/v1/lifecycle/roles/code-critic", { holder: { kind: "person", name: "Our review team" } }, "project=web");
+  assert.equal(roleOf(p.body, "code-critic").from, "project");
+  const back = await del(d, "/v1/lifecycle/roles/code-critic", "project=web");
+  assert.equal(roleOf(back.body, "code-critic").from, "org");
+  const def = await del(d, "/v1/lifecycle/roles/code-critic");
+  assert.equal(roleOf(def.body, "code-critic").from, "default");
+  assert.deepEqual(checkRoles(def.body, ROLE_IDS), []);
+});
+
+test("a binding the contract refuses is a 400 with words", async () => {
+  const d = createDemoService();
+  const cases = [
+    ["nobody-role", { kind: "person", name: "x" }],
+    ["code-critic", { kind: "your_agent", name: "Ours" }],
+    ["code-critic", { kind: "contracted", name: "Them" }],
+    ["requester", { kind: "outside_tool", name: "A form" }],
+    ["code-critic", { kind: "outside_tool", name: "Scanner", evidence: { formats: ["pdf"] } }],
+    ["code-critic", { kind: "robot", name: "x" }],
+  ];
+  for (const [role, holder] of cases) {
+    const r = await put(d, `/v1/lifecycle/roles/${role}`, { holder });
+    assert.equal(r.status, 400, `${role} ${holder.kind}`);
+    assert.equal(typeof r.body.error, "string");
+  }
+});
+
+test("a process build shows outside holders, evidence, and the stages nobody holds or that do not apply", async () => {
+  const d = createDemoService();
+  const r = await get(d, "/v1/lifecycle/builds/b_expense_check");
+  assert.deepEqual(checkBuild(r.body, IDS), []);
+  const b = r.body.build;
+  const at = (id) => b.stages.find((s) => s.stage === id);
+  assert.equal(b.project, "finance");
+  assert.equal(at("review").state, "not_applicable");
+  assert.equal(at("impact").state, "not_bound");
+  assert.equal(at("security").holder.kind, "outside_tool");
+  assert.equal(at("security").evidence[0].format, "sarif");
+  assert.equal(at("package").holder.kind, "contracted");
+  assert.equal(at("release").state, "not_started");
+  const file = await get(d, "/v1/lifecycle/builds/b_expense_check/files", "path=evidence/scan.sarif");
+  assert.equal(file.status, 200);
+  assert.match(file.body, /js\/path-injection/);
+});
+
+test("a new build may name its project", async () => {
+  const d = createDemoService();
+  const r = await post(d, "/v1/lifecycle/builds", { does: "Count the words.", project: "finance" });
+  assert.equal(r.body.build.project, "finance");
+  assert.deepEqual(checkBuild(r.body, IDS), []);
+});
+
+test("the checks notice a roles answer or evidence that breaks the contract", async () => {
+  const d = createDemoService();
+  const body = structuredClone((await get(d, "/v1/lifecycle/roles")).body);
+  roleOf(body, "agent-critic").binding = { role: "agent-critic", holder: { kind: "your_agent", name: "Ours" } };
+  roleOf(body, "code-critic").reference_agent = "code-critic";
+  roleOf(body, "requester").binding.holder.kind = "outside_tool";
+  roleOf(body, "watcher").from = "somewhere";
+  const problems = checkRoles(body, ROLE_IDS);
+  assert.ok(problems.some((p) => p.includes("handle is given")));
+  assert.ok(problems.some((p) => p.includes("reference_agent is null or a holder")));
+  assert.ok(problems.some((p) => p.includes("always a person")));
+  assert.ok(problems.some((p) => p.includes("from is one of")));
+  const b = expenseCheck();
+  b.stages.find((s) => s.stage === "security").evidence[0].format = "pdf";
+  b.stages.find((s) => s.stage === "code").holder.kind = "robot";
+  const bp = checkBuild({ build: b }, IDS);
+  assert.ok(bp.some((p) => p.includes("known evidence format")));
+  assert.ok(bp.some((p) => p.includes("holder.kind is one of")));
 });
