@@ -38,7 +38,7 @@ test("the build list has the contract's shape", async () => {
   const r = await get(d, "/v1/lifecycle/builds");
   assert.equal(r.status, 200);
   assert.deepEqual(checkBuildList(r.body), []);
-  assert.equal(r.body.builds.length, 4);
+  assert.equal(r.body.builds.length, 13);
 });
 
 test("every demo build has the contract's shape", async () => {

@@ -124,6 +124,11 @@ build adds lifecycle?: { project, at }   // whose choice of stages it started un
 - The service's answers are shown as text, never run as a page.
 - Each build in the list shows `at.summary` when the service gives it, and
   the stage and its state when it does not. The same words head the build.
+- The Board places each build from the list alone: in the column of the
+  phase stages.json gives `at.stage`, or in Done when `at.state` is `done` or
+  `stopped` or the build is archived. A service reports a build that is
+  between stages at the next stage, not the one it finished, so `done` means
+  the build ended. Waiting on me is `at.state` `waiting_on_you`.
 - The list is read with `?archived=1`. Archived builds are hidden, with a
   "Show archived (N)" toggle at the foot of the list. `archive`,
   `unarchive` and `resume_agent` are actions like any other: one button each.

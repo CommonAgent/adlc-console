@@ -12,6 +12,8 @@ export function safeUrl(u) {
 // not_used (lifecycle API 0.3): the build's lifecycle leaves the stage out.
 export const STATES = ["done", "waiting_on_you", "not_started", "not_offered", "working", "refused", "stopped", "not_bound", "not_applicable", "not_used"];
 export const stateOf = (s) => (STATES.includes(s?.state) ? s.state : "not_offered");
+// Each state in words, as the stage page and the Board say it.
+export const WORD = { done: "Done", waiting_on_you: "Waiting on you", not_started: "Not started", not_offered: "Not offered", working: "Working", refused: "Refused", stopped: "Stopped", not_bound: "Nobody holds it", not_applicable: "Doesn't apply", not_used: "Not used" };
 
 const WITH_HANDLE = new Set(["your_agent", "contracted"]);
 export const needsHandle = (kind) => WITH_HANDLE.has(kind);
