@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { createGitHubSource, parseTarget } from "../lib/github.mjs";
+import { createGitHubSource, createGitHubClient, GitHubProblem, parseTarget } from "../lib/github.mjs";
 import { createConsoleServer } from "../lib/server.mjs";
 import { createKeyStore } from "../lib/keys.mjs";
 import { checkBuildList, checkBuild, checkTries } from "../lib/contract.mjs";
@@ -248,4 +248,36 @@ test("merged pull requests are a stage's rounds, newest first, with their checks
   assert.deepEqual(rel.handed_back.words, ["1.2.0 (v1.2.0)"]);
   assert.equal(rel.rounds[0].words, "French greetings.");
   assert.equal(r.body.build.log[0].said, "1.2.0 was released.");
+});
+
+test("the writing client calls only its API address, with the token, and says every status", async () => {
+  const seen = [];
+  const fetchImpl = async (url, init = {}) => {
+    seen.push({ url, method: init.method, headers: init.headers, body: init.body });
+    if (url.endsWith("/repos/acme/thing/pulls")) return new Response(JSON.stringify({ number: 7, html_url: "https://github.com/acme/thing/pull/7" }), { status: 201 });
+    if (url.endsWith("/repos/acme/thing/statuses/abc")) return new Response(JSON.stringify({ message: "Resource not accessible by personal access token" }), { status: 403 });
+    return new Response("", { status: 404 });
+  };
+  const gh = createGitHubClient({ token: "ghp_testtoken123456", api: "https://ghe.example/api/v3/", fetchImpl });
+  assert.equal(gh.api, "https://ghe.example/api/v3");
+  const pr = await gh.call("POST", "/repos/acme/thing/pulls", { title: "t", head: "b", base: "main" });
+  assert.equal(pr.status, 201);
+  assert.equal(pr.body.number, 7);
+  const st = await gh.call("POST", "/repos/acme/thing/statuses/abc", { state: "success" });
+  assert.equal(st.status, 403, "a refusal is an answer, not a throw");
+  const none = await gh.call("GET", "/repos/acme/thing/git/ref/heads/nope");
+  assert.equal(none.status, 404);
+  assert.equal(none.body, null);
+  for (const s of seen) {
+    assert.match(s.url, /^https:\/\/ghe\.example\/api\/v3\/repos\//);
+    assert.equal(s.headers.authorization, "Bearer ghp_testtoken123456");
+  }
+  assert.deepEqual(JSON.parse(seen[0].body), { title: "t", head: "b", base: "main" });
+  assert.equal(seen[2].body, undefined);
+  await assert.rejects(gh.call("GET", "https://elsewhere.example/steal"), /path on the API/);
+  await assert.rejects(gh.call("GET", "//elsewhere.example/steal"), /path on the API/);
+  assert.equal(seen.length, 3, "a full address is never fetched");
+  const down = createGitHubClient({ fetchImpl: async () => { throw new Error("offline"); } });
+  await assert.rejects(down.call("GET", "/rate_limit"), (e) => e instanceof GitHubProblem && /did not answer/.test(e.message));
+  assert.throws(() => createGitHubClient({ api: "not an address" }), /not an API address/);
 });
