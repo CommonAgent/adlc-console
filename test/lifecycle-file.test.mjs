@@ -62,6 +62,18 @@ test("a change is saved in the file, and set back with DELETE", async () => {
   assert.deepEqual([one(del.body, "impact").used, one(del.body, "impact").from], [true, "default"]);
 });
 
+test("a holder's settings for its role are kept in the file as they are given", async () => {
+  const { f, read } = await store();
+  const settings = { every_minutes: 5, alert: { to: "ops" } };
+  const r = await f.handle("PUT", "/v1/lifecycle/roles/watcher", q(), { holder: { kind: "your_agent", name: "Our watcher", handle: "watcher.ops@example.com", settings } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.roles.find((x) => x.role === "watcher").binding.holder.settings, settings);
+  assert.deepEqual((await read()).organization.holders.watcher.settings, settings);
+  assert.deepEqual(checkRoles(r.body, STAGES.roles.map((x) => x.id)), []);
+  assert.equal((await f.handle("PUT", "/v1/lifecycle/roles/watcher", q(), { holder: { kind: "person", name: "Ops", settings: [5] } })).status, 400);
+  assert.equal((await f.handle("GET", "/v1/lifecycle/roles", q(), {})).status, 200);
+});
+
 test("a project's choice overrides the organization's, for that project only", async () => {
   const { f, read } = await store();
   await f.handle("PUT", "/v1/lifecycle/stages/eval", q(), { used: false });
