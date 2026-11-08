@@ -56,3 +56,13 @@ test("the config folder follows each system's custom", () => {
   assert.match(configDir({ APPDATA: "C:\\Users\\a\\AppData\\Roaming" }, "win32"), /adlc-console$/);
   assert.match(configDir({ XDG_CONFIG_HOME: "/home/a/.cfg" }, "linux"), /\.cfg[\\/]adlc-console$/);
 });
+
+test("a key handed over in memory wins over every other source, and must be a key", async () => {
+  const dir = await tempDir("keys");
+  const file = join(dir, "key.txt");
+  await writeFile(file, "from-the-file-123\n");
+  const s = createKeyStore({ service: "https://a.example", env: { ADLC_KEY: "from-env-12345" }, keyFile: file, key: " handed-over-12345 ", dir });
+  assert.equal(await s.get(), "handed-over-12345");
+  assert.equal(await s.source(), "service");
+  assert.throws(() => createKeyStore({ service: "https://a.example", env: {}, key: "no", dir }), /does not look like a key/);
+});

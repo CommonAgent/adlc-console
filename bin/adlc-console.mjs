@@ -3,8 +3,8 @@
 
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
-import { spawn } from "node:child_process";
 import { createConsoleServer, serviceLabel } from "../lib/server.mjs";
+import { openBrowser } from "../lib/open.mjs";
 import { createKeyStore } from "../lib/keys.mjs";
 import { createDemoService } from "../lib/demo.mjs";
 import { createGitHubSource, parseTarget } from "../lib/github.mjs";
@@ -39,18 +39,6 @@ lifecycle, and lets you act at the gates that are yours.
 The key can also come from the ADLC_KEY environment variable, or be pasted
 into the page once; then it is kept in your config folder, readable only by you.
 `;
-
-function openBrowser(url) {
-  const [cmd, args] =
-    process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]]
-      : process.platform === "darwin" ? ["open", [url]]
-        : ["xdg-open", [url]];
-  try {
-    const child = spawn(cmd, args, { stdio: "ignore", detached: true, windowsHide: true });
-    child.on("error", () => {});
-    child.unref();
-  } catch { /* opening the browser is a convenience */ }
-}
 
 async function main() {
   let opts;
