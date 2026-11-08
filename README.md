@@ -122,6 +122,13 @@ To read more, or to read private repositories, give it a GitHub token in
 the token stays in the console's local server, is never shown in the page,
 and is sent only to GitHub.
 
+`lib/github.mjs` also exports `createGitHubClient`, a small client for a
+lifecycle service that writes to GitHub (a branch, a pull request, a comment,
+a commit status), so a service built on the console does not need a second
+GitHub client. It caches nothing, answers every status as `{ status, body }`,
+and sends its token only to its API address (api.github.com, or a GitHub
+Enterprise Server's). The page itself never writes.
+
 ## Give it a key
 
 The service decides how you make a key for your own account. Give it to the
