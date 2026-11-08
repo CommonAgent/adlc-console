@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// npx adlc-console [--service <url> | --github <org or owner/repo> | --demo] [--key-file <path>] [--github-token-file <path>] [--port <n>] [--no-open]
+// npx adlc-console [--service <url> | --github <org or owner/repo> | --demo | --lifecycle <path>] [--key-file <path>] [--github-token-file <path>] [--port <n>] [--no-open]
 
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
@@ -8,6 +8,7 @@ import { createConsoleServer, serviceLabel } from "../lib/server.mjs";
 import { createKeyStore } from "../lib/keys.mjs";
 import { createDemoService } from "../lib/demo.mjs";
 import { createGitHubSource, parseTarget } from "../lib/github.mjs";
+import { createLifecycleFile } from "../lib/lifecycle-file.mjs";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const DEFAULT_SERVICE = "https://api.agentmesh.ai";
@@ -20,6 +21,7 @@ lifecycle, and lets you act at the gates that are yours.
   npx adlc-console                     start it and open the page
   npx adlc-console --demo              start it with made-up builds, no service needed
   npx adlc-console --github <org>      read the agent repositories in a GitHub org
+  npx adlc-console --lifecycle <path>  define your lifecycle in a file, no service needed
 
   --service <url>     the lifecycle service to read (default ${DEFAULT_SERVICE})
   --key-file <path>   read the service key from this file
@@ -27,6 +29,8 @@ lifecycle, and lets you act at the gates that are yours.
   --github-token-file <path>
                       read a GitHub token from this file (or set GITHUB_TOKEN); without
                       one, GitHub allows about 60 reads an hour
+  --lifecycle <path>  keep your lifecycle in this JSON file, made if it is missing:
+                      the stages you use, who holds each role, and stages of your own
   --stages <path>     read the stages from this file instead of the copy shipped here
   --port <n>          listen on this port (default: any free port)
   --no-open           print the address but do not open the browser
@@ -58,6 +62,7 @@ async function main() {
         github: { type: "string" },
         "github-token-file": { type: "string" },
         stages: { type: "string" },
+        lifecycle: { type: "string" },
         port: { type: "string" },
         demo: { type: "boolean", default: false },
         "no-open": { type: "boolean", default: false },
@@ -93,7 +98,12 @@ async function main() {
   }
 
   let source = null;
-  if (opts.demo) source = createDemoService();
+  if (opts.lifecycle) {
+    if (opts.demo || opts.github || opts.service) { console.error("Use --lifecycle on its own: it needs no service, GitHub or demo."); process.exit(2); }
+    source = createLifecycleFile({ path: opts.lifecycle, stagesDoc: stages });
+    const problem = await source.check();
+    if (problem) console.error(`${problem}\nThe page will say so until the file is fixed.`);
+  } else if (opts.demo) source = createDemoService();
   else if (opts.github) {
     try { parseTarget(opts.github); } catch (e) { console.error(e.message); process.exit(2); }
     let token = (process.env.GITHUB_TOKEN || "").trim();
@@ -115,7 +125,7 @@ async function main() {
   }
   const url = await app.listen(port);
   console.log(`adlc console is at ${url}`);
-  console.log(source ? `Reading builds from ${source.label}${source.kind === "github" ? (source.keyFrom ? ", with your token" : ", without a token") : ""}.` : `Reading builds from ${serviceLabel(service)}.`);
+  console.log(source?.kind === "file" ? `Keeping your lifecycle in ${source.file}.` : source ? `Reading builds from ${source.label}${source.kind === "github" ? (source.keyFrom ? ", with your token" : ", without a token") : ""}.` : `Reading builds from ${serviceLabel(service)}.`);
   console.log("Press Ctrl+C to stop it.");
   if (!opts["no-open"]) openBrowser(url);
 

@@ -7,7 +7,7 @@ const PHASES = [
   ["use", "Use"], ["run", "Run"], ["change", "Change"],
 ];
 import { esc, safeUrl, stateOf, holderWords, holderHtml, stageNoticeHtml, evidenceHtml, holderFrom, effectiveHolder } from "./roles.js";
-import { lifecyclePageHtml, lifecycleHash, lifecycleDraft, referenceHolder, stagesToReset, notUsedHtml, buildLifecycleHtml } from "./lifecycle.js";
+import { lifecyclePageHtml, lifecycleHash, lifecycleDraft, referenceHolder, stagesToReset, notUsedHtml, buildLifecycleHtml, addedDraft, addedBody } from "./lifecycle.js";
 
 const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop", not_bound: "unb", not_applicable: "na", not_used: "nu" };
 const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■", not_bound: "?", not_applicable: "", not_used: "" };
@@ -129,15 +129,17 @@ async function route() {
   const h = parseHash();
   state.error = "";
   if (!state.status?.signed_in) return drawKey();
-  if (h.view === "new") { state.view = "new"; drawRail(); return drawNew(); }
+  if (h.view === "new" && state.status?.source !== "file") { state.view = "new"; drawRail(); return drawNew(); }
   if (h.view === "lifecycle") {
     if (state.status?.read_only) return go("#/");
-    if (state.view !== "lifecycle" || state.project !== h.project) { state.lcEditing = null; state.lcDraft = null; state.lcErrors = new Map(); state.lcStages = null; state.lcRoles = null; }
+    if (state.view !== "lifecycle" || state.project !== h.project) { state.lcEditing = null; state.lcDraft = null; state.lcAdding = null; state.lcErrors = new Map(); state.lcStages = null; state.lcRoles = null; }
     state.view = "lifecycle"; state.project = h.project;
     if (h.project) remember(h.project);
     drawRail();
     return loadLifecycle();
   }
+  // A lifecycle file has no builds: its page is the Lifecycle page.
+  if (state.status?.source === "file") return go(lifecycleHash(""));
   state.view = "build";
   const id = h.id || pickBuild();
   if (!id) { drawRail(); return drawEmpty(); }
@@ -185,6 +187,7 @@ function drawTop() {
   $("svc").textContent = st?.service ?? "";
   let who = "";
   if (st?.demo) who = "Made-up builds, for a look around";
+  else if (st?.source === "file") who = "No service · saved to a file on this computer";
   else if (st?.key_from === "saved") who = `Using your saved key · <button class="linkbtn" id="forget" type="button">Forget it</button>`;
   else if (st?.key_from === "environment") who = "Using the key from your environment";
   else if (st?.key_from === "key file") who = "Using the key from your key file";
@@ -205,6 +208,12 @@ function railLine(b) {
 
 function drawRail() {
   const cur = state.view === "build" ? state.build?.id : null;
+  // A lifecycle file holds no builds: a plain line, not an error.
+  if (state.status?.source === "file") {
+    $("builds").innerHTML = `<p class="none">There are no builds here. The console is keeping your lifecycle in a file.</p>`;
+    $("new").hidden = true;
+    return drawLifecycles();
+  }
   // Archived builds are hidden, behind a toggle at the foot of the list.
   const archived = state.builds.filter((b) => b.archived).length;
   const shown = state.showArchived ? state.builds : state.builds.filter((b) => !b.archived);
@@ -230,7 +239,8 @@ function drawLifecycles() {
   const on = (p) => state.view === "lifecycle" && state.project === p;
   const link = (p, n, s) => `<a class="b${on(p) ? " on" : ""}" href="${esc(lifecycleHash(p))}"${on(p) ? ' aria-current="page"' : ""}><span class="n">${esc(n)}</span>${s ? `<span class="s">${esc(s)}</span>` : ""}</a>`;
   el.innerHTML = `<h2>Lifecycles</h2>${link("", "The organization", "every build")}${knownProjects().map((p) => link(p, p, "a project")).join("")}
-    <form class="projnew" id="proj-form"><label for="proj-name" class="sr">Another project</label><input type="text" id="proj-name" placeholder="Another project" autocomplete="off" spellcheck="false"></form>`;
+    <form class="projnew" id="proj-form"><label for="proj-name" class="sr">Another project</label><input type="text" id="proj-name" placeholder="Another project" autocomplete="off" spellcheck="false"></form>
+    ${state.status?.lifecycle_file ? `<p class="lcfile">Saved in <code>${esc(state.status.lifecycle_file)}</code></p>` : ""}`;
 }
 
 function knownProjects() {
@@ -670,7 +680,7 @@ async function loadLifecycle() {
   if (st.status === "rejected" && !state.noStages) errs.push(st.reason.message);
   state.lcRoles = ro.status === "fulfilled" ? ro.value : null;
   if (ro.status === "rejected") errs.push(ro.reason.message);
-  state.error = errs.join(" ");
+  state.error = [...new Set(errs)].join(" ");
   drawLifecycle();
 }
 
@@ -683,8 +693,32 @@ function drawLifecycle() {
     errors: state.lcErrors, pending: state.lcPending, readOnly: Boolean(state.status?.read_only),
     formats: state.evidenceFormats, phases: PHASES, number: (id) => def(id).number, roleWords: role,
     noStages: state.noStages, fallback: state.noStages ? state.stages : [],
+    local: state.status?.source === "file", canAdd: state.status?.source === "file", adding: state.lcAdding,
   });
   $("stage").innerHTML = "";
+}
+
+// ---------- stages of your own (a lifecycle file) ----------
+
+const addedPath = (id = "") => withProject(`/local/added-stages${id ? `/${encodeURIComponent(id)}` : ""}`);
+
+function addedValues(f) {
+  const v = (n) => f.querySelector(`[name=${n}]`)?.value ?? "";
+  return { ...state.lcAdding, name: v("name"), place: v("place"), role: v("role"), role_name: v("role_name"), kind: v("kind") || state.lcAdding?.kind || "person", holder_name: v("holder_name"), handle: v("handle"), given: v("given"), hands_back: v("hands_back"), done_when: v("done_when"), person_gate: Boolean(f.querySelector("[name=person_gate]")?.checked) };
+}
+
+// Add, change or remove a stage of your own. The answer carries both the stages and the roles.
+async function addedChange(method, id, body) {
+  state.lcPending = "added"; state.lcErrors.delete("added"); drawLifecycle();
+  try {
+    const answer = await call(addedPath(id), { method, body });
+    state.lcStages = answer.stages; state.lcRoles = answer.roles;
+    state.lcAdding = null; state.error = "";
+  } catch (e) {
+    if (state.lcAdding) state.lcErrors.set("added", e.message); else state.error = e.message;
+  }
+  state.lcPending = null;
+  drawLifecycle();
 }
 
 // One change: PUT or DELETE on a stage or a role. The answer that comes back is
@@ -764,6 +798,23 @@ document.addEventListener("click", async (e) => {
   const reset = t.closest("[data-reset-role]");
   if (reset) return lcChange(`role:${reset.dataset.resetRole}`, rolesPath(reset.dataset.resetRole), "DELETE");
   if (t.closest("[data-reset-stages]")) return lcResetStages();
+  if (t.closest("[data-add-stage]")) {
+    state.lcAdding = addedDraft(); state.lcErrors.delete("added"); drawLifecycle();
+    return $("ad-name")?.focus();
+  }
+  const editAdded = t.closest("[data-edit-added]");
+  if (editAdded) {
+    state.lcAdding = addedDraft(state.lcStages?.stages?.find((s) => s.stage === editAdded.dataset.editAdded)); state.lcErrors.delete("added"); drawLifecycle();
+    return $("ad-name")?.focus();
+  }
+  const removeAdded = t.closest("[data-remove-added]");
+  if (removeAdded) {
+    const s = state.lcStages?.stages?.find((x) => x.stage === removeAdded.dataset.removeAdded);
+    if (!s || !confirm(`Remove ${s.name} from the lifecycle?`)) return;
+    state.lcAdding = null;
+    return addedChange("DELETE", s.stage);
+  }
+  if (t.closest("[data-cancel-added]")) { state.lcAdding = null; state.lcErrors.delete("added"); return drawLifecycle(); }
   if (t.closest("[data-cancel-lc]")) { if (state.lcEditing) state.lcErrors.delete(`role:${state.lcEditing.role}`); state.lcEditing = null; state.lcDraft = null; return drawLifecycle(); }
   if (t.closest("#logall")) { state.logAll = true; return draw(); }
   if (t.closest("#archt")) { state.showArchived = !state.showArchived; return drawRail(); }
@@ -793,6 +844,12 @@ document.addEventListener("toggle", (e) => {
 
 document.addEventListener("change", (e) => {
   if (e.target.id === "twhere" && state.build) store.set(`against:${state.build.id}`, e.target.value);
+  // Adding a stage: a new role asks who holds it, and a holder on the mesh asks for its handle.
+  if (e.target.closest?.("#added-form") && (e.target.name === "role" || e.target.name === "kind")) {
+    state.lcAdding = addedValues(e.target.closest("#added-form"));
+    drawLifecycle();
+    return $(e.target.id)?.focus();
+  }
   // The Use switch: the service says whether the stage is now used.
   const use = e.target.closest?.("[data-use]");
   if (use) return lcChange(`use:${use.dataset.use}`, stagesPath(use.dataset.use), "PUT", { used: use.checked });
@@ -843,6 +900,11 @@ document.addEventListener("submit", async (e) => {
     if (!p) return go(lifecycleHash(""));
     remember(p);
     return go(lifecycleHash(p));
+  }
+  if (f.id === "added-form") {
+    state.lcAdding = addedValues(f);
+    const phaseOf = (id) => state.lcStages?.stages?.find((s) => s.stage === id)?.phase;
+    return addedChange(state.lcAdding.id ? "PUT" : "POST", state.lcAdding.id ?? "", addedBody(state.lcAdding, phaseOf));
   }
   if (f.matches("form.lcbind")) {
     const values = formValues(f);

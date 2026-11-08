@@ -28,6 +28,23 @@ npx adlc-console --demo
 The demo shows made-up builds, including one waiting on you at Code with a
 pull request, so every part of the page can be seen and clicked.
 
+## Define your ADLC with no service
+
+```
+npx adlc-console --lifecycle ./lifecycle.json
+```
+
+This opens the Lifecycle page with no service, no key and no account, and
+keeps everything you choose in one JSON file at that path, made if it is
+missing: which of the 24 stages you use, who holds each role, and stages of
+your own (Add a stage: say where it goes, its role, what it is given, what it
+hands back, when it is done, whether a person must say yes, and who holds it),
+for the organization and for each project. The file follows
+`standards/lifecycle-document.schema.json`, is checked against it each time it
+is read, and is written whole, so you can keep it wherever you like, edit it
+by hand, or put it in a repository; the console only reads and writes the
+file. There are no builds in this mode.
+
 ## Point it at a service
 
 By default it reads from `https://api.agentmesh.ai`. To read from another
@@ -111,6 +128,7 @@ holds `.adlc/check.mjs`. The service key is not passed to it.
 ```
 --service <url>     the lifecycle service to read (default https://api.agentmesh.ai)
 --key-file <path>   read the service key from this file
+--lifecycle <path>  keep your lifecycle in this JSON file, no service needed
 --stages <path>     read the stages from this file instead of the copy shipped here
 --port <n>          listen on this port (default: any free port)
 --github <name>     read agent repositories on GitHub: an org, a user, or owner/repo
