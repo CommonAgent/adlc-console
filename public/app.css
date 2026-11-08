@@ -267,3 +267,29 @@ main .projof a{color:var(--accent)}
 }
 @media (prefers-reduced-motion:reduce){.sw i,.sw i::after{transition:none}}
 
+
+/* The Board: one column per phase, one card per build, then Done. */
+.rail .boardl{margin-bottom:12px}
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(136px,1fr);gap:10px;overflow-x:auto;padding-bottom:6px;align-items:start;margin-top:12px}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 8px;min-width:0}
+.col.end{background:transparent;border-style:dashed}
+.col h2{display:flex;justify-content:space-between;gap:6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 2px 8px;font-weight:500}
+.col h2 span{font-family:var(--mono);letter-spacing:0}
+.cards{display:grid;gap:8px}
+.bc{display:grid;gap:2px;padding:8px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:inherit;text-decoration:none;font-size:12.5px;min-width:0;line-height:1.35}
+.bc:hover{border-color:var(--accent)}
+.bn{display:flex;flex-wrap:wrap;gap:0 6px;align-items:baseline;justify-content:space-between;min-width:0}
+.bn b{font-weight:600;overflow-wrap:anywhere;min-width:0}
+.bn i{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.bs{font-size:12px;color:var(--muted)}
+.bw{font-weight:600}
+.bm{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
+.bc.wait{border-color:var(--wait);background:var(--wait-bg)}
+.bc.wait .bw{color:var(--wait)}
+.bc.work{border-left:3px solid var(--accent)}
+.bc.work .bw{color:var(--accent)}
+.bc.bad{border-color:var(--bad);background:var(--bad-bg)}
+.bc.bad .bw{color:var(--bad)}
+.bc.unb .bw{color:var(--wait)}
+.bc.done .bw{color:var(--accent)}
+.bc.ar{opacity:.7}

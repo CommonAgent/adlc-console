@@ -6,12 +6,12 @@ const PHASES = [
   ["define", "Define"], ["make", "Make"], ["ship", "Ship"], ["prove", "Prove"],
   ["use", "Use"], ["run", "Run"], ["change", "Change"],
 ];
-import { esc, safeUrl, stateOf, holderWords, holderHtml, stageNoticeHtml, evidenceHtml, holderFrom, effectiveHolder } from "./roles.js";
+import { esc, safeUrl, stateOf, holderWords, holderHtml, stageNoticeHtml, evidenceHtml, holderFrom, effectiveHolder, WORD } from "./roles.js";
 import { lifecyclePageHtml, lifecycleHash, lifecycleDraft, referenceHolder, stagesToReset, notUsedHtml, buildLifecycleHtml, addedDraft, addedBody } from "./lifecycle.js";
+import { boardHtml } from "./board.js";
 
 const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop", not_bound: "unb", not_applicable: "na", not_used: "nu" };
 const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■", not_bound: "?", not_applicable: "", not_used: "" };
-const WORD = { done: "Done", waiting_on_you: "Waiting on you", not_started: "Not started", not_offered: "Not offered", working: "Working", refused: "Refused", stopped: "Stopped", not_bound: "Nobody holds it", not_applicable: "Doesn't apply", not_used: "Not used" };
 
 const $ = (id) => document.getElementById(id);
 const pad = (n) => String(n).padStart(2, "0");
@@ -40,7 +40,7 @@ const store = {
 const state = {
   status: null, stages: [], byId: new Map(), builds: [], build: null, tries: [],
   sel: null, view: "build", error: "", lastTry: null, checks: new Map(), files: new Map(), pending: null, asking: null, wrongFor: null,
-  logAll: false, showArchived: false,
+  logAll: false, showArchived: false, boardMine: store.get("board-mine") === "1",
   // The Lifecycle page: the stages answer, the roles answer, the holder form open, errors by row, the request in flight.
   lcStages: null, lcRoles: null, noStages: false, project: "", lcEditing: null, lcDraft: null, lcErrors: new Map(), lcPending: null,
 };
@@ -117,6 +117,7 @@ function parseHash() {
   if (/^lifecycle(\?|$)/.test(raw)) return { view: "lifecycle", project: (new URLSearchParams(raw.split("?")[1] ?? "").get("project") ?? "").trim() };
   const parts = raw.split("/").map(decodeURIComponent);
   if (parts[0] === "new") return { view: "new" };
+  if (parts[0] === "board") return { view: "board" };
   // The Roles page is now part of the Lifecycle page; an old link still lands there.
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null };
@@ -130,6 +131,13 @@ async function route() {
   state.error = "";
   if (!state.status?.signed_in) return drawKey();
   if (h.view === "new" && state.status?.source !== "file") { state.view = "new"; drawRail(); return drawNew(); }
+  if (h.view === "board" && state.status?.source !== "file") {
+    state.view = "board"; drawRail(); drawBoard();
+    // Drawn at once from the list in hand, then again from a fresh one.
+    try { await refreshBuilds(); } catch (e) { return problem(e); }
+    if (state.view === "board") { drawRail(); drawBoard(); }
+    return;
+  }
   if (h.view === "lifecycle") {
     if (state.status?.read_only) return go("#/");
     if (state.view !== "lifecycle" || state.project !== h.project) { state.lcEditing = null; state.lcDraft = null; state.lcAdding = null; state.lcErrors = new Map(); state.lcStages = null; state.lcRoles = null; }
@@ -208,6 +216,10 @@ function railLine(b) {
 
 function drawRail() {
   const cur = state.view === "build" ? state.build?.id : null;
+  const board = $("board");
+  board.hidden = state.status?.source === "file";
+  board.classList.toggle("on", state.view === "board");
+  if (state.view === "board") board.setAttribute("aria-current", "page"); else board.removeAttribute("aria-current");
   // A lifecycle file holds no builds: a plain line, not an error.
   if (state.status?.source === "file") {
     $("builds").innerHTML = `<p class="none">There are no builds here. The console is keeping your lifecycle in a file.</p>`;
@@ -561,6 +573,16 @@ function drawNew() {
   $("stage").innerHTML = "";
 }
 
+// The Board: every build by the phase it is at, read from the build list.
+function drawBoard() {
+  drawTop();
+  layout("solo");
+  $("main").innerHTML = boardHtml(state.builds, state.stages, PHASES, { mine: state.boardMine, error: state.error });
+  $("stage").innerHTML = "";
+  // While any build is working, it refreshes the way a build page does.
+  if (state.builds.some((b) => b.at?.state === "working" && !b.archived)) schedule();
+}
+
 function drawEmpty() {
   drawTop();
   layout("solo");
@@ -576,6 +598,11 @@ let timer = null;
 function schedule() {
   clearTimeout(timer);
   timer = setTimeout(async () => {
+    if (state.view === "board" && !document.hidden) {
+      try { await refreshBuilds(); } catch (e) { return problem(e); }
+      if (state.view === "board") drawBoard();
+      return;
+    }
     if (document.hidden || state.view !== "build" || !state.build || state.pending) return schedule();
     try {
       state.build = (await api(buildPath(state.build.id))).build;
@@ -816,6 +843,11 @@ document.addEventListener("click", async (e) => {
   }
   if (t.closest("[data-cancel-added]")) { state.lcAdding = null; state.lcErrors.delete("added"); return drawLifecycle(); }
   if (t.closest("[data-cancel-lc]")) { if (state.lcEditing) state.lcErrors.delete(`role:${state.lcEditing.role}`); state.lcEditing = null; state.lcDraft = null; return drawLifecycle(); }
+  if (t.closest("#mine")) {
+    state.boardMine = !state.boardMine;
+    store.set("board-mine", state.boardMine ? "1" : "");
+    return drawBoard();
+  }
   if (t.closest("#logall")) { state.logAll = true; return draw(); }
   if (t.closest("#archt")) { state.showArchived = !state.showArchived; return drawRail(); }
   if (t.closest("#forget")) {

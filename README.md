@@ -28,6 +28,17 @@ npx adlc-console --demo
 The demo shows made-up builds, including one waiting on you at Code with a
 pull request, so every part of the page can be seen and clicked.
 
+## The Board
+
+Board, at the top of the rail, shows every build as a card in the column of
+the phase its current stage belongs to (Define, Make, Ship, Prove, Use, Run,
+Change), with a Done column at the end for the builds that finished, stopped
+or were archived. A card gives the build's name and version, its stage, its
+state in words, and who it waits on ("Waiting on you at Code"); clicking it
+opens the build. Waiting on me shows only the builds waiting on you. The board
+reads the same build list as the rail, and refreshes while any build is
+working.
+
 ## Define your ADLC with no service
 
 ```
