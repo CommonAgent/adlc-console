@@ -249,6 +249,14 @@ main .projof a{color:var(--accent)}
 .lcbind fieldset{border:0;padding:0;margin:0;min-width:0}
 .lcbind legend{font-weight:600;font-size:13px;padding:0;margin-bottom:4px}
 .lcbind legend span{font-weight:400;color:var(--muted);font-size:12.5px}
+.lc .row.added .num{color:var(--accent);font-weight:600}
+.lc .stn>.own{color:var(--accent);font-size:12px}
+.lc .stn .own .linkbtn{margin-left:6px;font-size:12px}
+.lcadd{margin:14px 0 6px;padding:14px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.lcform .lcadd{margin:0}
+.lcadd textarea{min-height:44px}
+.lcfile{margin:10px 6px 0;font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.lcfile code{font-size:11px}
 @media (max-width:760px){
   .lc .cols{grid-template-columns:28px 32px minmax(0,1fr)}
   .lc .cols .holds{grid-column:3}
