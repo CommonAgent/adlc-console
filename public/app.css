@@ -293,3 +293,26 @@ main .projof a{color:var(--accent)}
 .bc.unb .bw{color:var(--wait)}
 .bc.done .bw{color:var(--accent)}
 .bc.ar{opacity:.7}
+
+/* The Dashboard: three tables, each row with a bar drawn in CSS. */
+.rail #board.boardl{margin-bottom:2px}
+.dashg{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px;margin-top:12px;align-items:start}
+.dash{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
+.dash h2{font-size:15px;margin:0 0 8px}
+.dash .does{margin:4px 0 8px}
+.dash .note{font-size:12px;color:var(--muted);margin:10px 0 0}
+.dt{width:100%;border-collapse:collapse;font-size:13px}
+.dt th,.dt td{text-align:left;padding:7px 6px;border-top:1px solid var(--line);vertical-align:top}
+.dt thead th{border-top:0;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500;padding-top:0}
+.dt tbody th{font-weight:600;width:52%}
+.dt td{font-variant-numeric:tabular-nums;white-space:nowrap}
+.dt td .nm{display:block;white-space:normal;font-size:11.5px;color:var(--muted);overflow-wrap:break-word;margin-top:2px}
+.dt.now tbody th{width:40%}
+.hb{display:flex;height:7px;margin-top:5px;border-radius:4px;background:var(--code);overflow:hidden}
+.hb i{display:block;height:100%;width:0;background:var(--accent)}
+.hb.back i{background:var(--wait)}
+.hb.two i.p{background:var(--wait)}
+.hb.two i.a{background:var(--accent)}
+@media (max-width:480px){.dt tbody th{width:auto}.dt th,.dt td{padding:7px 4px}}
+.dt .w{color:var(--muted)}
+.dt td.w{white-space:normal}
