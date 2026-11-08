@@ -100,6 +100,18 @@ build adds timeline?: [{ phase, round, holder, kind, start, end, duration_ms, st
   // adds a stage's time from the bars that name it; a bar without one is not counted.
 ```
 
+Read by the console when a service keeps people (Product Factory's own, not yet in the lifecycle API):
+
+```
+GET /v1/lifecycle/me adds role?: member | approver | admin, teams?: [<team name>]
+stage adds gate?: { you_may_answer, who: [<words>], words }   // on a stage waiting on a person:
+  // whether this key may answer its gate, who may, and the service's sentence for it.
+  // A gate this key may not answer has no actions offered for it.
+GET /v1/lifecycle/people
+  -> { organization, people: [{ name, email, role, teams }], teams: [{ name, members }],
+       projects: [{ name, teams }], problems: [<words>], change: <words> }   // read only
+```
+
 ## How the console reads it
 
 - A stage in stages.json that a build does not list is shown as not offered,
@@ -122,6 +134,11 @@ build adds timeline?: [{ phase, round, holder, kind, start, end, duration_ms, st
 - A refused choice shows on its row, in the service's words as they are. A 403
   on a change from the Lifecycle page is shown that way too (a member who is
   not an admin), not taken as a bad key.
+- A stage whose `gate.you_may_answer` is false shows `gate.words` in place of
+  the gate's buttons. A 403 with words on an action is shown as words too.
+- The top bar shows `account.name` and `role` from GET /me. People shows in
+  the rail only when GET /people answers; it draws the answer and offers no
+  change.
 - A service with no stages operations (a 404 on GET /stages) still gets the
   page: the stages come from stages.json, with no Use switch, and holders can
   be chosen as before.

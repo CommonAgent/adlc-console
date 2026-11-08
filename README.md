@@ -57,6 +57,20 @@ records, never estimated:
 Each is a plain table with a bar drawn in CSS. The page reads GET /builds and
 GET /builds/:id, and refreshes while any build is working.
 
+## People
+
+When the service keeps people (it answers GET /people), each person opens
+the console with their own key, and:
+
+- the top bar says who they are and their role (GET /me);
+- a gate they may not answer shows who may, in the service's words, instead
+  of its buttons; a 403 on an action is shown as the service's words, not
+  taken as a bad key;
+- People, in the rail, lists the organization's people, teams, roles and
+  projects. It is read-only; the service says where they are changed.
+
+A service that answers neither route is drawn as before.
+
 ## Define your ADLC with no service
 
 ```
