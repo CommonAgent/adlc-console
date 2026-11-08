@@ -170,43 +170,92 @@ button:focus-visible,summary:focus-visible,a:focus-visible,textarea:focus-visibl
 .timeline li.external .track i { opacity: .3; }
 .timeline .bk { font-size: 13px; opacity: .8; overflow-wrap: anywhere; }
 
-/* Roles: who holds each role, the states a stage takes when nobody holds it or it doesn't apply, and evidence. */
+/* Holders, the states a stage takes when nobody holds it, it doesn't apply or the lifecycle leaves it out, and evidence. */
 [hidden]{display:none!important}
-.rail .navl{display:block;text-align:center;text-decoration:none;margin-top:6px}
 .c .cn{display:inline-flex;flex-direction:column;align-items:flex-start}
 .c small{font-size:11px;font-weight:400;color:var(--muted);max-width:22ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .c.unb{border-style:dashed;border-color:var(--wait);background:transparent}
 .c.unb b{color:var(--wait)}
 .c.na{opacity:.5;border-style:dotted;background:transparent;color:var(--muted)}
 .c.na .cn{text-decoration:line-through}
+.c.nu{opacity:.55;border-style:dashed;background:transparent;color:var(--muted)}
+.c.nu .cn{text-decoration:line-through;text-decoration-color:var(--muted)}
+.sec.nu{opacity:.8}
 .pill.unb{background:var(--wait-bg);color:var(--wait)}
 .sec.na{opacity:.65}
-.who .handle,.holder .handle{font-family:var(--mono);font-size:12px;font-weight:400}
-.proj{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;max-width:62ch;align-items:center;margin:8px 0 4px}
-.proj label{grid-column:1/-1;font-weight:600;font-size:13px}
-.proj label span{font-weight:400;color:var(--muted);font-size:12.5px}
-.proj a.btn{text-decoration:none}
-.roles{display:grid;gap:10px;margin-top:14px;max-width:80ch}
-.role{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;min-width:0}
-.rtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
-.role h2{font-size:15px;margin:0;font-weight:600}
-.rtop a,.role .meta a{color:var(--accent);font-size:12.5px}
-.role .meta{margin:2px 0 0}
-.holder{margin:8px 0 2px;font-weight:600;overflow-wrap:anywhere}
-.holder.none{font-weight:400;color:var(--wait)}
-.holder.none::before{content:"? ";font-weight:600}
-.bind{margin-top:12px}
-.bind fieldset{border:0;padding:0;margin:0;display:grid;gap:4px;min-width:0}
-.bind legend{font-weight:600;font-size:13px;padding:0;margin-bottom:4px}
-.bind legend span{font-weight:400;color:var(--muted);font-size:12.5px}
+.who .handle,.hn .handle{font-family:var(--mono);font-size:12px;font-weight:400}
 .form label.choice{display:flex;align-items:center;gap:6px;font-weight:400}
-.form label[hidden]{display:none}
 .evidence{list-style:none;margin:0;padding:0;display:grid;gap:10px}
 .evidence li{border-left:3px solid var(--line);padding:2px 0 2px 10px;margin:0;min-width:0}
 .eh{display:flex;justify-content:space-between;gap:8px}
 .eh b{overflow-wrap:anywhere}
 .eh span{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
 .ef{font-size:12px;color:var(--muted);margin:1px 0 4px}
-@media (max-width:480px){.proj{grid-template-columns:minmax(0,1fr)}}
 main .projof{margin:-10px 0 14px;font-size:13px;color:var(--muted)}
 main .projof a{color:var(--accent)}
+
+/* The Lifecycle page: the 24 stages by phase, each with its Use switch and who holds its role. Taken from the approved mock. */
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+#lifecycles{margin-bottom:14px}
+.projnew input{margin-top:8px;padding:6px;border:1px dashed var(--line);background:none;border-radius:6px;font-size:12.5px;text-align:center}
+.projnew input:focus{text-align:left;border-style:solid}
+.sheet{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px 20px;min-width:0;max-width:1040px}
+.lhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.lsum{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:6px}
+.lsum b{color:var(--fg);font-size:15px;font-variant-numeric:tabular-nums;margin-right:3px}
+.lsum .open,.lsum .open b{color:var(--wait)}
+.sheet .does{margin:8px 0 0}
+.lc .cols{display:grid;grid-template-columns:44px 32px minmax(0,1.1fr) minmax(0,1.6fr);gap:10px;align-items:center}
+.lc .colhead{padding:14px 0 6px;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lc .ph{padding:14px 0 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.lc .row{padding:8px 0;border-bottom:1px solid var(--line)}
+.lc .num{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.lc .stn{min-width:0}
+.lc .stn>b{display:block;font-weight:600}
+.lc .stn>span{display:block;font-size:12px;color:var(--muted)}
+.lc .stn .why{margin-top:2px;max-width:52ch}
+.lc .stn .err{margin:4px 0 0;display:block;color:var(--bad)}
+.lc .row.off .stn>b,.lc .row.off .num{color:var(--muted)}
+.lc .row.off .stn>b{text-decoration:line-through;text-decoration-color:var(--muted)}
+.lc .row.off .holds{opacity:.4;pointer-events:none}
+.sw{position:relative;width:32px;height:18px;flex:none;display:block}
+.sw input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;width:100%;height:100%}
+.sw input:disabled{cursor:not-allowed}
+.sw i{position:absolute;inset:0;border-radius:9px;background:var(--line);transition:background .15s}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel);transition:transform .15s}
+.sw input:checked+i{background:var(--accent)}
+.sw input:checked+i::after{transform:translateX(14px)}
+.sw input:disabled+i{opacity:.55}
+.sw input:focus-visible+i{outline:2px solid var(--accent);outline-offset:2px}
+.holds{display:grid;gap:6px;min-width:0}
+.hl{min-width:0}
+.hl .rl{display:block;font-size:11px;color:var(--muted);margin-bottom:2px}
+.hl .err{margin:4px 0 0}
+.lc .hold{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 10px;align-items:center;min-width:0}
+.lc .hold.one{grid-template-columns:minmax(0,1fr)}
+.lc select{padding:6px 8px;font-size:13px}
+.lc select.ours{border-color:var(--accent)}
+.lc select.none{border-color:var(--wait);background:var(--wait-bg);color:var(--wait)}
+.hn{font-size:12.5px;color:var(--muted);overflow-wrap:anywhere;min-width:0}
+.hn.asked{color:var(--fg);font-size:13px}
+.hn.none{color:var(--wait)}
+.hx{display:inline-flex;gap:10px;margin-left:8px;font-size:12px}
+.lcform{padding:10px 0 14px 86px;border-bottom:1px solid var(--line)}
+.lcbind{max-width:62ch;gap:10px}
+.lcbind .lt{margin:0;font-weight:600}
+.lrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.lcbind input.mono{font-family:var(--mono);font-size:12.5px}
+.fmts{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:2px 12px}
+.lcbind fieldset{border:0;padding:0;margin:0;min-width:0}
+.lcbind legend{font-weight:600;font-size:13px;padding:0;margin-bottom:4px}
+.lcbind legend span{font-weight:400;color:var(--muted);font-size:12.5px}
+@media (max-width:760px){
+  .lc .cols{grid-template-columns:28px 32px minmax(0,1fr)}
+  .lc .cols .holds{grid-column:3}
+  .lc .colhead{display:none}
+  .lc .hold{grid-template-columns:minmax(0,1fr)}
+  .lcform{padding-left:0}
+  .sheet{padding:14px}
+}
+@media (prefers-reduced-motion:reduce){.sw i,.sw i::after{transition:none}}
+

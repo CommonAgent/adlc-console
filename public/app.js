@@ -6,11 +6,12 @@ const PHASES = [
   ["define", "Define"], ["make", "Make"], ["ship", "Ship"], ["prove", "Prove"],
   ["use", "Use"], ["run", "Run"], ["change", "Change"],
 ];
-import { esc, safeUrl, stateOf, holderWords, holderHtml, stageNoticeHtml, evidenceHtml, rolesPageHtml, draftFor, holderFrom, needsHandle } from "./roles.js";
+import { esc, safeUrl, stateOf, holderWords, holderHtml, stageNoticeHtml, evidenceHtml, holderFrom, effectiveHolder } from "./roles.js";
+import { lifecyclePageHtml, lifecycleHash, lifecycleDraft, referenceHolder, stagesToReset, notUsedHtml, buildLifecycleHtml } from "./lifecycle.js";
 
-const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop", not_bound: "unb", not_applicable: "na" };
-const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■", not_bound: "?", not_applicable: "" };
-const WORD = { done: "Done", waiting_on_you: "Waiting on you", not_started: "Not started", not_offered: "Not offered", working: "Working", refused: "Refused", stopped: "Stopped", not_bound: "Nobody holds it", not_applicable: "Doesn't apply" };
+const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop", not_bound: "unb", not_applicable: "na", not_used: "nu" };
+const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■", not_bound: "?", not_applicable: "", not_used: "" };
+const WORD = { done: "Done", waiting_on_you: "Waiting on you", not_started: "Not started", not_offered: "Not offered", working: "Working", refused: "Refused", stopped: "Stopped", not_bound: "Nobody holds it", not_applicable: "Doesn't apply", not_used: "Not used" };
 
 const $ = (id) => document.getElementById(id);
 const pad = (n) => String(n).padStart(2, "0");
@@ -33,13 +34,15 @@ function wordsHtml(w) {
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* fine */ } },
+  list(k) { try { const v = JSON.parse(localStorage.getItem(k) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x) : []; } catch { return []; } },
 };
 
 const state = {
   status: null, stages: [], byId: new Map(), builds: [], build: null, tries: [],
   sel: null, view: "build", error: "", lastTry: null, checks: new Map(), files: new Map(), pending: null, asking: null, wrongFor: null,
   logAll: false, showArchived: false,
-  roles: null, project: "", editingRole: null, roleDraft: null, roleErrors: new Map(), rolePending: null,
+  // The Lifecycle page: the stages answer, the roles answer, the holder form open, errors by row, the request in flight.
+  lcStages: null, lcRoles: null, noStages: false, project: "", lcEditing: null, lcDraft: null, lcErrors: new Map(), lcPending: null,
 };
 
 // ---------- talking to the local server ----------
@@ -48,7 +51,10 @@ class Problem extends Error {
   constructor(message, status, needKey) { super(message); this.status = status; this.needKey = needKey; }
 }
 
-async function call(path, { method = "GET", body, text = false } = {}) {
+// own403: a change the Lifecycle page makes on a key the service already took,
+// so a 403 with words is the service's refusal (a member who is not an admin),
+// shown as written, and not a bad key.
+async function call(path, { method = "GET", body, text = false, own403 = false } = {}) {
   const init = { method, headers: { accept: text ? "text/plain" : "application/json" } };
   if (method !== "GET") {
     init.headers["content-type"] = "application/json";
@@ -62,7 +68,7 @@ async function call(path, { method = "GET", body, text = false } = {}) {
   try { data = await r.json(); } catch { /* not JSON */ }
   if (!r.ok) {
     const words = typeof data?.error === "string" ? data.error : typeof data?.message === "string" ? data.message : null;
-    if (r.status === 401 || r.status === 403) {
+    if (r.status === 401 || (r.status === 403 && !(own403 && words && !data?.need_key))) {
       throw new Problem(data?.need_key ? words : "The service turned down the key. Paste a new one.", r.status, true);
     }
     throw new Problem(words || `Something went wrong (${r.status}).`, r.status);
@@ -106,9 +112,13 @@ const installed = () => stageOf("deploy")?.state === "done";
 // ---------- routing ----------
 
 function parseHash() {
-  const parts = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+  const raw = location.hash.replace(/^#\/?/, "");
+  // The Lifecycle page, for the organization or for ?project=<name>.
+  if (/^lifecycle(\?|$)/.test(raw)) return { view: "lifecycle", project: (new URLSearchParams(raw.split("?")[1] ?? "").get("project") ?? "").trim() };
+  const parts = raw.split("/").map(decodeURIComponent);
   if (parts[0] === "new") return { view: "new" };
-  if (parts[0] === "roles") return { view: "roles", project: (parts[1] ?? "").trim() };
+  // The Roles page is now part of the Lifecycle page; an old link still lands there.
+  if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null };
   return { view: "build", id: null, sel: null };
 }
@@ -120,11 +130,13 @@ async function route() {
   state.error = "";
   if (!state.status?.signed_in) return drawKey();
   if (h.view === "new") { state.view = "new"; drawRail(); return drawNew(); }
-  if (h.view === "roles") {
-    if (state.view !== "roles" || state.project !== h.project) { state.editingRole = null; state.roleErrors = new Map(); state.roles = null; }
-    state.view = "roles"; state.project = h.project;
+  if (h.view === "lifecycle") {
+    if (state.status?.read_only) return go("#/");
+    if (state.view !== "lifecycle" || state.project !== h.project) { state.lcEditing = null; state.lcDraft = null; state.lcErrors = new Map(); state.lcStages = null; state.lcRoles = null; }
+    state.view = "lifecycle"; state.project = h.project;
+    if (h.project) remember(h.project);
     drawRail();
-    return loadRoles();
+    return loadLifecycle();
   }
   state.view = "build";
   const id = h.id || pickBuild();
@@ -205,10 +217,33 @@ function drawRail() {
     + (archived ? `<button class="linkbtn archt" id="archt" type="button" aria-pressed="${state.showArchived}">${state.showArchived ? "Hide archived" : `Show archived (${archived})`}</button>` : "");
   $("new").classList.toggle("on", state.view === "new");
   $("new").hidden = Boolean(state.status?.read_only);
-  // A read-only source holds no roles to choose.
-  $("roles-link").classList.toggle("on", state.view === "roles");
-  $("roles-link").hidden = Boolean(state.status?.read_only);
-  if (state.view === "roles") $("roles-link").setAttribute("aria-current", "page"); else $("roles-link").removeAttribute("aria-current");
+  drawLifecycles();
+}
+
+// The rail's Lifecycles: the organization's, then each project this page knows of.
+// The service lists no projects, so these are the ones seen on a build or typed here.
+function drawLifecycles() {
+  const el = $("lifecycles");
+  // A read-only source holds no lifecycle to choose.
+  el.hidden = Boolean(state.status?.read_only);
+  if (el.hidden) return;
+  const on = (p) => state.view === "lifecycle" && state.project === p;
+  const link = (p, n, s) => `<a class="b${on(p) ? " on" : ""}" href="${esc(lifecycleHash(p))}"${on(p) ? ' aria-current="page"' : ""}><span class="n">${esc(n)}</span>${s ? `<span class="s">${esc(s)}</span>` : ""}</a>`;
+  el.innerHTML = `<h2>Lifecycles</h2>${link("", "The organization", "every build")}${knownProjects().map((p) => link(p, p, "a project")).join("")}
+    <form class="projnew" id="proj-form"><label for="proj-name" class="sr">Another project</label><input type="text" id="proj-name" placeholder="Another project" autocomplete="off" spellcheck="false"></form>`;
+}
+
+function knownProjects() {
+  const seen = new Set(store.list("projects"));
+  if (typeof state.build?.project === "string" && state.build.project) seen.add(state.build.project);
+  if (typeof state.build?.lifecycle?.project === "string" && state.build.lifecycle.project) seen.add(state.build.lifecycle.project);
+  for (const b of state.builds) if (typeof b.project === "string" && b.project) seen.add(b.project);
+  if (state.project) seen.add(state.project);
+  return [...seen].sort((a, b) => a.localeCompare(b));
+}
+function remember(project) {
+  const list = store.list("projects");
+  if (!list.includes(project)) store.set("projects", JSON.stringify([...list, project].slice(-20)));
 }
 
 function layout(kind) {
@@ -227,7 +262,7 @@ function draw() {
     <div class="err" role="alert">${esc(state.error)}</div>
     <div class="head"><h1>${esc(b.name)}</h1>${canTry ? `<button class="try${state.sel === "try" ? " on" : ""}" id="try" type="button">Try it</button>` : ""}</div>
     <p class="does">${esc(b.does)}</p>
-    ${typeof b.project === "string" && b.project ? `<p class="projof">Built for the project ${esc(b.project)}. <a href="${rolesHash(b.project)}">Who holds its roles</a></p>` : ""}
+    ${buildLifecycleHtml(b, { day })}
     ${b.summary ? `<p class="sum${b.paused ? " paused" : ""}">${esc(b.summary)}${b.archived ? " · archived" : ""}</p>` : ""}
     ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
     <div id="phases">${phases()}</div>
@@ -252,7 +287,7 @@ function phases() {
       const mark = MARK[st];
       const on = s.stage === state.sel;
       // The holder in words; one held by anyone but the reference agent says so on the chip too.
-      const who = st === "not_offered" || st === "not_applicable" ? "" : holderWords(s.holder);
+      const who = st === "not_offered" || st === "not_applicable" || st === "not_used" ? "" : holderWords(s.holder);
       const handle = s.holder?.handle ? ` · ${s.holder.handle}` : "";
       const shown = who && s.holder?.kind !== "reference_agent" ? `<small>${esc(who)}</small>` : "";
       return `<button class="c ${CLS[st]}${on ? " sel" : ""}" type="button" data-stage="${esc(d.id)}" aria-pressed="${on}"${who ? ` title="${esc(`Held by ${who}${handle}`)}"` : ""} aria-label="${esc(`${d.name}, ${WORD[st]}${who ? `, held by ${who}` : ""}${s.runs > 1 ? `, ran ${s.runs} times` : ""}`)}"><i>${pad(d.number)}</i><span class="cn">${esc(d.name)}${shown}</span>${mark ? `<b>${mark}</b>` : ""}${s.runs > 1 ? `<u>×${s.runs}</u>` : ""}</button>`;
@@ -365,9 +400,15 @@ function drawStage() {
     el.innerHTML = h;
     return;
   }
+  // The build's lifecycle leaves this stage out: say so, and which lifecycle.
+  if (st === "not_used") {
+    el.innerHTML = h + notUsedHtml(state.build, { day });
+    return;
+  }
   if (st === "not_bound" || st === "not_applicable") {
-    const project = typeof state.build.project === "string" && state.build.project ? `/${encodeURIComponent(state.build.project)}` : "";
-    el.innerHTML = h + stageNoticeHtml(st, `#/roles${project}`);
+    const lc = state.build.lifecycle;
+    const project = lc && typeof lc === "object" ? lc.project : state.build.project;
+    el.innerHTML = h + stageNoticeHtml(st, lifecycleHash(typeof project === "string" ? project : ""));
     return;
   }
   const future = st === "not_started";
@@ -504,7 +545,7 @@ function drawNew() {
       <label for="n-refuses">What should it refuse to do? <span>Optional</span><textarea id="n-refuses">${esc(kept.refuses ?? "")}</textarea></label>
       <label for="n-more">Anything else it should know <span>Optional</span><textarea id="n-more">${esc(kept.more ?? "")}</textarea></label>
       <label for="n-name">Its name <span>Optional. Lowercase words joined by hyphens, such as palindrome-judge.</span><input type="text" id="n-name" value="${esc(kept.name ?? "")}" autocomplete="off" spellcheck="false"></label>
-      <label for="n-project">Project <span>Optional. The roles chosen for this project hold its stages.</span><input type="text" id="n-project" value="${esc(kept.project ?? "")}" autocomplete="off" spellcheck="false"></label>
+      <label for="n-project">Project <span>Optional. The build follows the lifecycle chosen for this project.</span><input type="text" id="n-project" value="${esc(kept.project ?? "")}" autocomplete="off" spellcheck="false"></label>
       <div class="acts tight"><button class="btn p" type="submit"${state.pending === "new" ? " disabled" : ""}>${state.pending === "new" ? "Starting…" : "Start the build"}</button><a class="btn" href="#/">Cancel</a></div>
     </form>`;
   $("stage").innerHTML = "";
@@ -610,57 +651,93 @@ async function runLocalCheck(folder) {
   if (state.build?.id === id && state.sel !== "try") drawStage();
 }
 
-// ---------- the Roles page ----------
+// ---------- the Lifecycle page ----------
 
-const rolesPath = (role = "") => `/roles${role ? `/${encodeURIComponent(role)}` : ""}${state.project ? `?project=${encodeURIComponent(state.project)}` : ""}`;
-const rolesHash = (project) => (project ? `#/roles/${encodeURIComponent(project)}` : "#/roles");
+const withProject = (p) => `${p}${state.project ? `?project=${encodeURIComponent(state.project)}` : ""}`;
+const stagesPath = (stage = "") => withProject(`/stages${stage ? `/${encodeURIComponent(stage)}` : ""}`);
+const rolesPath = (role = "") => withProject(`/roles${role ? `/${encodeURIComponent(role)}` : ""}`);
 
-async function loadRoles() {
-  try {
-    state.roles = await api(rolesPath());
-  } catch (e) {
-    if (e.needKey) return problem(e);
-    state.roles = null;
-    state.error = e.message;
-  }
-  drawRoles();
+// Both answers at once. A service without the stages operations (lifecycle API
+// 0.2) answers 404 there: the page then lists stages.json's stages, with no Use switch.
+async function loadLifecycle() {
+  const project = state.project;
+  const [st, ro] = await Promise.allSettled([api(stagesPath()), api(rolesPath())]);
+  if (state.view !== "lifecycle" || state.project !== project) return;
+  const errs = [];
+  for (const r of [st, ro]) if (r.status === "rejected" && r.reason?.needKey) return problem(r.reason);
+  state.noStages = st.status === "rejected" && st.reason?.status === 404;
+  state.lcStages = st.status === "fulfilled" ? st.value : null;
+  if (st.status === "rejected" && !state.noStages) errs.push(st.reason.message);
+  state.lcRoles = ro.status === "fulfilled" ? ro.value : null;
+  if (ro.status === "rejected") errs.push(ro.reason.message);
+  state.error = errs.join(" ");
+  drawLifecycle();
 }
 
-function drawRoles() {
+function drawLifecycle() {
   drawTop();
   layout("solo");
-  $("main").innerHTML = rolesPageHtml(state.roles, {
-    project: state.project, error: state.error, editing: state.editingRole, draft: state.roleDraft,
-    errors: state.roleErrors, pending: state.rolePending, readOnly: Boolean(state.status?.read_only),
-    formats: state.evidenceFormats, stageName: (id) => def(id).name, day,
+  const role = (id) => def(id).role;
+  $("main").innerHTML = lifecyclePageHtml(state.noStages ? null : state.lcStages, state.lcRoles, {
+    project: state.project, error: state.error, editing: state.lcEditing, draft: state.lcDraft,
+    errors: state.lcErrors, pending: state.lcPending, readOnly: Boolean(state.status?.read_only),
+    formats: state.evidenceFormats, phases: PHASES, number: (id) => def(id).number, roleWords: role,
+    noStages: state.noStages, fallback: state.noStages ? state.stages : [],
   });
   $("stage").innerHTML = "";
 }
 
+// One change: PUT or DELETE on a stage or a role. The answer that comes back is
+// drawn as it is; a refusal is shown on that row, in the service's words.
+async function lcChange(key, path, method, body) {
+  state.lcPending = key; state.lcErrors.delete(key); drawLifecycle();
+  try {
+    const answer = await api(path, { method, body, own403: true });
+    if (key.startsWith("use:")) state.lcStages = answer;
+    else { state.lcRoles = answer; state.lcEditing = null; state.lcDraft = null; }
+    state.error = "";
+  } catch (e) {
+    state.lcPending = null;
+    if (e.needKey) return problem(e);
+    state.lcErrors.set(key, e.message);
+    return drawLifecycle();
+  }
+  state.lcPending = null;
+  drawLifecycle();
+}
+
+// Go back to the organization's stages, or the default: DELETE each stage chosen here, one at a time.
+async function lcResetStages() {
+  state.lcPending = "reset"; drawLifecycle();
+  try {
+    for (const stage of stagesToReset(state.lcStages, state.project)) state.lcStages = await api(stagesPath(stage), { method: "DELETE", own403: true });
+    state.error = "";
+  } catch (e) {
+    if (e.needKey) { state.lcPending = null; return problem(e); }
+    state.error = e.message;
+  }
+  state.lcPending = null;
+  drawLifecycle();
+}
+
+const lcRole = (id) => state.lcRoles?.roles?.find((r) => r.role === id);
+
+function lcOpen(role, stage, kind) {
+  const r = lcRole(role);
+  if (!r) return;
+  state.lcEditing = { role, stage }; state.lcDraft = lifecycleDraft(r, kind); state.lcErrors.delete(`role:${role}`);
+  drawLifecycle();
+  $("main").querySelector("form.lcbind input[name=handle], form.lcbind input[name=name]")?.focus();
+}
+
 function formValues(f) {
   return {
-    kind: f.querySelector("[name=kind]:checked")?.value ?? "",
+    kind: f.dataset.kind ?? "",
     name: f.querySelector("[name=name]")?.value ?? "",
     handle: f.querySelector("[name=handle]")?.value ?? "",
     formats: [...f.querySelectorAll("[name=formats]:checked")].map((x) => x.value),
     where: f.querySelector("[name=where]")?.value ?? "",
   };
-}
-
-// PUT or DELETE one role. The service's refusal is shown on that role, in its own words.
-async function changeRole(role, method, body) {
-  state.rolePending = role; state.roleErrors.delete(role); drawRoles();
-  try {
-    state.roles = await api(rolesPath(role), { method, body });
-    state.editingRole = null; state.roleDraft = null; state.error = "";
-  } catch (e) {
-    state.rolePending = null;
-    if (e.needKey) return problem(e);
-    state.roleErrors.set(role, e.message);
-    return drawRoles();
-  }
-  state.rolePending = null;
-  drawRoles();
 }
 
 // ---------- events ----------
@@ -679,18 +756,15 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (t.closest("#new")) return go("#/new");
-  const bind = t.closest("[data-bind]");
-  if (bind) {
-    const r = state.roles?.roles?.find((x) => x.role === bind.dataset.bind);
-    if (!r) return;
-    state.editingRole = r.role; state.roleDraft = draftFor(r); state.roleErrors.delete(r.role);
-    drawRoles();
-    $("main").querySelector(`form.bind input[name=name]`)?.focus();
-    return;
+  const edit = t.closest("[data-edit-role]");
+  if (edit) {
+    const r = lcRole(edit.dataset.editRole);
+    return lcOpen(edit.dataset.editRole, edit.dataset.at, r ? (effectiveHolder(r)?.kind ?? "your_agent") : "your_agent");
   }
-  const unbind = t.closest("[data-unbind]");
-  if (unbind) return changeRole(unbind.dataset.unbind, "DELETE");
-  if (t.closest("[data-cancel-bind]")) { state.roleErrors.delete(state.editingRole); state.editingRole = null; state.roleDraft = null; return drawRoles(); }
+  const reset = t.closest("[data-reset-role]");
+  if (reset) return lcChange(`role:${reset.dataset.resetRole}`, rolesPath(reset.dataset.resetRole), "DELETE");
+  if (t.closest("[data-reset-stages]")) return lcResetStages();
+  if (t.closest("[data-cancel-lc]")) { if (state.lcEditing) state.lcErrors.delete(`role:${state.lcEditing.role}`); state.lcEditing = null; state.lcDraft = null; return drawLifecycle(); }
   if (t.closest("#logall")) { state.logAll = true; return draw(); }
   if (t.closest("#archt")) { state.showArchived = !state.showArchived; return drawRail(); }
   if (t.closest("#forget")) {
@@ -719,10 +793,19 @@ document.addEventListener("toggle", (e) => {
 
 document.addEventListener("change", (e) => {
   if (e.target.id === "twhere" && state.build) store.set(`against:${state.build.id}`, e.target.value);
-  // The handle is asked for only for your own agent or a contracted supplier.
-  if (e.target.name === "kind" && e.target.closest("form.bind")) {
-    const label = e.target.closest("form.bind").querySelector("[data-handle]");
-    if (label) label.hidden = !needsHandle(e.target.value);
+  // The Use switch: the service says whether the stage is now used.
+  const use = e.target.closest?.("[data-use]");
+  if (use) return lcChange(`use:${use.dataset.use}`, stagesPath(use.dataset.use), "PUT", { used: use.checked });
+  // Who holds the role: the service's own agent is bound at once; any other kind asks for its name first.
+  const kind = e.target.closest?.("[data-role-kind]");
+  if (kind) {
+    const role = kind.dataset.roleKind;
+    if (kind.value === "reference_agent") {
+      const body = referenceHolder(lcRole(role));
+      if (body) return lcChange(`role:${role}`, rolesPath(role), "PUT", body);
+    }
+    if (kind.value) return lcOpen(role, kind.dataset.at, kind.value);
+    return drawLifecycle();
   }
 });
 
@@ -755,11 +838,16 @@ document.addEventListener("submit", async (e) => {
       return go(hashFor(r.build.id));
     } catch (err) { state.pending = null; state.error = err.message; if (err.needKey) return problem(err); return drawNew(); }
   }
-  if (f.id === "project-form") return go(rolesHash($("r-project").value.trim()));
-  if (f.matches("form.bind")) {
+  if (f.id === "proj-form") {
+    const p = $("proj-name").value.trim();
+    if (!p) return go(lifecycleHash(""));
+    remember(p);
+    return go(lifecycleHash(p));
+  }
+  if (f.matches("form.lcbind")) {
     const values = formValues(f);
-    state.roleDraft = values;
-    return changeRole(f.dataset.role, "PUT", holderFrom(values));
+    state.lcDraft = values;
+    return lcChange(`role:${f.dataset.role}`, rolesPath(f.dataset.role), "PUT", holderFrom(values));
   }
   if (f.id === "try-form") return sendTry($("tsay").value, $("twhere").value);
   if (f.id === "wrong-form") {

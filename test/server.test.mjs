@@ -275,11 +275,94 @@ test("the service's refusal of a binding reaches the page as written", async () 
   } finally { await s.done(); }
 });
 
-test("the page's roles module is served", async () => {
+test("the page's roles and lifecycle modules are served", async () => {
   const s = await setup();
   try {
-    const r = await hit(s.url, { path: "/roles.js", headers: { host: s.host } });
-    assert.equal(r.status, 200);
-    assert.match(r.headers["content-type"], /javascript/);
+    for (const path of ["/roles.js", "/lifecycle.js"]) {
+      const r = await hit(s.url, { path, headers: { host: s.host } });
+      assert.equal(r.status, 200, path);
+      assert.match(r.headers["content-type"], /javascript/);
+    }
   } finally { await s.done(); }
+});
+
+test("stages are read, chosen and set back through the proxy, with the project and nothing else", async () => {
+  const s = await setup();
+  const h = { host: s.host, "x-adlc-console": "1", "content-type": "application/json" };
+  try {
+    await hit(s.url, { path: "/api/v1/lifecycle/stages?project=finance&archived=1&path=x", headers: { host: s.host } });
+    await hit(s.url, { path: "/api/v1/lifecycle/stages/docs", headers: { host: s.host } });
+    const put = await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/stages/docs?project=web&x=1", headers: h, body: { used: false } });
+    assert.equal(put.status, 200);
+    const del = await hit(s.url, { method: "DELETE", path: "/api/v1/lifecycle/stages/docs", headers: h });
+    assert.equal(del.status, 200);
+    // A project too long to be one is not passed on.
+    await hit(s.url, { path: `/api/v1/lifecycle/stages?project=${"p".repeat(201)}`, headers: { host: s.host } });
+    assert.deepEqual(s.svc.seen.map((x) => `${x.method} ${x.url}`), [
+      "GET /v1/lifecycle/stages?project=finance",
+      "GET /v1/lifecycle/stages/docs",
+      "PUT /v1/lifecycle/stages/docs?project=web",
+      "DELETE /v1/lifecycle/stages/docs",
+      "GET /v1/lifecycle/stages",
+    ]);
+    assert.deepEqual(JSON.parse(s.svc.seen[2].body), { used: false });
+    assert.equal(s.svc.seen[2].headers.authorization, `Bearer ${KEY}`);
+    assert.match(put.headers["content-security-policy"], /sandbox/);
+  } finally { await s.done(); }
+});
+
+test("a change to a stage reaches only one stage, and only from the page", async () => {
+  const s = await setup();
+  const h = { host: s.host, "x-adlc-console": "1", "content-type": "application/json" };
+  try {
+    assert.equal((await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/stages", headers: h, body: { used: false } })).status, 405);
+    assert.equal((await hit(s.url, { method: "DELETE", path: "/api/v1/lifecycle/stages", headers: h })).status, 405);
+    assert.equal((await hit(s.url, { method: "POST", path: "/api/v1/lifecycle/stages/docs", headers: h, body: {} })).status, 405);
+    for (const path of ["/api/v1/lifecycle/stages/Docs", "/api/v1/lifecycle/stages/docs/more", "/api/v1/lifecycle/stages/..", "/api/v1/lifecycle/stagesx"]) {
+      assert.equal((await hit(s.url, { path, headers: { host: s.host } })).status, 404, path);
+    }
+    // Without the page's header, or from another origin, or as a form post, nothing is sent.
+    assert.equal((await hit(s.url, { method: "DELETE", path: "/api/v1/lifecycle/stages/docs", headers: { host: s.host } })).status, 403);
+    assert.equal((await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/stages/docs", headers: { ...h, origin: "https://evil.example" }, body: { used: false } })).status, 403);
+    assert.equal((await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/stages/docs", headers: { ...h, "content-type": "text/plain" }, body: "used=false" })).status, 403);
+    assert.equal((await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/stages/docs", headers: h, body: "{not json" })).status, 400);
+    assert.equal(s.svc.seen.length, 0);
+  } finally { await s.done(); }
+});
+
+test("the service's refusal of a stage choice reaches the page as written, 403 included", async () => {
+  const words = "Code is written to Test's suite; this service cannot build without it.";
+  const s = await setup({ answer: (req) => (req.method === "DELETE" ? { status: 403, body: { error: "Only an admin of the organization can change its lifecycle." } } : { status: 400, body: { error: words } }) });
+  const h = { host: s.host, "x-adlc-console": "1", "content-type": "application/json" };
+  try {
+    const r = await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/stages/test", headers: h, body: { used: false } });
+    assert.equal(r.status, 400);
+    assert.equal(r.json.error, words);
+    const f = await hit(s.url, { method: "DELETE", path: "/api/v1/lifecycle/stages/test", headers: h });
+    assert.equal(f.status, 403);
+    assert.equal(f.json.error, "Only an admin of the organization can change its lifecycle.");
+  } finally { await s.done(); }
+});
+
+test("the demo answers the stages routes through the proxy", async () => {
+  const { createDemoService } = await import("../lib/demo.mjs");
+  const dir = await tempDir("demo");
+  const keys = createKeyStore({ service: "http://unused.example", env: {}, dir });
+  const app = createConsoleServer({ service: "http://unused.example", keys, demo: createDemoService(), stages: STAGES, version: "test" });
+  const url = await app.listen(0);
+  const host = new URL(url).host;
+  const h = { host, "x-adlc-console": "1", "content-type": "application/json" };
+  try {
+    const r = await hit(url, { path: "/api/v1/lifecycle/stages", headers: { host } });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.stages.length, 24);
+    assert.equal(r.json.stages.filter((x) => !x.used).length, 4);
+    const put = await hit(url, { method: "PUT", path: "/api/v1/lifecycle/stages/docs?project=web", headers: h, body: { used: false } });
+    assert.equal(put.status, 200);
+    assert.equal(put.json.project, "web");
+    assert.equal(put.json.stages.find((x) => x.stage === "docs").used, false);
+    const no = await hit(url, { method: "PUT", path: "/api/v1/lifecycle/stages/code", headers: h, body: { used: false } });
+    assert.equal(no.status, 400);
+    assert.match(no.json.error, /cannot build without it/);
+  } finally { await app.close(); }
 });

@@ -1,0 +1,177 @@
+<title>Define Your ADLC</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the console's rail on the left; the lifecycle as one list of 24 stages by phase, each with use and holder. */
+:root{
+  --bg:#f4f5f2; --panel:#ffffff; --line:#dfe2dc; --fg:#1b1f1c; --muted:#677068;
+  --accent:#2f6f4f; --wait:#b5651d; --wait-bg:#fbefe3; --done-bg:#e6f0ea; --code:#f0f2ee;
+  --sans:"Instrument Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#151816; --panel:#1d211e; --line:#2e342f; --fg:#e6e9e5; --muted:#949c95;
+  --accent:#7cc39c; --wait:#e8a25f; --wait-bg:#3a2a1b; --done-bg:#1f3328; --code:#171a18; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#151816; --panel:#1d211e; --line:#2e342f; --fg:#e6e9e5; --muted:#949c95;
+  --accent:#7cc39c; --wait:#e8a25f; --wait-bg:#3a2a1b; --done-bg:#1f3328; --code:#171a18; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px}
+.app{display:grid;grid-template-columns:160px minmax(0,1fr);gap:16px;max-width:1180px;margin:0 auto;align-items:start}
+.top{grid-column:1/-1;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.top b{color:var(--fg);font-weight:500}
+.rail,.sheet{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.rail{padding:10px 8px;font-size:12.5px;display:grid;gap:4px}
+h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0;font-weight:500}
+.rail h2{padding:0 6px;margin:6px 0 2px}
+.rail h2:first-child{margin-top:0}
+.b{display:block;padding:6px;border-radius:6px}
+.b.on{background:var(--bg)}
+.b .n{font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.b .s{font-size:11px;color:var(--muted);display:block}
+.new{margin-top:6px;padding:6px;border:1px dashed var(--line);border-radius:6px;text-align:center;color:var(--muted)}
+.sheet{padding:18px 20px;min-width:0}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.name{font:600 22px/1.2 var(--sans);color:var(--fg);border:0;border-bottom:1px dashed var(--line);background:none;padding:2px 0;width:min(100%,22ch)}
+.name:focus{outline:none;border-bottom-color:var(--accent)}
+.sum{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.sum b{color:var(--fg);font-size:15px;font-variant-numeric:tabular-nums;margin-right:3px}
+.btn{display:inline-block;padding:7px 14px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--panel);font:inherit;font-weight:600;cursor:pointer}
+.btn.q{border-color:var(--line);background:var(--panel);color:var(--fg);font-weight:500}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.cols{display:grid;grid-template-columns:44px 32px minmax(0,1.1fr) minmax(0,1.6fr);gap:10px;align-items:center}
+.colhead{padding:14px 0 6px;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.ph{padding:14px 0 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.row{padding:8px 0;border-bottom:1px solid var(--line)}
+.row .num{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.row .st{min-width:0}
+.row .st b{display:block;font-weight:600}
+.row .st span{display:block;font-size:12px;color:var(--muted)}
+.row.off .st b,.row.off .num{color:var(--muted)}
+.row.off .st b{text-decoration:line-through;text-decoration-color:var(--muted)}
+.row.off .hold{opacity:.4;pointer-events:none}
+.sw{position:relative;width:32px;height:18px;flex:none}
+.sw input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.sw i{position:absolute;inset:0;border-radius:9px;background:var(--line);transition:background .15s}
+.sw i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel);transition:transform .15s}
+.sw input:checked+i{background:var(--accent)}
+.sw input:checked+i::after{transform:translateX(14px)}
+.sw input:focus-visible+i{outline:2px solid var(--accent);outline-offset:2px}
+.hold{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;min-width:0}
+.hold.one{grid-template-columns:minmax(0,1fr)}
+select,input[type=text]{width:100%;min-width:0;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font:inherit;font-size:13px}
+input[type=text]{font-family:var(--mono);font-size:12.5px;background:var(--bg)}
+select:focus-visible,input[type=text]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+select.ours{border-color:var(--accent)}
+select.none{border-color:var(--wait);background:var(--wait-bg);color:var(--wait)}
+.saved{font-size:12px;color:var(--accent)}
+@media (max-width:760px){.app{grid-template-columns:minmax(0,1fr)}.rail{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}.rail h2{grid-column:1/-1}
+  .cols{grid-template-columns:28px 32px minmax(0,1fr)}.cols .hold{grid-column:3}.colhead span:last-child{display:none}.hold{grid-template-columns:minmax(0,1fr)}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <div class="top"><span><b>adlc console</b> · api.agentmesh.ai</span><span>platform@agentmesh.ai</span></div>
+  <nav class="rail" aria-label="Builds and lifecycles">
+    <h2>Lifecycles</h2>
+    <div class="b on"><span class="n">Standard</span><span class="s">used by 3 builds</span></div>
+    <div class="b"><span class="n">Internal tools</span><span class="s">used by 1 build</span></div>
+    <div class="new">New lifecycle</div>
+    <h2>Builds</h2>
+    <div class="b"><span class="n">word-reverser 0.2.0</span><span class="s">Code · waiting on you</span></div>
+    <div class="b"><span class="n">invoice-tagger 0.1.0</span><span class="s">Test · working</span></div>
+  </nav>
+
+  <section class="sheet" aria-label="Lifecycle">
+    <div class="head">
+      <div>
+        <label for="lc-name" class="sr" hidden>Lifecycle name</label>
+        <input class="name" id="lc-name" type="text" value="Standard" style="font-family:var(--sans);background:none">
+        <div class="sum" id="sum"></div>
+      </div>
+      <div class="acts"><span class="btn q">Start from all 24</span><span class="btn" id="save">Save</span></div>
+    </div>
+    <div class="cols colhead"><span>Stage</span><span>Use</span><span></span><span>Who holds the role</span></div>
+    <div id="rows"></div>
+  </section>
+</div>
+
+<script>
+const PH = [["define","Define"],["make","Make"],["ship","Ship"],["prove","Prove"],["use","Use"],["run","Run"],["change","Change"]];
+// ours: AgentMesh's reference agent for the role, when one exists.
+const S = [
+ [1,"Requirements","define","spec writer","spec-writer.platform@agentmesh.ai"],
+ [2,"Architecture and Design","define","solution architect","solution-architect.platform@agentmesh.ai"],
+ [3,"Impact","define","impact analyst","impact-analyst.platform@agentmesh.ai"],
+ [4,"Source","define","catalog","catalog.platform@agentmesh.ai"],
+ [5,"Test","make","test writer","test-writer.platform@agentmesh.ai"],
+ [6,"Code","make","code writer","code-writer.platform@agentmesh.ai"],
+ [7,"Review","make","code critic","code-critic.platform@agentmesh.ai"],
+ [8,"Security review","make","security reviewer","security-reviewer.platform@agentmesh.ai"],
+ [9,"Package","ship","package maker","package-maker.platform@agentmesh.ai"],
+ [10,"Release","ship","package maker","package-maker.platform@agentmesh.ai"],
+ [11,"Deploy","ship","deployment manager","deploymgr.platform@agentmesh.ai"],
+ [12,"Conformance","prove","conformance checker","conformance-checker.platform@agentmesh.ai"],
+ [13,"Acceptance","prove","the requester",null],
+ [14,"Docs","use","documenter","documenter.platform@agentmesh.ai"],
+ [15,"Publish","use","publisher","publisher.platform@agentmesh.ai"],
+ [16,"Retract","use","publisher","publisher.platform@agentmesh.ai"],
+ [17,"Monitor","run","watcher",null],
+ [18,"Eval","run","agent critic",null],
+ [19,"Incident response","run","incident recorder","incident-recorder.platform@agentmesh.ai"],
+ [20,"Cost","run","watcher",null],
+ [21,"Update","change","deployment manager","deploymgr.platform@agentmesh.ai"],
+ [22,"Reconfigure","change","deployment manager","deploymgr.platform@agentmesh.ai"],
+ [23,"Rollback","change","deployment manager","deploymgr.platform@agentmesh.ai"],
+ [24,"Decommission","change","deployment manager","deploymgr.platform@agentmesh.ai"],
+].map(([n,name,ph,role,ours])=>({n,name,ph,role,ours,use:true,who:ours?"ours":"none",val:""}));
+// An example lifecycle, filled in.
+const set=(n,o)=>Object.assign(S[n-1],o);
+set(3,{use:false}); set(4,{use:false}); set(16,{use:false}); set(22,{use:false});
+set(6,{who:"agent",val:"claude-code.eng@example.com"});
+set(13,{who:"person",val:"the person who asked"});
+set(17,{who:"agent",val:"datadog-watcher.ops@example.com"});
+set(18,{who:"person",val:"QA team, weekly sample"});
+set(20,{who:"none"});
+
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function holder(s){
+  const opts = [];
+  if (s.ours) opts.push(["ours",`AgentMesh: ${s.ours.split(".")[0]}`]);
+  opts.push(["agent","Another agent…"],["person","A person or team…"]);
+  if (!s.ours) opts.unshift(["none","Not chosen"]);
+  const cls = s.who==="ours"?"ours":s.who==="none"?"none":"";
+  const sel = `<select id="who-${s.n}" data-n="${s.n}" data-f="who" class="${cls}" aria-label="Who holds ${esc(s.name)}">${opts.map(([v,l])=>`<option value="${v}" ${v===s.who?"selected":""}>${esc(l)}</option>`).join("")}</select>`;
+  const field = s.who==="agent"||s.who==="person"
+    ? `<input type="text" id="val-${s.n}" data-n="${s.n}" data-f="val" value="${esc(s.val)}" placeholder="${s.who==="agent"?"its handle, like name.owner@example.com":"a name or team"}" aria-label="${s.who==="agent"?"Agent handle":"Person or team"} for ${esc(s.name)}">` : "";
+  return `<div class="hold ${field?"":"one"}">${sel}${field}</div>`;
+}
+function render(){
+  document.getElementById("rows").innerHTML = PH.map(([p,name])=>`<div class="ph">${name}</div>`+
+    S.filter(s=>s.ph===p).map(s=>`<div class="cols row ${s.use?"":"off"}">
+      <span class="num">${String(s.n).padStart(2,"0")}</span>
+      <label class="sw"><input type="checkbox" id="use-${s.n}" data-n="${s.n}" data-f="use" ${s.use?"checked":""} aria-label="Use ${esc(s.name)}"><i></i></label>
+      <span class="st"><b>${esc(s.name)}</b><span>${esc(s.role)}</span></span>
+      ${holder(s)}</div>`).join("")).join("");
+  summary();
+}
+function summary(){
+  const used = S.filter(s=>s.use);
+  const ours = used.filter(s=>s.who==="ours").length;
+  const other = used.filter(s=>s.who==="agent"||s.who==="person").length;
+  const open = used.filter(s=>s.who==="none").length;
+  document.getElementById("sum").innerHTML =
+    `<span><b>${used.length}</b>of 24 stages used</span><span><b>${ours}</b>held by AgentMesh</span><span><b>${other}</b>held by others</span>`+
+    (open?`<span style="color:var(--wait)"><b style="color:var(--wait)">${open}</b>not chosen</span>`:"");
+}
+document.getElementById("rows").addEventListener("change",e=>{
+  const t=e.target, s=S[t.dataset.n-1]; if(!s) return;
+  if (t.dataset.f==="use") s.use=t.checked;
+  if (t.dataset.f==="who") { s.who=t.value; s.val=""; }
+  render();
+  if (t.dataset.f==="who" && (s.who==="agent"||s.who==="person")) document.getElementById(`val-${s.n}`)?.focus();
+});
+document.getElementById("rows").addEventListener("input",e=>{const t=e.target; if(t.dataset.f==="val") S[t.dataset.n-1].val=t.value;});
+document.getElementById("save").addEventListener("click",e=>{e.target.textContent="Saved"; setTimeout(()=>e.target.textContent="Save",1400);});
+render();
+</script>

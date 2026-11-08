@@ -126,14 +126,22 @@ copy of the lifecycle's own `standards/stages.json` in the adlc repository
 (CommonAgent/adlc). `npm run stages` refreshes the copy from there. A new or
 changed stage reaches the console without a code change.
 
-## Roles
+## Lifecycle
 
-The Roles page lists each lifecycle role, the stages it holds, and who holds
-it: the service's reference agent, your own agent, a contracted supplier, a
-person, or an outside tool. You can choose a holder for the whole
-organization or for one project, and go back to the default. A stage held
-outside the service shows the evidence its holder handed in, such as security
-findings or a bill of materials.
+The Lifecycle page defines your lifecycle on one screen. It lists the 24
+stages by phase. For each stage you choose whether your lifecycle uses it, and
+who holds its role: the service's own agent, your own agent, a contracted
+supplier, a person, or an outside tool, with the evidence it hands in. Stages
+that share a role, such as Deploy and Rollback, share its holder. A line at the
+top counts the stages used and who holds them.
+
+Some stages the service cannot build without. Their switch cannot be turned off, and
+the service says why. You can choose for the whole organization or for one
+project, and go back to the organization's choices or the default. A build
+keeps the lifecycle it started with: a stage it leaves out is struck through,
+and its page says which lifecycle the build follows. A stage held outside the
+service shows the evidence its holder handed in, such as security findings or
+a bill of materials.
 
 ## For service authors
 
@@ -148,7 +156,7 @@ npm test          # node:test, no dependencies
 npm run demo      # the demo, on a free port
 ```
 
-`design/mock.html` is the design the page follows.
+`design/mock.html` is the design the build page follows, and `design/lifecycle.html` the design of the Lifecycle page.
 
 ## License
 

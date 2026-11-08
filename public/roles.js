@@ -1,6 +1,7 @@
-// Who holds each role, in words, and the Roles page. Everything here builds
-// HTML from what the service answered and nothing else, so the tests can read
-// it without a browser (test/roles.test.mjs).
+// Who holds each role, in words, and the words a stage page shows for the
+// states that have no work. Everything here builds HTML from what the service
+// answered and nothing else, so the tests can read it without a browser
+// (test/roles.test.mjs). The Lifecycle page is public/lifecycle.js.
 
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 export function safeUrl(u) {
@@ -8,16 +9,10 @@ export function safeUrl(u) {
 }
 
 // The states the console draws. Any other state is drawn as not_offered.
-export const STATES = ["done", "waiting_on_you", "not_started", "not_offered", "working", "refused", "stopped", "not_bound", "not_applicable"];
+// not_used (lifecycle API 0.3): the build's lifecycle leaves the stage out.
+export const STATES = ["done", "waiting_on_you", "not_started", "not_offered", "working", "refused", "stopped", "not_bound", "not_applicable", "not_used"];
 export const stateOf = (s) => (STATES.includes(s?.state) ? s.state : "not_offered");
 
-export const KIND_CHOICES = [
-  ["reference_agent", "Our reference agent"],
-  ["your_agent", "Your own agent"],
-  ["contracted", "A contracted supplier"],
-  ["person", "A person"],
-  ["outside_tool", "An outside tool"],
-];
 const WITH_HANDLE = new Set(["your_agent", "contracted"]);
 export const needsHandle = (kind) => WITH_HANDLE.has(kind);
 
@@ -69,8 +64,8 @@ export function effectiveHolder(r) {
 }
 
 /** What a stage page says for the two states that have no work to show. */
-export function stageNoticeHtml(state, rolesHref = "#/roles") {
-  if (state === "not_bound") return `<div class="sec"><p class="notyet">Nobody holds this role yet.</p><p><a href="${esc(rolesHref)}">Choose who holds it on the Roles page</a></p></div>`;
+export function stageNoticeHtml(state, lifecycleHref = "#/lifecycle") {
+  if (state === "not_bound") return `<div class="sec"><p class="notyet">Nobody holds this role yet.</p><p><a href="${esc(lifecycleHref)}">Choose who holds it on the Lifecycle page</a></p></div>`;
   if (state === "not_applicable") return `<div class="sec na"><p class="notyet">This stage doesn't apply to a process.</p></div>`;
   return "";
 }
@@ -86,49 +81,6 @@ export function evidenceHtml(list, { when = (x) => x, fileHtml = null } = {}) {
   }).join("")}</ul></div>`;
 }
 
-function listWords(items) {
-  if (items.length <= 1) return items.join("");
-  // "Requirements, and Architecture and Design": a comma where a name holds "and" itself.
-  const comma = items.length > 2 || items.some((i) => / and /.test(i)) ? "," : "";
-  return `${items.slice(0, -1).join(", ")}${comma} and ${items.at(-1)}`;
-}
-
-function fromWords(r, project, day) {
-  const b = r.binding && typeof r.binding === "object" ? r.binding : {};
-  const when = b.since && day ? ` on ${day(b.since)}` : "";
-  const by = typeof b.by === "string" && b.by ? ` by ${b.by}` : "";
-  if (r.from === "project") return `Chosen for the project ${project || b.scope?.project || ""}${when}${by}.`.replace(" .", ".");
-  if (r.from === "org") return `Chosen for the organization${when}${by}.`;
-  if (r.from === "default") return "This is the default.";
-  return "";
-}
-
-function bindForm(r, ctx) {
-  const d = ctx.draft ?? {};
-  const kinds = KIND_CHOICES.filter(([k]) => k !== "reference_agent" || r.reference_agent);
-  const kind = kinds.some(([k]) => k === d.kind) ? d.kind : kinds[0][0];
-  const id = (x) => `bind-${esc(r.role)}-${x}`;
-  const formats = (ctx.formats ?? []).map((f) => f.id).filter(Boolean);
-  const chosen = new Set(Array.isArray(d.formats) ? d.formats : []);
-  const busy = ctx.pending === r.role;
-  return `<form class="bind form" data-role="${esc(r.role)}">
-    <div class="err" role="alert">${esc(ctx.errors?.get(r.role) ?? "")}</div>
-    <fieldset><legend>Who holds it</legend>${kinds.map(([k, words]) => `<label class="choice"><input type="radio" name="kind" value="${esc(k)}"${k === kind ? " checked" : ""}> ${esc(words)}</label>`).join("")}</fieldset>
-    <label for="${id("name")}">Name <span>Such as Our security team.</span><input type="text" id="${id("name")}" name="name" value="${esc(d.name ?? "")}" required autocomplete="off"></label>
-    <label for="${id("handle")}" data-handle${needsHandle(kind) ? "" : " hidden"}>Its handle on the mesh <span>Such as reviewer.acme@example.com.</span><input type="text" id="${id("handle")}" name="handle" value="${esc(d.handle ?? "")}" autocomplete="off" spellcheck="false"></label>
-    ${formats.length ? `<fieldset><legend>Evidence it hands in <span>Optional</span></legend>${formats.map((f) => `<label class="choice"><input type="checkbox" name="formats" value="${esc(f)}"${chosen.has(f) ? " checked" : ""}> ${esc(formatWords(f))}</label>`).join("")}</fieldset>` : ""}
-    <label for="${id("where")}">Where its evidence can be read <span>Optional. Words or a web address.</span><input type="text" id="${id("where")}" name="where" value="${esc(d.where ?? "")}" autocomplete="off"></label>
-    <div class="acts tight"><button class="btn p" type="submit"${busy ? " disabled" : ""}>${busy ? "Saving…" : "Save"}</button><button class="btn" type="button" data-cancel-bind>Cancel</button></div>
-  </form>`;
-}
-
-/** A draft for the bind form, from the role's holder now. */
-export function draftFor(r) {
-  const h = effectiveHolder(r);
-  if (!h) return { kind: r.reference_agent ? "reference_agent" : "your_agent", name: "", handle: "", formats: [], where: "" };
-  return { kind: h.kind, name: h.name ?? "", handle: h.handle ?? "", formats: h.evidence?.formats ?? [], where: h.evidence?.where ?? "" };
-}
-
 /** The body PUT /roles/{role} takes, from the form's values. */
 export function holderFrom(values) {
   const holder = { kind: values.kind, name: String(values.name ?? "").trim() };
@@ -138,41 +90,4 @@ export function holderFrom(values) {
   const where = String(values.where ?? "").trim();
   if (formats.length || where) holder.evidence = { formats, ...(where ? { where } : {}) };
   return { holder };
-}
-
-function roleHtml(r, ctx) {
-  const stages = (r.stages ?? []).map((s) => ctx.stageName?.(s) ?? s);
-  const contract = safeUrl(r.contract);
-  let h = `<section class="role" id="role-${esc(r.role)}"><div class="rtop"><h2>${esc(r.name ?? r.role)}</h2>${contract ? `<a href="${esc(contract)}" target="_blank" rel="noopener noreferrer">Its contract</a>` : ""}</div>`;
-  if (stages.length) h += `<p class="meta">Holds ${esc(listWords(stages))}.</p>`;
-  if (r.role === "requester") return `${h}<p class="holder">The person who asked</p></section>`;
-  const holder = effectiveHolder(r);
-  h += holder ? `<p class="holder">Held by ${holderHtml(holder)}</p>` : `<p class="holder none">Nobody holds this role yet.</p>`;
-  const from = fromWords(r, ctx.project, ctx.day);
-  if (from) h += `<p class="meta">${esc(from)}</p>`;
-  const ev = holder?.evidence;
-  if (ev?.formats?.length) h += `<p class="meta">It hands in ${esc(listWords(ev.formats.map(formatWords)))}.</p>`;
-  if (ev?.where) {
-    const url = safeUrl(ev.where);
-    h += `<p class="meta">Its evidence can be read ${url ? `at <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>` : `at ${esc(ev.where)}`}.</p>`;
-  }
-  const editing = ctx.editing === r.role;
-  const canReset = (r.from === "project" && ctx.project) || (r.from === "org" && !ctx.project);
-  if (!editing && ctx.errors?.get(r.role)) h += `<div class="err" role="alert">${esc(ctx.errors.get(r.role))}</div>`;
-  if (editing) h += bindForm(r, ctx);
-  else if (!ctx.readOnly) {
-    const busy = ctx.pending === r.role;
-    h += `<div class="acts"><button class="btn" type="button" data-bind="${esc(r.role)}">Change who holds it</button>${canReset ? `<button class="btn" type="button" data-unbind="${esc(r.role)}"${busy ? " disabled" : ""}>${busy ? "Sending…" : "Go back to the default"}</button>` : ""}</div>`;
-  }
-  return `${h}</section>`;
-}
-
-/** The Roles page: a project field, then every role the service listed. */
-export function rolesPageHtml(answer, ctx = {}) {
-  const roles = Array.isArray(answer?.roles) ? answer.roles : [];
-  const project = ctx.project ?? "";
-  return `<div class="err" role="alert">${esc(ctx.error ?? "")}</div>
-    <h1>Roles${project ? ` for ${esc(project)}` : ""}</h1>
-    <form class="proj" id="project-form"><label for="r-project">Project <span>Leave it empty for the whole organization.</span></label><input type="text" id="r-project" value="${esc(project)}" autocomplete="off" spellcheck="false"><button class="btn" type="submit">Show</button>${project ? `<a class="btn" href="#/roles">The whole organization</a>` : ""}</form>
-    <div class="roles">${roles.map((r) => roleHtml(r, { ...ctx, project, draft: ctx.editing === r.role ? ctx.draft : null })).join("")}</div>`;
 }

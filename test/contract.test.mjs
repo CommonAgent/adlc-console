@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { createDemoService } from "../lib/demo.mjs";
 import { STAGE_IDS, palindromeJudge, expenseCheck } from "../lib/fixture.mjs";
-import { checkBuildList, checkBuild, checkTry, checkTries, checkAction, checkRoles } from "../lib/contract.mjs";
+import { checkBuildList, checkBuild, checkTry, checkTries, checkAction, checkRoles, checkStages } from "../lib/contract.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const DOC = JSON.parse(await readFile(join(HERE, "..", "standards", "stages.json"), "utf8"));
@@ -179,8 +179,8 @@ const del = (d, path, q = "") => d.handle("DELETE", path, new URLSearchParams(q)
 const ROLE_IDS = DOC.roles.map((r) => r.id);
 const roleOf = (body, id) => body.roles.find((r) => r.role === id);
 
-test("stages.json 1.1.0 lists the roles, each stage's role ids, and the evidence formats", () => {
-  assert.equal(DOC.version, "1.1.0");
+test("stages.json 1.2.0 lists the roles, each stage's role ids, and the evidence formats", () => {
+  assert.equal(DOC.version, "1.2.0");
   assert.equal(DOC.roles.length, 19);
   for (const r of DOC.roles) {
     assert.equal(r.contract, `https://agentroles.ai/${r.id}.html`);
@@ -199,7 +199,8 @@ test("the roles answer has the contract's shape, for the organization and for a 
   assert.deepEqual(checkRoles(org.body, ROLE_IDS), []);
   assert.deepEqual(org.body.roles.map((r) => r.role), ROLE_IDS);
   assert.equal(roleOf(org.body, "security-reviewer").from, "org");
-  assert.equal(roleOf(org.body, "code-writer").from, "default");
+  assert.equal(roleOf(org.body, "code-writer").from, "org");
+  assert.equal(roleOf(org.body, "code-critic").from, "default");
   assert.equal(roleOf(org.body, "agent-critic").from, "unbound");
   assert.equal(roleOf(org.body, "agent-critic").binding, null);
   assert.deepEqual(roleOf(org.body, "requester").binding.holder, { kind: "person", name: "the person who asked" });
@@ -287,4 +288,124 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
   const bp = checkBuild({ build: b }, IDS);
   assert.ok(bp.some((p) => p.includes("known evidence format")));
   assert.ok(bp.some((p) => p.includes("holder.kind is one of")));
+});
+
+// ---------- 0.3: which stages the lifecycle uses ----------
+
+const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
+const at = (b, id) => b.stages.find((s) => s.stage === id);
+
+test("the vendored schema is lifecycle API 0.3, with the stages operations and not_used", () => {
+  assert.equal(SCHEMA.version, "0.3");
+  const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
+  for (const op of ["GET /stages", "PUT /stages/{stage}", "DELETE /stages/{stage}"]) assert.ok(ops.includes(op), op);
+  assert.ok(SCHEMA.$defs.State.enum.includes("not_used"));
+  assert.deepEqual(SCHEMA.$defs.StageChoice.required, ["stage", "name", "phase", "roles", "used", "from", "can_leave_out"]);
+  assert.deepEqual(SCHEMA.$defs.StagesAnswer.required, ["project", "stages"]);
+  assert.deepEqual(SCHEMA.$defs.Build.properties.lifecycle.required, ["project", "at"]);
+});
+
+test("the stages answer has the contract's shape, for the organization and for a project", async () => {
+  const d = createDemoService();
+  const org = await get(d, "/v1/lifecycle/stages");
+  assert.equal(org.status, 200);
+  assert.deepEqual(checkStages(org.body, { stages: DOC.stages, project: null }), []);
+  assert.equal(org.body.project, null);
+  assert.deepEqual(org.body.stages.filter((s) => !s.used).map((s) => s.stage), ["impact", "source", "retract", "reconfigure"]);
+  assert.equal(at(org.body, "impact").from, "org");
+  assert.equal(at(org.body, "review").from, "default");
+  assert.equal(at(org.body, "test").can_leave_out, false);
+  assert.match(at(org.body, "test").why_not, /cannot build without it/);
+  const fin = await get(d, "/v1/lifecycle/stages", "project=finance");
+  assert.deepEqual(checkStages(fin.body, { stages: DOC.stages, project: "finance" }), []);
+  assert.equal(at(fin.body, "impact").used, true);
+  assert.equal(at(fin.body, "impact").from, "project");
+  assert.equal(at(fin.body, "eval").used, false);
+  assert.equal(at(fin.body, "source").from, "org");
+});
+
+test("choosing a stage, and going back, keep the contract's shape", async () => {
+  const d = createDemoService();
+  const off = await put(d, "/v1/lifecycle/stages/docs", { used: false });
+  assert.equal(off.status, 200);
+  assert.deepEqual(checkStages(off.body, { stages: DOC.stages, project: null }), []);
+  assert.equal(at(off.body, "docs").used, false);
+  assert.equal(at(off.body, "docs").from, "org");
+  const p = await put(d, "/v1/lifecycle/stages/docs", { used: true }, "project=web");
+  assert.equal(at(p.body, "docs").from, "project");
+  assert.equal(at(p.body, "docs").used, true);
+  const back = await del(d, "/v1/lifecycle/stages/docs", "project=web");
+  assert.equal(at(back.body, "docs").from, "org");
+  const def = await del(d, "/v1/lifecycle/stages/docs");
+  assert.equal(at(def.body, "docs").from, "default");
+  assert.equal(at(def.body, "docs").used, true);
+});
+
+test("a stage choice the service refuses is a 400 with words", async () => {
+  const d = createDemoService();
+  for (const [stage, body] of [["nothing", { used: false }], ["code", { used: false }], ["docs", { used: "no" }], ["docs", {}]]) {
+    const r = await put(d, `/v1/lifecycle/stages/${stage}`, body);
+    assert.equal(r.status, 400, `${stage} ${JSON.stringify(body)}`);
+    assert.equal(typeof r.body.error, "string");
+  }
+  // The refusal for a stage the service needs is its why_not, in its own words.
+  const code = await put(d, "/v1/lifecycle/stages/code", { used: false });
+  assert.match(code.body.error, /cannot build without it/);
+});
+
+test("a build shows its lifecycle, and the stages it leaves out read not_used", async () => {
+  const d = createDemoService();
+  const pal = (await get(d, "/v1/lifecycle/builds/b_palindrome_judge")).body;
+  assert.deepEqual(checkBuild(pal, IDS), []);
+  assert.deepEqual(pal.build.lifecycle, { project: null, at: "2026-10-31T14:58:00Z" });
+  for (const id of ["impact", "source", "retract", "reconfigure"]) {
+    const s = at(pal.build, id);
+    assert.equal(s.state, "not_used", id);
+    assert.equal(s.holder, null);
+    assert.equal(s.runs, 0);
+  }
+  const exp = (await get(d, "/v1/lifecycle/builds/b_expense_check")).body.build;
+  assert.equal(exp.lifecycle.project, "finance");
+  assert.equal(at(exp, "eval").state, "not_used");
+  // not_applicable wins over not_used; the finance project uses Impact.
+  assert.equal(at(exp, "review").state, "not_applicable");
+  assert.equal(at(exp, "impact").state, "not_bound");
+});
+
+test("a new build keeps the lifecycle in effect when it started", async () => {
+  const d = createDemoService();
+  await put(d, "/v1/lifecycle/stages/docs", { used: false });
+  const b = (await post(d, "/v1/lifecycle/builds", { does: "Count the words.", project: "finance" })).body;
+  assert.deepEqual(checkBuild(b, IDS), []);
+  assert.equal(b.build.lifecycle.project, "finance");
+  assert.deepEqual(b.build.stages.filter((s) => s.state === "not_used").map((s) => s.stage), ["source", "docs", "retract", "eval", "reconfigure"]);
+  // A later change leaves the started build as it was.
+  await put(d, "/v1/lifecycle/stages/docs", { used: true });
+  const again = (await get(d, `/v1/lifecycle/builds/${b.build.id}`)).body.build;
+  assert.equal(at(again, "docs").state, "not_used");
+});
+
+test("the checks notice a stages answer or a build that breaks the 0.3 contract", async () => {
+  const d = createDemoService();
+  const body = structuredClone((await get(d, "/v1/lifecycle/stages")).body);
+  at(body, "test").used = false;
+  delete at(body, "code").why_not;
+  at(body, "review").from = "project";
+  at(body, "docs").from = "somewhere";
+  at(body, "eval").name = "Evaluation";
+  [body.stages[0], body.stages[1]] = [body.stages[1], body.stages[0]];
+  const p = checkStages(body, { stages: DOC.stages, project: "finance" });
+  for (const words of ["a stage that cannot be left out is used", "why_not says what needs the stage", "from is project only when a project was asked about", "from is one of", "name is the stage's name", "in its order", "project is the project asked about"]) {
+    assert.ok(p.some((x) => x.includes(words)), words);
+  }
+  assert.ok(checkStages({ stages: [] }).some((x) => x.includes("project is words, or null")));
+  const b = palindromeJudge();
+  at(b, "impact").holder = { kind: "reference_agent", name: "impact-analyst" };
+  at(b, "source").runs = 1;
+  b.actions.push({ stage: "retract", name: "stop", label: "Stop", needs: [] });
+  b.lifecycle = { project: "web", at: "yesterday" };
+  const bp = checkBuild({ build: b }, IDS);
+  for (const words of ["not_used stage has holder null", "not_used stage has runs 0", "is not at a not_used stage", "lifecycle.at is an ISO 8601 time", "lifecycle.project is the build's project"]) {
+    assert.ok(bp.some((x) => x.includes(words)), words);
+  }
 });
