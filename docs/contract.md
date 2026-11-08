@@ -199,6 +199,37 @@ How the console reads these:
   proposal's `when`, and the page reads the build again until it does. A taken, declined or
   closed proposal is shown done.
 
+Read by the console since lifecycle API 0.4.2 (additive; stages.json 1.3.0): each stage's cadence.
+
+```
+stage (in a build, and a stage workspace) adds
+  cadence?: every_build | setup | when_needed            // stages.json's cadence for the stage
+  carried?: { since, build?, words }                    // a setup stage whose holder and settings are the
+                                                        // same as an earlier version's: "Unchanged since 0.1.0"
+GET /v1/lifecycle/products/:name adds
+  setup?: [{ stage, name?, role, project?, state: chosen | not_chosen | not_used,
+             holder: Holder | null, settings: {}, since: <version> | null, words? }]
+             // every setup stage of stages.json, in order; since null: it holds from the next version
+  when_needed?: [{ stage, name?, can_run, why_not?, action?: { build, name, label } }]
+             // every when_needed stage, in order; why_not exactly when it cannot run,
+             // action (a build's own, taken with the actions route) exactly when it can
+```
+
+How the console reads these:
+
+- The spine is the build's steps: only its every-build stages, in the states the build gives
+  them, so Review and Security review show as done when they ran inside Code's gate. A setup or
+  when-needed stage is never drawn as a build step, whatever state it is in. A stage without a
+  cadence takes stages.json's; with neither, it is a step, as before.
+- The product page's Setup tab is a checklist of the setup stages: each with its role, its
+  holder and settings in words, and since when it has held. Nobody chosen is marked to do,
+  with a link to the Lifecycle page that opens that role's holder form, which saves through
+  `PUT /roles/:role` (for the product's project when it has one). The tab's count is how many
+  are to do. A service without `setup` has the tab disabled.
+- The when-needed actions are buttons under the product's name. A button is enabled only when
+  `can_run` is true and it names the action; it then posts that build's action. Every other is
+  disabled, with `why_not` as its title and listed under "Why they are off".
+
 Read by the console since 0.1 (CommonAgent/adlc, standards/lifecycle-api.schema.json, TimelineBar):
 
 ```

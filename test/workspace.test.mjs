@@ -27,23 +27,24 @@ const post = (d, path, body = {}) => d.handle("POST", path, new URLSearchParams(
 const PJ = "/v1/lifecycle/builds/b_palindrome_judge";
 const live = (b) => (stage) => (b.actions.some((a) => a.stage === stage) ? `<div class="acts">${b.actions.filter((a) => a.stage === stage).map((a) => `<button data-act="${a.name}">${a.label}</button>`).join("")}</div>` : "");
 
-test("the spine is the stages the build uses, done, now or next, and opening a build opens the stage it is at", async () => {
+test("the spine is the every-build stages the build runs, done, now or next, and opening a build opens the stage it is at", async () => {
   const b = (await get(createDemoService(), PJ)).body.build;
   const spine = steps(b, { defs, roleDefs });
-  // Impact, Source, Retract and Reconfigure are left out by its lifecycle; Docs and later are not offered.
-  assert.deepEqual(spine.map((x) => x.stage), ["requirements", "architecture", "test", "code", "review", "security", "package", "release", "deploy", "conformance", "acceptance"]);
-  assert.deepEqual(spine.map((x) => x.mark), ["done", "done", "done", "now", "done", "done", "next", "next", "next", "next", "next"]);
-  assert.equal(spine[3].line, "your OK on pull request #5");
-  assert.equal(spine[6].line, "next");
-  assert.equal(spine[8].line, "your approval"); // Deploy waits on a person in stages.json
+  // Only every-build stages: Architecture is set up once per product, Impact is run when needed, and
+  // Docs is not offered. Review and Security review ran inside Code's gate, and are done.
+  assert.deepEqual(spine.map((x) => x.stage), ["requirements", "test", "code", "review", "security", "package", "release", "deploy", "conformance", "acceptance"]);
+  assert.deepEqual(spine.map((x) => x.mark), ["done", "done", "now", "done", "done", "next", "next", "next", "next", "next"]);
+  assert.equal(spine[2].line, "your OK on pull request #5");
+  assert.equal(spine[5].line, "next");
+  assert.equal(spine[7].line, "your approval"); // Deploy waits on a person in stages.json
   assert.equal(spine[0].line.startsWith("approved"), true);
-  assert.deepEqual(stepHeader(b, spine), { text: "Step 4 of 11 · waiting on you", tone: "wait" });
+  assert.deepEqual(stepHeader(b, spine), { text: "Step 3 of 10 · waiting on you", tone: "wait" });
   assert.equal(openingStage(b), "code");
   const html = spineHtml(b, spine, { sel: "code", href: (s) => `#/b/${b.id}/${s}`, productHref: "#/p/palindrome-judge" });
   assert.match(html, /<a class="rb" href="#\/p\/palindrome-judge"/);
   assert.match(html, /<a class="rs now sel" href="#\/b\/b_palindrome_judge\/code" aria-current="page"/);
-  assert.match(visible(html), /^palindrome-judge 0\.1\.0 Step 4 of 11 · waiting on you ✓ Requirements approved .* 4 Code your OK on pull request #5 /);
-  assert.doesNotMatch(html, /Impact|Retract/);
+  assert.match(visible(html), /^palindrome-judge 0\.1\.0 Step 3 of 10 · waiting on you ✓ Requirements approved .* 3 Code your OK on pull request #5 /);
+  assert.doesNotMatch(html, /Impact|Retract|Architecture|Monitor/);
 
   // A finished build opens at its last stage, and says where it ended.
   const done = (await get(createDemoService(), "/v1/lifecycle/builds/b_lunch_poll")).body.build;
@@ -251,12 +252,12 @@ test("without the 0.4 routes, each stage is drawn from the build answer and its 
   assert.ok(p.activity.length > 0);
 });
 
-test("the product page has tabs for its versions, run plan and activity; the Boss tab is disabled for a service without a boss", async () => {
+test("the product page has tabs for its versions, setup, run plan and activity; the Boss tab is disabled for a service without a boss", async () => {
   const d = createDemoService();
   const p = (await get(d, "/v1/lifecycle/products/lunch-poll")).body;
   const ctx = { stageName: (s) => defs.get(s)?.name ?? s, when: () => "t", does: "Runs the poll.", buildHref: (id) => `#/b/${id}` };
   const versions = productPageHtml(p, ctx, "versions");
-  assert.match(visible(versions), /^lunch-poll Runs the poll\. Boss Versions 1 Run plan Activity \d+ 1\.0\.0 Installed · conforms started t$/);
+  assert.match(visible(versions), /^lunch-poll Runs the poll\. When needed Impact Retract Reconfigure Rollback Decommission Why they are off .* Boss Versions 1 Setup 1 Run plan Activity \d+ 1\.0\.0 Installed · conforms started t$/);
   assert.match(versions, /<button type="button" role="tab" class="tab" aria-selected="false" disabled title="This service has no boss">Boss<\/button>/);
   // Without a boss, the page opens at Versions.
   assert.match(productPageHtml(p, ctx), /class="tab on" aria-selected="true" data-ptab="versions"/);

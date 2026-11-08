@@ -6,6 +6,12 @@
 // the stage read (Given) and made (Outputs), each opened in a reader per kind.
 // A product page has tabs for its versions, run plan and activity.
 //
+// Each stage has a cadence (stages.json 1.3.0, lifecycle API 0.4.2). The spine
+// is the build's steps: the every-build stages it runs. The stages set up once
+// per product are the product page's Setup checklist, and the when-needed
+// actions are buttons on the product page, enabled only when the service says
+// it can run them.
+//
 // Everything here builds HTML from what the service answered and nothing else,
 // so the tests can read it without a browser (test/workspace.test.mjs). The
 // routes it reads are lifecycle API 0.4 additions (docs/contract.md); a service
@@ -26,18 +32,29 @@ export function usedStages(build) {
   return list(build?.stages).filter((s) => s && !OFF.has(s.state));
 }
 
-/** The stage the build is at now, or null when every stage it uses is done. */
-export function currentStage(build) {
-  const used = usedStages(build);
+/** A stage's cadence: the build's word for it (0.4.2), else stages.json's, else every_build (a service from before cadences). */
+export function cadenceOf(stage, defs = new Map()) {
+  const c = str(stage?.cadence) || str(defs.get?.(stage?.stage)?.cadence);
+  return ["every_build", "setup", "when_needed"].includes(c) ? c : "every_build";
+}
+
+/** The build's steps: the every-build stages it runs, in the build's order. Setup and when-needed stages are the product's, not a build's. */
+export function stepStages(build, defs = new Map()) {
+  return usedStages(build).filter((s) => cadenceOf(s, defs) === "every_build");
+}
+
+/** The stage the build is at now, or null when every step it runs is done. */
+export function currentStage(build, defs = new Map()) {
+  const used = stepStages(build, defs);
   return used.find((s) => s.state === "waiting_on_you")
     ?? used.find((s) => ["working", "stopped", "refused"].includes(s.state))
     ?? used.find((s) => s.state !== "done")
     ?? null;
 }
 
-/** The stage a build opens at: the one it is at now, or its last when it is done. */
-export function openingStage(build) {
-  return (currentStage(build) ?? usedStages(build).at(-1) ?? null)?.stage ?? null;
+/** The stage a build opens at: the one it is at now, or its last step when it is done. */
+export function openingStage(build, defs = new Map()) {
+  return (currentStage(build, defs) ?? stepStages(build, defs).at(-1) ?? null)?.stage ?? null;
 }
 
 /** The product a build belongs to: the build's own product when it names one, else its name. */
@@ -81,10 +98,10 @@ export const canTalkTo = (holder) => isObj(holder) && !["person", "outside_tool"
 
 // ---------- the spine ----------
 
-/** The build's steps for the spine: each used stage, numbered, marked done, now or next, with a short line. */
+/** The build's steps for the spine: each every-build stage it runs, numbered, marked done, now or next, with a short line. */
 export function steps(build, { defs = new Map(), roleDefs = [], when = (x) => x } = {}) {
-  const used = usedStages(build);
-  const now = currentStage(build);
+  const used = stepStages(build, defs);
+  const now = currentStage(build, defs);
   let firstNext = true;
   return used.map((s, i) => {
     const def = defs.get(s.stage) ?? {};
@@ -499,9 +516,86 @@ export function productFromBuilds(name, builds, latest = null) {
 export const PRODUCT_TABS = [
   { id: "boss", label: "Boss" },
   { id: "versions", label: "Versions" },
+  { id: "setup", label: "Setup" },
   { id: "plan", label: "Run plan" },
   { id: "activity", label: "Activity" },
 ];
+
+// ---------- setup and when needed (lifecycle API 0.4.2) ----------
+
+/** A holder's settings as words: "every minutes: 5; alert after failures: 3". Never raw JSON. */
+export function settingsWords(settings) {
+  const out = [];
+  const walk = (v, path) => {
+    if (isObj(v)) { for (const [k, x] of Object.entries(v)) walk(x, [...path, k.replace(/_/g, " ")]); return; }
+    const val = Array.isArray(v) ? v.map((x) => (isObj(x) ? Object.values(x).join(" ") : String(x))).join(", ") : String(v);
+    out.push(`${path.join(" ")}: ${val}`);
+  };
+  if (isObj(settings)) walk(settings, []);
+  return out.join("; ");
+}
+
+/** What a setup row says about when its choice holds from, when the service gave no words. */
+function setupWords(x, roleName) {
+  if (x.state === "not_chosen") return `To do: choose who holds the ${roleName(str(x.role))} role`;
+  if (str(x.words)) return str(x.words);
+  if (x.state === "not_used") return "Not part of this product's lifecycle";
+  return str(x.since) ? `Unchanged since ${str(x.since)}` : "Chosen: it holds from the next version";
+}
+
+/** How many setup stages wait on a holder: nobody chosen. */
+export const setupToDo = (items) => list(items).filter((x) => isObj(x) && x.state === "not_chosen").length;
+
+/**
+ * The Setup tab: each stage set up once per product, with its holder, its
+ * settings and since when it has held. "Nobody chosen" is marked to do, with
+ * a link to choose a holder on the Lifecycle page, which sets it with the
+ * roles routes. ctx.chooseHref(role, stage, project): that link; none when
+ * the page cannot change the lifecycle (read only).
+ */
+export function setupHtml(items, ctx = {}) {
+  const stageName = ctx.stageName ?? ((x) => x);
+  const roleName = ctx.roleName ?? ((x) => x);
+  const rows = list(items).filter((x) => isObj(x) && str(x.stage));
+  if (!rows.length) return `<p class="gw">This service lists no stages set up once.</p>`;
+  const todo = setupToDo(rows);
+  const row = (x) => {
+    const mark = x.state === "chosen" ? "ok" : x.state === "not_chosen" ? "todo" : "off";
+    const dot = mark === "ok" ? "✓" : mark === "todo" ? "!" : "–";
+    const h = isObj(x.holder) ? x.holder : null;
+    const who = h ? (h.kind === "reference_agent" ? `${roleName(str(x.role))}, the reference agent` : str(h.name)) : "";
+    const set = settingsWords(x.settings);
+    const href = ctx.chooseHref && x.state !== "not_used" ? ctx.chooseHref(str(x.role), str(x.stage), x.project ?? null) : null;
+    const act = href ? `<a class="${mark === "todo" ? "btn p" : "linkbtn"}" href="${esc(href)}">${mark === "todo" ? "Choose a holder" : "Change"}</a>` : "";
+    const holderLine = x.state === "chosen" ? `<p class="sh">${esc(who)}${set ? ` <small>${esc(set)}</small>` : " <small>No settings</small>"}</p>` : x.state === "not_chosen" ? `<p class="sh none">Nobody chosen</p>` : "";
+    return `<li class="su ${mark}"><span class="dot" aria-hidden="true">${dot}</span><div class="sb"><b>${esc(str(x.name) || stageName(str(x.stage)))}</b> <span class="role">${esc(roleName(str(x.role)))}</span>${holderLine}<p class="since">${esc(setupWords(x, roleName))}</p></div>${act}</li>`;
+  };
+  return `<p class="gw sutop">${todo ? `${todo} to do: ${todo === 1 ? "a stage nobody holds" : "stages nobody holds"}.` : "Every stage set up once has a holder, or is left out."} Each is set up once for the product and carried forward to each new version until you change it.</p><ul class="setup">${rows.map(row).join("")}</ul>`;
+}
+
+/**
+ * The when-needed actions as buttons: enabled only where the service says it
+ * can run one, and then it takes the build's own action (data-when-act); every
+ * other is disabled, with the service's words for why. No list, no buttons.
+ */
+export function whenNeededHtml(items, { stageName = (x) => x, pending = null } = {}) {
+  const rows = list(items).filter((x) => isObj(x) && str(x.stage));
+  if (!rows.length) return "";
+  const can = (x) => x.can_run === true && isObj(x.action) && str(x.action.build) && str(x.action.name);
+  const name = (x) => str(x.name) || stageName(str(x.stage));
+  const btns = rows.map((x) => (can(x)
+    ? `<button class="btn" type="button" data-when-act="${esc(str(x.stage))}"${pending !== null ? " disabled" : ""}>${esc(pending === str(x.stage) ? "Sending…" : str(x.action.label) || name(x))}</button>`
+    : `<button class="btn" type="button" disabled title="${esc(str(x.why_not))}" aria-describedby="wn-${esc(str(x.stage))}">${esc(name(x))}</button>`)).join("");
+  const off = rows.filter((x) => !can(x));
+  const why = off.length ? `<details class="wnwhy"><summary>Why ${off.length === rows.length ? "they are" : off.length === 1 ? "one is" : "some are"} off</summary><dl>${off.map((x) => `<dt>${esc(name(x))}</dt><dd id="wn-${esc(str(x.stage))}">${esc(str(x.why_not) || "The service does not say.")}</dd>`).join("")}</dl></details>` : "";
+  return `<div class="wneed" role="group" aria-label="When needed"><span class="wl">When needed</span>${btns}</div>${why}`;
+}
+
+/** The when-needed action a button takes: { build, name }, or null when the service does not say it can run it now. */
+export function whenNeededAction(items, stage) {
+  const x = list(items).find((i) => isObj(i) && i.stage === stage);
+  return x && x.can_run === true && isObj(x.action) && str(x.action.build) && str(x.action.name) ? { build: str(x.action.build), name: str(x.action.name) } : null;
+}
 
 // ---------- the boss (lifecycle API 0.4.1) ----------
 
@@ -583,7 +677,7 @@ export function bossBuildsToRead(messages) {
   return [...new Set(list(messages).map((m) => m?.proposes).filter((p) => isObj(p) && p.action !== "start_version" && (p.state ?? "open") === "open" && str(p.build)).map((p) => p.build))];
 }
 
-/** The product page: its name, then tabs for the boss, its versions, its run plan and its activity. ctx.boss: { offered, messages, ... } when the service has the boss. */
+/** The product page: its name and its when-needed actions, then tabs for the boss, its versions, its setup, its run plan and its activity. ctx.boss: { offered, messages, ... } when the service has the boss. */
 export function productPageHtml(p, ctx = {}, tab = null) {
   const stageName = ctx.stageName ?? ((x) => x);
   const when = ctx.when ?? ((x) => x);
@@ -600,17 +694,21 @@ export function productPageHtml(p, ctx = {}, tab = null) {
   const acts = list(p?.activity).filter(isObj).slice(0, 40).map((e) => `<li><time>${esc(when(e.at))}</time><span class="st">${esc([str(e.version) || versionOf.get(e.build) ? `v${str(e.version) || versionOf.get(e.build)}` : "", e.stage ? stageName(str(e.stage)) : ""].filter(Boolean).join(" · "))}</span>${esc(str(e.words))}</li>`).join("");
   // The boss is the default place to talk, when the service has one.
   const boss = isObj(ctx.boss) && ctx.boss.offered ? ctx.boss : null;
+  const hasSetup = Array.isArray(p?.setup);
+  const todo = setupToDo(p?.setup);
   const tabs = PRODUCT_TABS.map((t) => ({
     ...t,
     ...(t.id === "boss" && !boss ? { disabled: true, title: "This service has no boss" } : {}),
-    count: t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : undefined,
+    ...(t.id === "setup" && !hasSetup ? { disabled: true, title: "This service does not say how the product is set up" } : {}),
+    count: t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : t.id === "setup" && todo ? todo : undefined,
   }));
   const want = tab ?? (boss ? "boss" : "versions");
   const on = tabs.some((t) => t.id === want && !t.disabled) ? want : "versions";
   const body = on === "boss" ? `<div class="thread" id="thread">${bossChatHtml(boss.messages, { ...ctx, ...boss, stageName, when })}</div>`
+    : on === "setup" ? setupHtml(p.setup, { stageName, roleName: ctx.roleName, chooseHref: ctx.chooseHref })
     : on === "plan" ? (plan || `<p class="gw">No run plan yet. Deploy makes it.</p>`)
       : on === "activity" ? (acts ? `<ul class="feed">${acts}</ul>` : `<p class="gw">Nothing yet.</p>`)
         : (vers ? `<ul class="vers">${vers}</ul>` : `<p class="gw">No builds yet.</p>`);
-  return `<section class="thread-wrap work product"><div class="whead"><div class="hd"><div><h1>${esc(str(p?.name))}</h1>${ctx.does ? `<p class="sub">${esc(ctx.does)}</p>` : ""}${ctx.extra ?? ""}</div></div>${tabsHtml(tabs, on, { attr: "ptab", label: "Product" })}</div>
+  return `<section class="thread-wrap work product"><div class="whead"><div class="hd"><div><h1>${esc(str(p?.name))}</h1>${ctx.does ? `<p class="sub">${esc(ctx.does)}</p>` : ""}${ctx.extra ?? ""}${whenNeededHtml(p?.when_needed, { stageName, pending: ctx.whenPending ?? null })}</div></div>${tabsHtml(tabs, on, { attr: "ptab", label: "Product" })}</div>
     <div class="wbody${on === "boss" ? " tab-chat" : ""}" id="tabbody"><div class="err" role="alert">${esc(ctx.error ?? "")}</div><div class="ptab ${on}">${body}</div></div>${on === "boss" ? bossComposerHtml(boss.composer ?? {}) : ""}</section>`;
 }
