@@ -5,6 +5,12 @@ A small page on your own computer that shows one build's journey through the
 gates that are yours: approve the spec, your OK on the code, approve the
 install, and try the agent before you accept it.
 
+A build opens at the stage it is at. The menu on the left is the product and its
+build's stages; the page is that stage, with its gate on top when it waits on
+you, and two tabs: Chat, to talk to the agent holding the stage, and Artifacts,
+what the stage read and made. A product page lists its versions, run plan and
+activity.
+
 It holds no lifecycle logic. It reads the stage definitions, reads your builds
 from a service that implements the ADLC, and shows the actions that service
 offers. Every judgment stays with the service and its agents. It has no
@@ -254,7 +260,7 @@ npm test          # node:test, no dependencies
 npm run demo      # the demo, on a free port
 ```
 
-`design/mock.html` is the design the build page follows, and `design/lifecycle.html` the design of the Lifecycle page.
+`design/lifecycle.html` is the design of the Lifecycle page. The build page follows the approved build-thread design: one stage at a time, with Chat and Artifacts tabs. `design/mock.html` is the earlier stage-chips design.
 
 ## License
 

@@ -91,6 +91,79 @@ stage.state adds not_used        // the build's lifecycle leaves the stage out: 
 build adds lifecycle?: { project, at }   // whose choice of stages it started under (project or null), and when
 ```
 
+Proposed for lifecycle API 0.4 (all additive): products, each stage as a workspace, and
+each product's chat with the agent holding a stage.
+
+```
+build adds artifacts?: [{ id, stage, name, by,       // by: the holder, in words
+                          state,                     // made | next | later | not_made | not_run
+                          kind,                      // statement | architecture | suite | programs | findings | security |
+                                                     // package | build_record | run_plan | attestation | agentdoc | other
+                          version?, digest?, at?, files?: [File],
+                          summary? }]                // readable, per kind (below); in stage order, only stages the build uses
+  summary per kind:
+    statement { agent, offerings: [{ name, does }], refuses: [..], records: [..], price?, open: [questions] }
+    suite     { count, tests: [names] }
+    programs  { scripts: [{ path, lines, does? }], commit?, pr?: { number, url } }
+    findings  { open: [{ place, claim, consequence }], verdict, outside?: [{ place, claim }] }
+    security  { reach: [..], spend, never: [..], verdict }
+    package   { file, digest, validated }
+    run_plan  { stages: [{ stage, name?, holder | null, settings, reads }] }   // reads: chosen, not chosen or not used
+    any other { words }
+
+GET  /v1/lifecycle/products
+  -> { products: [{ name, latest: { build, version, state, at: { stage, state, summary? } }, versions: [..] }] }
+     // state: working | waiting_on_you | refused | stopped | done; versions newest first
+GET  /v1/lifecycle/products/:name
+  -> { name, builds: [{ id, version, state, at, created? }],          // newest first
+       run_plan?: { build, version, at, summary, files? },            // the newest build's run plan
+       activity: [{ at, build, version?, stage, words }] }             // newest first, one line per stage event
+GET  /v1/lifecycle/builds/:id/stages/:stage
+  -> { stage, name?, state, holder,
+       given: [artifact id],                 // what it read: earlier stages' outputs, only those made
+       outputs: [Artifact],                  // what it made
+       gate?: { actions: [name], state: "open" | "answered", answered?: { by, at, action },
+                closed?, who_may },          // closed: why it closed with no answer; who_may: words
+       done_when }                           // words
+GET  /v1/lifecycle/products/:name/stages/:stage/messages
+  -> { messages: [{ id, at, from: { kind: person | agent | system, name, role?, stage }, to?: { role },
+                    text, attachments?: [artifact id], build, version, proposes? }] }   // oldest first; no gate messages
+POST /v1/lifecycle/products/:name/stages/:stage/messages   { text, build? }
+  -> { message, reply }                      // reply.proposes?: { action, needs } names one of the build's live
+                                             // actions for that stage; nothing changes until the person takes it
+                                             // through the actions route. 400 { error } when a person, an outside
+                                             // tool or nobody holds the stage.
+```
+
+How the console reads these:
+
+- Opening a build opens the stage it is at now (`#/b/<id>/<stage>` opens any stage it uses).
+  The left menu is the product: its name and the build's version, "Step N of M" and what it
+  waits on, then the stages the build uses (not `not_used`, `not_offered` or `not_applicable`),
+  each done, now or next. Then the other products, from GET /products (each with what its
+  latest build waits on), New build, and the factory pages.
+- The rest of the page is the selected stage. Its header stays put while the tab below it
+  scrolls: the stage's name, its gate when there is one (the build's live actions for the
+  stage; an answered gate in a done style, with who answered and when; a gate that closed with
+  no answer, with `closed`), and its tabs.
+- Chat: the stage's messages, each marked with its version, then the composer addressed to
+  the stage's agent. A reply's `proposes` shows a confirm button that posts the build's own
+  action with the needs filled. A service's refusal (400 for a stage a person, an outside tool
+  or a harness holds) is shown in its own words.
+- Artifacts: the stage's Given and Outputs, with the chosen one open in a reader per kind. The
+  reader reads only the summary fields above, as words; it never shows raw JSON. An attachment
+  in the chat opens this tab at that artifact; going back to Chat lands where it was.
+- Try it, when the build has a pull request or an installed agent.
+- `#/b/<id>/<stage>/<tab>` opens a stage at a tab (`chat`, `artifacts` or `try`).
+- The product page (`#/p/<name>[/<tab>]`, the product's name in the menu) has tabs for its
+  versions, the run plan (`run_plan.summary`) and the activity feed. Boss chat is shown, and
+  comes later.
+- A service without these routes (a 404, 405 or 501) still gets the page: each stage is drawn
+  from the build answer (its state, holder, rounds, log, live actions and handed-back words and
+  files), its chat is made from its rounds and log and cannot be written to, the Artifacts tab
+  shows the build's `artifacts` for the stage or what it handed back, and the product page is
+  made from the build list. Other products are the other builds in the list.
+
 Read by the console since 0.1 (CommonAgent/adlc, standards/lifecycle-api.schema.json, TimelineBar):
 
 ```
@@ -184,7 +257,9 @@ GET /v1/lifecycle/people
 
 `lib/contract.mjs` holds these shapes as checks. A service author can run
 their own answers through `checkBuildList`, `checkBuild`, `checkTry`,
-`checkTries`, `checkRoles`, `checkStages` and `checkAnalytics`; each returns a list of
+`checkTries`, `checkRoles`, `checkStages`, `checkAnalytics`, and for 0.4 `checkArtifact`,
+`checkProducts`, `checkProduct`, `checkStageWorkspace(body, { build })`, `checkMessages`
+and `checkMessageReply(body, { build, stage })`; each returns a list of
 problems, empty when the shape is right. `checkStages(body, { stages, project })`
 takes stages.json's stages, to check the order, names, phases and role ids,
 and the project asked about, which the answer must echo.
