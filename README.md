@@ -172,6 +172,20 @@ console in one of three ways; the first one found is used:
    `~/.config/adlc-console/keys.json` elsewhere), readable only by you, one
    key per service. "Forget it" at the top of the page removes it.
 
+A lifecycle service can also start the console in its own process and hand
+it the key in memory, so you give it nothing and no file holds the key.
+That key comes before the three above:
+
+```js
+import { createConsoleServer } from "adlc-console/lib/server.mjs";
+import { createKeyStore } from "adlc-console/lib/keys.mjs";
+import { openBrowser } from "adlc-console/lib/open.mjs";
+
+const keys = createKeyStore({ service, key });       // the key, held in memory
+const app = createConsoleServer({ service, keys });  // the shipped stages by default
+openBrowser(await app.listen(0));
+```
+
 The page in your browser never holds the key. It talks only to the console's
 local server, which adds the key and passes the request to the service. The
 local server answers only its own page, so another web site cannot use it.

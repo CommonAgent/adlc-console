@@ -366,3 +366,23 @@ test("the demo answers the stages routes through the proxy", async () => {
     assert.match(no.json.error, /cannot build without it/);
   } finally { await app.close(); }
 });
+
+test("started in process with a key in memory and the shipped stages, it signs in with no key file", async () => {
+  const svc = await fakeService(() => ({ body: { builds: [] } }));
+  const dir = await tempDir("srv");
+  const app = createConsoleServer({ service: svc.url, keys: createKeyStore({ service: svc.url, env: {}, key: KEY, dir }), version: "test" });
+  const url = await app.listen(0);
+  const host = new URL(url).host;
+  try {
+    const st = await hit(url, { path: "/local/status", headers: { host } });
+    assert.equal(st.json.key_from, "service");
+    assert.equal(st.json.can_forget, false);
+    assert.ok(!st.text.includes(KEY));
+    const stages = await hit(url, { path: "/local/stages", headers: { host } });
+    assert.deepEqual(stages.json, STAGES);
+    const r = await hit(url, { path: "/api/v1/lifecycle/builds", headers: { host } });
+    assert.equal(r.status, 200);
+    assert.equal(svc.seen[0].headers.authorization, `Bearer ${KEY}`);
+    await assert.rejects(stat(join(dir, "keys.json")));
+  } finally { await app.close(); await svc.close(); }
+});
