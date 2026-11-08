@@ -9,6 +9,7 @@ const PHASES = [
 import { esc, safeUrl, stateOf, holderWords, holderHtml, stageNoticeHtml, evidenceHtml, holderFrom, effectiveHolder, WORD } from "./roles.js";
 import { lifecyclePageHtml, lifecycleHash, lifecycleDraft, referenceHolder, stagesToReset, notUsedHtml, buildLifecycleHtml, addedDraft, addedBody } from "./lifecycle.js";
 import { boardHtml } from "./board.js";
+import { dashboardHtml, span } from "./dashboard.js";
 
 const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop", not_bound: "unb", not_applicable: "na", not_used: "nu" };
 const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■", not_bound: "?", not_applicable: "", not_used: "" };
@@ -41,6 +42,8 @@ const state = {
   status: null, stages: [], byId: new Map(), builds: [], build: null, tries: [],
   sel: null, view: "build", error: "", lastTry: null, checks: new Map(), files: new Map(), pending: null, asking: null, wrongFor: null,
   logAll: false, showArchived: false, boardMine: store.get("board-mine") === "1",
+  // The Dashboard: each build as GET /builds/:id answered it, kept by id with the list's updated time.
+  full: new Map(), fullLoaded: false,
   // The Lifecycle page: the stages answer, the roles answer, the holder form open, errors by row, the request in flight.
   lcStages: null, lcRoles: null, noStages: false, project: "", lcEditing: null, lcDraft: null, lcErrors: new Map(), lcPending: null,
 };
@@ -118,6 +121,7 @@ function parseHash() {
   const parts = raw.split("/").map(decodeURIComponent);
   if (parts[0] === "new") return { view: "new" };
   if (parts[0] === "board") return { view: "board" };
+  if (parts[0] === "dashboard") return { view: "dashboard" };
   // The Roles page is now part of the Lifecycle page; an old link still lands there.
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null };
@@ -136,6 +140,12 @@ async function route() {
     // Drawn at once from the list in hand, then again from a fresh one.
     try { await refreshBuilds(); } catch (e) { return problem(e); }
     if (state.view === "board") { drawRail(); drawBoard(); }
+    return;
+  }
+  if (h.view === "dashboard" && state.status?.source !== "file") {
+    state.view = "dashboard"; drawRail(); drawDashboard();
+    try { await refreshBuilds(); await loadFull(); } catch (e) { return problem(e); }
+    if (state.view === "dashboard") { drawRail(); drawDashboard(); }
     return;
   }
   if (h.view === "lifecycle") {
@@ -220,6 +230,10 @@ function drawRail() {
   board.hidden = state.status?.source === "file";
   board.classList.toggle("on", state.view === "board");
   if (state.view === "board") board.setAttribute("aria-current", "page"); else board.removeAttribute("aria-current");
+  const dash = $("dashboard");
+  dash.hidden = state.status?.source === "file";
+  dash.classList.toggle("on", state.view === "dashboard");
+  if (state.view === "dashboard") dash.setAttribute("aria-current", "page"); else dash.removeAttribute("aria-current");
   // A lifecycle file holds no builds: a plain line, not an error.
   if (state.status?.source === "file") {
     $("builds").innerHTML = `<p class="none">There are no builds here. The console is keeping your lifecycle in a file.</p>`;
@@ -317,16 +331,6 @@ function phases() {
   }).join("");
 }
 
-/** "4 min", "35 s", "2 h 5 min": a duration as a person says it. */
-function span(ms) {
-  if (!Number.isFinite(ms) || ms < 0) return "";
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s} s`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m} min`;
-  const h = Math.floor(m / 60);
-  return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
-}
 
 const KIND = { agent: "an agent working", person: "waiting on a person", external: "waiting on something outside the run" };
 
@@ -583,6 +587,30 @@ function drawBoard() {
   if (state.builds.some((b) => b.at?.state === "working" && !b.archived)) schedule();
 }
 
+// The Dashboard: median time per stage, send-backs per stage, and what is
+// waiting now, read from the build list and each build's record.
+function drawDashboard() {
+  drawTop();
+  layout("solo");
+  $("main").innerHTML = dashboardHtml(state.builds, [...state.full.values()].map((x) => x.build), state.stages, { error: state.error, loading: !state.fullLoaded });
+  for (const i of document.querySelectorAll(".hb i[data-w]")) i.style.width = `${i.dataset.w}%`;
+  $("stage").innerHTML = "";
+  if (state.builds.some((b) => b.at?.state === "working" && !b.archived)) schedule();
+}
+
+// Reads each build in the list, again only when the list says it changed.
+async function loadFull() {
+  const want = state.builds.filter((b) => state.full.get(b.id)?.updated !== b.updated || !b.updated);
+  const ids = new Set(state.builds.map((b) => b.id));
+  for (const id of state.full.keys()) if (!ids.has(id)) state.full.delete(id);
+  for (let i = 0; i < want.length; i += 6) {
+    await Promise.all(want.slice(i, i + 6).map(async (b) => {
+      try { state.full.set(b.id, { updated: b.updated, build: (await api(buildPath(b.id))).build }); } catch (e) { if (e.needKey) throw e; state.error = e.message; }
+    }));
+  }
+  state.fullLoaded = true;
+}
+
 function drawEmpty() {
   drawTop();
   layout("solo");
@@ -601,6 +629,11 @@ function schedule() {
     if (state.view === "board" && !document.hidden) {
       try { await refreshBuilds(); } catch (e) { return problem(e); }
       if (state.view === "board") drawBoard();
+      return;
+    }
+    if (state.view === "dashboard" && !document.hidden) {
+      try { await refreshBuilds(); await loadFull(); } catch (e) { return problem(e); }
+      if (state.view === "dashboard") drawDashboard();
       return;
     }
     if (document.hidden || state.view !== "build" || !state.build || state.pending) return schedule();

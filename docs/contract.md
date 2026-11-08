@@ -91,6 +91,15 @@ stage.state adds not_used        // the build's lifecycle leaves the stage out: 
 build adds lifecycle?: { project, at }   // whose choice of stages it started under (project or null), and when
 ```
 
+Read by the console since 0.1 (CommonAgent/adlc, standards/lifecycle-api.schema.json, TimelineBar):
+
+```
+build adds timeline?: [{ phase, round, holder, kind, start, end, duration_ms, status,
+                         stage? }]   // one bar per step per round, ordered by start
+  // stage (optional): the stage of stages.json the step belongs to. The Dashboard
+  // adds a stage's time from the bars that name it; a bar without one is not counted.
+```
+
 ## How the console reads it
 
 - A stage in stages.json that a build does not list is shown as not offered,
@@ -129,6 +138,11 @@ build adds lifecycle?: { project, at }   // whose choice of stages it started un
   `stopped` or the build is archived. A service reports a build that is
   between stages at the next stage, not the one it finished, so `done` means
   the build ended. Waiting on me is `at.state` `waiting_on_you`.
+- The Dashboard reads the list and each build. Time per stage is the median
+  across builds of the sum of a stage's timeline bars, counted once none of
+  them is open. Send-backs are rounds with `back: true`. Waiting now is from
+  the list: `waiting_on_you` or `refused` is on a person, `working` is an
+  agent working; builds in Done are left out.
 - The list is read with `?archived=1`. Archived builds are hidden, with a
   "Show archived (N)" toggle at the foot of the list. `archive`,
   `unarchive` and `resume_agent` are actions like any other: one button each.

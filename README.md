@@ -39,6 +39,24 @@ opens the build. Waiting on me shows only the builds waiting on you. The board
 reads the same build list as the rail, and refreshes while any build is
 working.
 
+## The Dashboard
+
+Dashboard, below Board in the rail, shows three things read from the build
+records, never estimated:
+
+- How long each stage takes: the median across builds, from each build's
+  timeline. A stage counts for a build once it has finished, adding up every
+  round, the agent's work and any wait on a person. Builds with no timeline
+  are named as not counted.
+- How often work is sent back at each stage: the rounds whose record says
+  `back: true`, out of every round there.
+- What is waiting now, stage by stage: builds waiting on a person (waiting
+  on you, or refused and waiting for someone to say what next) and builds
+  with an agent working.
+
+Each is a plain table with a bar drawn in CSS. The page reads GET /builds and
+GET /builds/:id, and refreshes while any build is working.
+
 ## Define your ADLC with no service
 
 ```
