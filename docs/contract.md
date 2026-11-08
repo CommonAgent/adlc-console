@@ -69,16 +69,53 @@ stage.state adds not_bound | not_applicable     holder.kind adds contracted | ou
 stage adds evidence?: [{ format, name, at, summary, file? }]
 ```
 
+Added in lifecycle API 0.3 (CommonAgent/adlc#118):
+
+```
+GET    /v1/lifecycle/stages[?project=<name>]
+  -> { project,                  // the project asked about, or null
+       stages: [{ stage, name, phase,
+                  roles: [..],     // the stage's role ids; who holds each is in the roles answer
+                  used,            // true | false
+                  from,            // project | org | default
+                  can_leave_out,   // whether this service can run its builds without the stage
+                  why_not?         // when can_leave_out is false: what needs it, in words
+       }],                         // every stage of stages.json, in its order
+       updated_at? }
+PUT    /v1/lifecycle/stages/:stage[?project=<name>]   { used }
+  -> the stages answer; 400 { error } for an unknown stage, or used: false where can_leave_out is false
+DELETE /v1/lifecycle/stages/:stage[?project=<name>]   -> the stages answer
+  (PUT and DELETE answer 403 for a member who is not an admin, 409 when the choice could not be saved)
+
+stage.state adds not_used        // the build's lifecycle leaves the stage out: holder null, runs 0, no action
+build adds lifecycle?: { project, at }   // whose choice of stages it started under (project or null), and when
+```
+
 ## How the console reads it
 
 - A stage in stages.json that a build does not list is shown as not offered,
   and so is a stage in a state the console does not know.
 - A holder is drawn with its kind in words ("our reference agent", "your
   agent", "contracted: <name>", "a person", "outside tool: <name>") and its
-  handle when there is one. not_bound links to the Roles page; not_applicable
-  is dimmed and says the stage doesn't apply to a process.
-- The Roles page shows the service's 400 words for a refused binding as they
-  are. The requester is always the person who asked, and has no form.
+  handle when there is one. not_bound links to the Lifecycle page;
+  not_applicable is dimmed and says the stage doesn't apply to a process.
+- not_used is struck through and dimmed. Its stage page says the stage is not
+  part of the build's lifecycle, and names which: the organization's, or the
+  project's in `lifecycle.project`. A build with `lifecycle` says which
+  lifecycle it follows under its name.
+- The Lifecycle page joins the stages answer and the roles answer: one row per
+  stage, with a Use switch and the holder of each of its roles. A switch is
+  disabled, with the service's `why_not` words, exactly when the service says
+  `can_leave_out: false`; the console never decides that itself. Stages that
+  share a role show the same holder, and changing it on one row changes the
+  role (PUT /roles). The requester is always the person who asked, and has no
+  form.
+- A refused choice shows on its row, in the service's words as they are. A 403
+  on a change from the Lifecycle page is shown that way too (a member who is
+  not an admin), not taken as a bad key.
+- A service with no stages operations (a 404 on GET /stages) still gets the
+  page: the stages come from stages.json, with no Use switch, and holders can
+  be chosen as before.
 - `holder` may be `null` for a stage that is not offered.
 - `size` is a count of bytes. Files are shown inline, fetched from the
   `files` path when opened; a file that is not text is not shown.
@@ -92,8 +129,11 @@ stage adds evidence?: [{ format, name, at, summary, file? }]
   `unarchive` and `resume_agent` are actions like any other: one button each.
 
 `lib/contract.mjs` holds these shapes as checks. A service author can run
-their own answers through `checkBuildList`, `checkBuild`, `checkTry` and
-`checkTries`; each returns a list of problems, empty when the shape is right.
+their own answers through `checkBuildList`, `checkBuild`, `checkTry`,
+`checkTries`, `checkRoles` and `checkStages`; each returns a list of
+problems, empty when the shape is right. `checkStages(body, { stages, project })`
+takes stages.json's stages, to check the order, names, phases and role ids,
+and the project asked about, which the answer must echo.
 
 The contract is written in the plan, docs/adlc-console-plan.md in the
 AgentMesh repository, section "The contract, exactly". This copy follows it.
