@@ -497,14 +497,94 @@ export function productFromBuilds(name, builds, latest = null) {
 }
 
 export const PRODUCT_TABS = [
-  { id: "boss", label: "Boss chat", disabled: true, title: "Coming later" },
+  { id: "boss", label: "Boss" },
   { id: "versions", label: "Versions" },
   { id: "plan", label: "Run plan" },
   { id: "activity", label: "Activity" },
 ];
 
-/** The product page: its name, then tabs for its versions, its run plan and its activity. */
-export function productPageHtml(p, ctx = {}, tab = "versions") {
+// ---------- the boss (lifecycle API 0.4.1) ----------
+
+// A proposed action's name in words before its build offers it (once it does, the build's own label).
+const ACTION_LABEL = { changes: "Ask for changes", back_to_test: "Send back to Test", resume: "Run it again", stop: "Stop" };
+
+/** Where a routed message went: the stage's chat on its build. */
+export const stageChatHref = (build, stage) => `#/b/${encodeURIComponent(build)}/${encodeURIComponent(stage)}/chat`;
+
+/** A plan: the stages in order, what each must do, and the gate the person meets there. */
+export function planHtml(plan, { stageName = (x) => x } = {}) {
+  const steps = list(plan).filter((s) => isObj(s) && str(s.stage));
+  if (!steps.length) return "";
+  return `<ol class="plan">${steps.map((s) => `<li><b>${esc(stageName(str(s.stage)))}</b> ${esc(str(s.words))}${str(s.gate) ? `<small class="pgate"><span>Gate</span> ${esc(str(s.gate))}</small>` : ""}</li>`).join("")}</ol>`;
+}
+
+/**
+ * A proposal in a boss reply, as a confirm button. start_version is confirmed
+ * with the boss (data-boss-confirm); a build's own action with the actions route
+ * (data-boss-act), and only once that build offers it. builds: the builds the
+ * page has read, by id, for their live actions.
+ */
+export function bossProposalHtml(m, { builds = new Map(), confirmed = new Set(), pending = null } = {}) {
+  const p = m?.proposes;
+  if (!isObj(p) || !str(p.action) || !str(p.id)) return "";
+  const done = confirmed.has(p.id) || p.state === "taken";
+  const start = p.action === "start_version";
+  const version = str(p.needs?.version);
+  const b = builds.get(str(p.build));
+  const live = start ? null : list(b?.actions).find((a) => a?.name === p.action);
+  const title = start ? `Start version ${version}` : live?.label ?? ACTION_LABEL[p.action] ?? cap(p.action.replace(/_/g, " "));
+  const shown = start ? "" : Object.entries(isObj(p.needs) ? p.needs : {}).filter(([, v]) => str(v)).map(([k, v]) => {
+    const label = list(live?.needs).find((n) => n.name === k)?.label ?? cap(k.replace(/_/g, " "));
+    return `<p class="pn"><span>${esc(label)}</span>${esc(str(v))}</p>`;
+  }).join("");
+  const ask = str(p.words) || `${title}?`;
+  if (done) return `<div class="gcard done"><h4>${esc(ask)}</h4>${shown}<div class="acts"><span class="btn used">Confirmed</span></div></div>`;
+  if (p.state === "declined") return `<div class="gcard done"><h4>${esc(ask)}</h4>${shown}<div class="acts"><span class="btn used">Declined</span></div></div>`;
+  if (p.state === "closed") return `<div class="gcard"><h4>${esc(ask)}</h4>${shown}<p class="hint">Closed: it can no longer be taken.</p></div>`;
+  if (start) {
+    return `<div class="gcard prop"><h4>${esc(ask)}</h4><div class="acts"><button class="btn p" type="button" data-boss-confirm="${esc(p.id)}"${pending !== null ? " disabled" : ""}>${esc(pending === p.id ? "Starting…" : `Confirm: ${title}`)}</button></div><p class="hint">Nothing starts until you confirm.</p></div>`;
+  }
+  if (!live) {
+    return `<div class="gcard prop"><h4>${esc(ask)}</h4>${shown}<div class="acts"><button class="btn p" type="button" disabled>${esc(`Confirm: ${title}`)}</button></div><p class="hint">${esc(str(p.when) || "The build does not offer that now.")}</p></div>`;
+  }
+  return `<div class="gcard prop"><h4>${esc(ask)}</h4>${shown}<div class="acts"><button class="btn p" type="button" data-boss-act="${esc(m.id)}"${pending !== null ? " disabled" : ""}>${esc(pending === p.id ? "Sending…" : `Confirm: ${title}`)}</button></div><p class="hint">It goes back through the stage's gate.</p></div>`;
+}
+
+/** One message of the boss's conversation: a person's words, or the boss's reply with where it went, its plan and its proposal. */
+export function bossMessageHtml(m, ctx = {}) {
+  const k = m?.from?.kind;
+  if (k === "person" || k === "system") return messageHtml({ ...m, version: "" }, ctx);
+  const stageName = ctx.stageName ?? ((x) => x);
+  const when = ctx.when ?? ((x) => x);
+  const at = m.at && when(m.at) ? `<em>${esc(when(m.at))}</em>` : "";
+  const routed = isObj(m.routed) && str(m.routed.stage) && str(m.routed.build)
+    ? `<p class="routed"><a href="${esc(stageChatHref(m.routed.build, m.routed.stage))}">Open the ${esc(stageName(m.routed.stage))} chat</a></p>` : "";
+  const dropped = list(m.dropped).filter((d) => isObj(d) && str(d.stage) && str(d.build)).map((d) => `<a href="${esc(stageChatHref(d.build, d.stage))}">${esc(stageName(d.stage))}</a>`);
+  const started = isObj(m.started) && str(m.started.build) ? `<p class="routed"><a href="#/b/${esc(encodeURIComponent(m.started.build))}">Open version ${esc(str(m.started.version))}</a></p>` : "";
+  return `<div class="msg boss"><div class="av bs" aria-hidden="true">B</div><div><div class="mwho">${esc(str(m.from?.name) || "The boss")}${at}</div><div class="mbody">${paras(m.text)}${routed}${dropped.length ? `<p class="routed">Told: ${dropped.join(", ")}</p>` : ""}${planHtml(m.plan, { stageName })}${started}${bossProposalHtml(m, ctx)}</div></div></div>`;
+}
+
+/** The boss's conversation, oldest first. */
+export function bossChatHtml(messages, ctx = {}) {
+  const ms = list(messages).filter(isObj);
+  if (!ms.length) return `<div class="tsys empty">Ask the boss anything about this product: where it is, why it waits, what a stage made. Say what should change, and it routes it to the right stage or plans it across them.</div>`;
+  return ms.map((m) => bossMessageHtml(m, ctx)).join("");
+}
+
+/** The composer addressed to the boss. */
+export function bossComposerHtml({ draft = "", pending = false, error = "" } = {}) {
+  return `<div class="compose" id="compose"><div class="to">To <b>the boss</b></div>
+    <form class="box" id="boss-form"><label class="sr" for="boss-say">Your message to the boss</label><input id="boss-say" type="text" value="${esc(draft)}" autocomplete="off" placeholder="Ask about the product, or say what should change. The boss routes it or plans it."><button class="btn p" type="submit"${pending ? " disabled" : ""}>${pending ? "Sending…" : "Send"}</button></form>
+    ${error ? `<div class="err" role="alert">${esc(error)}</div>` : ""}<div class="hint">The boss never answers a gate. Every change is proposed here for you to confirm.</div></div>`;
+}
+
+/** The open proposals whose build the page must read for its live actions. */
+export function bossBuildsToRead(messages) {
+  return [...new Set(list(messages).map((m) => m?.proposes).filter((p) => isObj(p) && p.action !== "start_version" && (p.state ?? "open") === "open" && str(p.build)).map((p) => p.build))];
+}
+
+/** The product page: its name, then tabs for the boss, its versions, its run plan and its activity. ctx.boss: { offered, messages, ... } when the service has the boss. */
+export function productPageHtml(p, ctx = {}, tab = null) {
   const stageName = ctx.stageName ?? ((x) => x);
   const when = ctx.when ?? ((x) => x);
   const href = ctx.buildHref ?? ((id) => `#/b/${encodeURIComponent(id)}`);
@@ -518,11 +598,19 @@ export function productPageHtml(p, ctx = {}, tab = "versions") {
   const rp = isObj(p?.run_plan?.summary) ? p.run_plan : isObj(p?.run_plan) ? { summary: p.run_plan } : null;
   const plan = rp ? `${runPlanHtml(rp.summary, { stageName })}${str(rp.version) ? `<p class="gw">From version ${esc(str(rp.version))}${rp.at && when(rp.at) ? `, ${esc(when(rp.at))}` : ""}.</p>` : ""}` : "";
   const acts = list(p?.activity).filter(isObj).slice(0, 40).map((e) => `<li><time>${esc(when(e.at))}</time><span class="st">${esc([str(e.version) || versionOf.get(e.build) ? `v${str(e.version) || versionOf.get(e.build)}` : "", e.stage ? stageName(str(e.stage)) : ""].filter(Boolean).join(" · "))}</span>${esc(str(e.words))}</li>`).join("");
-  const on = PRODUCT_TABS.some((t) => t.id === tab && !t.disabled) ? tab : "versions";
-  const body = on === "plan" ? (plan || `<p class="gw">No run plan yet. Deploy makes it.</p>`)
-    : on === "activity" ? (acts ? `<ul class="feed">${acts}</ul>` : `<p class="gw">Nothing yet.</p>`)
-      : (vers ? `<ul class="vers">${vers}</ul>` : `<p class="gw">No builds yet.</p>`);
-  const tabs = PRODUCT_TABS.map((t) => ({ ...t, count: t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : undefined }));
+  // The boss is the default place to talk, when the service has one.
+  const boss = isObj(ctx.boss) && ctx.boss.offered ? ctx.boss : null;
+  const tabs = PRODUCT_TABS.map((t) => ({
+    ...t,
+    ...(t.id === "boss" && !boss ? { disabled: true, title: "This service has no boss" } : {}),
+    count: t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : undefined,
+  }));
+  const want = tab ?? (boss ? "boss" : "versions");
+  const on = tabs.some((t) => t.id === want && !t.disabled) ? want : "versions";
+  const body = on === "boss" ? `<div class="thread" id="thread">${bossChatHtml(boss.messages, { ...ctx, ...boss, stageName, when })}</div>`
+    : on === "plan" ? (plan || `<p class="gw">No run plan yet. Deploy makes it.</p>`)
+      : on === "activity" ? (acts ? `<ul class="feed">${acts}</ul>` : `<p class="gw">Nothing yet.</p>`)
+        : (vers ? `<ul class="vers">${vers}</ul>` : `<p class="gw">No builds yet.</p>`);
   return `<section class="thread-wrap work product"><div class="whead"><div class="hd"><div><h1>${esc(str(p?.name))}</h1>${ctx.does ? `<p class="sub">${esc(ctx.does)}</p>` : ""}${ctx.extra ?? ""}</div></div>${tabsHtml(tabs, on, { attr: "ptab", label: "Product" })}</div>
-    <div class="wbody" id="tabbody"><div class="err" role="alert">${esc(ctx.error ?? "")}</div><div class="ptab ${on}">${body}</div></div></section>`;
+    <div class="wbody${on === "boss" ? " tab-chat" : ""}" id="tabbody"><div class="err" role="alert">${esc(ctx.error ?? "")}</div><div class="ptab ${on}">${body}</div></div>${on === "boss" ? bossComposerHtml(boss.composer ?? {}) : ""}</section>`;
 }

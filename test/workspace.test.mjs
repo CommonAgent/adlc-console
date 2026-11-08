@@ -251,18 +251,20 @@ test("without the 0.4 routes, each stage is drawn from the build answer and its 
   assert.ok(p.activity.length > 0);
 });
 
-test("the product page has tabs for its versions, run plan and activity; Boss chat comes later", async () => {
+test("the product page has tabs for its versions, run plan and activity; the Boss tab is disabled for a service without a boss", async () => {
   const d = createDemoService();
   const p = (await get(d, "/v1/lifecycle/products/lunch-poll")).body;
   const ctx = { stageName: (s) => defs.get(s)?.name ?? s, when: () => "t", does: "Runs the poll.", buildHref: (id) => `#/b/${id}` };
   const versions = productPageHtml(p, ctx, "versions");
-  assert.match(visible(versions), /^lunch-poll Runs the poll\. Boss chat Versions 1 Run plan Activity \d+ 1\.0\.0 Installed · conforms started t$/);
-  assert.match(versions, /<button type="button" role="tab" class="tab" aria-selected="false" disabled title="Coming later">Boss chat<\/button>/);
+  assert.match(visible(versions), /^lunch-poll Runs the poll\. Boss Versions 1 Run plan Activity \d+ 1\.0\.0 Installed · conforms started t$/);
+  assert.match(versions, /<button type="button" role="tab" class="tab" aria-selected="false" disabled title="This service has no boss">Boss<\/button>/);
+  // Without a boss, the page opens at Versions.
+  assert.match(productPageHtml(p, ctx), /class="tab on" aria-selected="true" data-ptab="versions"/);
   assert.match(versions, /data-ptab="plan"/);
   assert.match(versions, /<a href="#\/b\/b_lunch_poll">/);
   assert.match(visible(productPageHtml(p, ctx, "plan")), /Monitor watcher every minute from 10:00 to 12:00 · chosen .* From version 1\.0\.0, t\.$/);
   assert.match(visible(productPageHtml(p, ctx, "activity")), /t v1\.0\.0 · Acceptance You accepted it\./);
-  // Boss chat cannot be opened yet: it shows Versions.
+  // A service without a boss: the Boss tab cannot be opened, so it shows Versions.
   assert.match(productPageHtml(p, ctx, "boss"), /class="tab on" aria-selected="true" data-ptab="versions"/);
   const none = { name: "x", builds: [], activity: [] };
   assert.match(visible(productPageHtml(none, {}, "versions")), /No builds yet\./);

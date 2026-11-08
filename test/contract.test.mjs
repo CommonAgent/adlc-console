@@ -295,8 +295,9 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.4, with the stages operations, not_used, products, stage workspaces and chats", () => {
-  assert.equal(SCHEMA.version, "0.4");
+test("the vendored schema is lifecycle API 0.4.1, with the stages operations, not_used, products, stage workspaces, chats and the boss", () => {
+  assert.equal(SCHEMA.version, "0.4.1");
+  for (const op of ["GET /products/{name}/boss/messages", "POST /products/{name}/boss/messages", "GET /products/{name}/boss/commitments"]) assert.ok(SCHEMA.operations.some((o) => `${o.method} ${o.path}` === op), op);
   const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
   for (const op of ["GET /stages", "PUT /stages/{stage}", "DELETE /stages/{stage}"]) assert.ok(ops.includes(op), op);
   for (const op of ["GET /products", "GET /products/{name}", "GET /builds/{id}/stages/{stage}", "GET /products/{name}/stages/{stage}/messages", "POST /products/{name}/stages/{stage}/messages"]) assert.ok(ops.includes(op), op);

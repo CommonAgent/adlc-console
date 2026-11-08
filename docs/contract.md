@@ -155,14 +155,49 @@ How the console reads these:
   in the chat opens this tab at that artifact; going back to Chat lands where it was.
 - Try it, when the build has a pull request or an installed agent.
 - `#/b/<id>/<stage>/<tab>` opens a stage at a tab (`chat`, `artifacts` or `try`).
-- The product page (`#/p/<name>[/<tab>]`, the product's name in the menu) has tabs for its
-  versions, the run plan (`run_plan.summary`) and the activity feed. Boss chat is shown, and
-  comes later.
+- The product page (`#/p/<name>[/<tab>]`, the product's name in the menu) has tabs for the
+  boss, its versions, the run plan (`run_plan.summary`) and the activity feed. It opens at the
+  boss when the service has one (below), else at its versions.
 - A service without these routes (a 404, 405 or 501) still gets the page: each stage is drawn
   from the build answer (its state, holder, rounds, log, live actions and handed-back words and
   files), its chat is made from its rounds and log and cannot be written to, the Artifacts tab
   shows the build's `artifacts` for the stage or what it handed back, and the product page is
   made from the build list. Other products are the other builds in the list.
+
+Proposed for lifecycle API 0.4.1 (additive): the product's boss (Agent Roles §39, role-boss).
+
+```
+GET  /v1/lifecycle/products/:name/boss/messages
+  -> { messages: [{ id, at, build, version, from: { kind: person | agent | system, name, role? },
+                    text, confirms?, declines?,
+                    routed?: { stage, message_id, build },          // the stage chat it posted into
+                    plan?: [{ stage, words, gate? }],               // in the lifecycle's order; gate: words
+                    proposes?: { id, build, action, needs, words?, when?, state? },
+                    started?: { build, version },                   // only on the person's confirmation
+                    dropped?: [{ stage, message_id, build }] }] }   // oldest first
+POST /v1/lifecycle/products/:name/boss/messages   { text, confirms?, declines? }
+  -> { message, reply }      // proposes.action is a build's own action (taken with the actions route,
+                             // once the build offers it; when says when it will), or start_version,
+                             // which is confirmed here with confirms: the boss then starts the version
+GET  /v1/lifecycle/products/:name/boss/commitments
+  -> { commitments: [{ id, at, kind: routed | proposed | started | dropped, to, stage?, what, build,
+                       version, reply, message_id?, proposal?, answer?: { state, by?, at? },
+                       confirmation?: { message_id, by, at }, withdraws? }] }   // in full, oldest first
+```
+
+How the console reads these:
+
+- "Ask the boss" sits at the top of the left menu and opens the product page's Boss tab, the
+  default place to talk about the product. A service that answers the boss routes 404, 405 or
+  501 has no boss: the link is hidden and the tab is disabled.
+- The Boss tab is a chat like a stage's, with its composer addressed to the boss. A routed reply
+  links to the stage chat it went to (`#/b/<build>/<stage>/chat`). A plan is a short ordered
+  list, each stage with the gate the person meets there. A started version links to its build.
+- A proposal is a confirm button. "Start version 0.2.0?" (`start_version`) posts `confirms` to
+  the boss. A build's own action posts to that build's actions route with the needs filled, so
+  it goes back through its gate; until the build offers it, the button is disabled with the
+  proposal's `when`, and the page reads the build again until it does. A taken, declined or
+  closed proposal is shown done.
 
 Read by the console since 0.1 (CommonAgent/adlc, standards/lifecycle-api.schema.json, TimelineBar):
 
