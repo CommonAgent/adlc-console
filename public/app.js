@@ -11,6 +11,7 @@ import { lifecyclePageHtml, lifecycleHash, lifecycleDraft, referenceHolder, stag
 import { boardHtml } from "./board.js";
 import { dashboardHtml, span } from "./dashboard.js";
 import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyticsPath } from "./analytics.js";
+import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 
 const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop", not_bound: "unb", not_applicable: "na", not_used: "nu" };
 const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■", not_bound: "?", not_applicable: "", not_used: "" };
@@ -49,6 +50,8 @@ const state = {
   analytics: null, anQuery: { window: "30d", project: "" }, anData: null,
   // The Lifecycle page: the stages answer, the roles answer, the holder form open, errors by row, the request in flight.
   lcStages: null, lcRoles: null, noStages: false, project: "", lcEditing: null, lcDraft: null, lcErrors: new Map(), lcPending: null,
+  // Who the key belongs to (GET /me), and the People page (GET /people), when the service keeps people.
+  me: null, people: null, hasPeople: false,
 };
 
 // ---------- talking to the local server ----------
@@ -127,6 +130,7 @@ function parseHash() {
   if (parts[0] === "new") return { view: "new" };
   if (parts[0] === "board") return { view: "board" };
   if (parts[0] === "dashboard") return { view: "dashboard" };
+  if (parts[0] === "people") return { view: "people" };
   // The Roles page is now part of the Lifecycle page; an old link still lands there.
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null };
@@ -162,6 +166,12 @@ async function route() {
     state.view = "dashboard"; drawRail(); drawDashboard();
     try { await refreshBuilds(); await loadFull(); } catch (e) { return problem(e); }
     if (state.view === "dashboard") { drawRail(); drawDashboard(); }
+    return;
+  }
+  if (h.view === "people" && state.hasPeople) {
+    state.view = "people"; drawRail(); drawPeople();
+    try { state.people = await api("/people"); state.error = ""; } catch (e) { return problem(e); }
+    if (state.view === "people") drawPeople();
     return;
   }
   if (h.view === "lifecycle") {
@@ -227,7 +237,8 @@ function drawTop() {
   else if (st?.key_from === "key file") who = "Using the key from your key file";
   else if (st?.key_from === "github token") who = "Read-only · using your GitHub token";
   else if (st?.source === "github") who = "Read-only · reading without a GitHub token";
-  $("who").innerHTML = who;
+  const me = meWords(state.me);
+  $("who").innerHTML = me ? `<span class="me">${esc(me)}</span>${who ? ` · ${who}` : ""}` : who;
 }
 
 function railLine(b) {
@@ -255,6 +266,10 @@ function drawRail() {
   an.hidden = !state.analytics || state.status?.source === "file";
   an.classList.toggle("on", state.view === "analytics");
   if (state.view === "analytics") an.setAttribute("aria-current", "page"); else an.removeAttribute("aria-current");
+  const ppl = $("people");
+  ppl.hidden = !state.hasPeople;
+  ppl.classList.toggle("on", state.view === "people");
+  if (state.view === "people") ppl.setAttribute("aria-current", "page"); else ppl.removeAttribute("aria-current");
   // A lifecycle file holds no builds: a plain line, not an error.
   if (state.status?.source === "file") {
     $("builds").innerHTML = `<p class="none">There are no builds here. The console is keeping your lifecycle in a file.</p>`;
@@ -389,7 +404,14 @@ function actionsFor(stage) {
 
 function actionsHtml(stage) {
   const list = actionsFor(stage);
+  // A gate this key may not answer: the service leaves its buttons out and says who may.
+  const whoMay = whoMayHtml(stageOf(stage));
+  if (whoMay) return `${whoMay}${list.length ? buttonsHtml(list) : ""}`;
   if (!list.length) return "";
+  return buttonsHtml(list);
+}
+
+function buttonsHtml(list) {
   const busy = state.pending !== null;
   // Stop is never drawn as the main action, even when it is the only one.
   const main = list.findIndex((a) => a.name !== "stop");
@@ -598,6 +620,15 @@ function drawNew() {
   $("stage").innerHTML = "";
 }
 
+// The People page: who is in the organization, its teams and projects. Read-only;
+// the service says where they are changed.
+function drawPeople() {
+  drawTop();
+  layout("solo");
+  $("main").innerHTML = state.people ? peoplePageHtml(state.people, { error: state.error }) : `<div class="err" role="alert">${esc(state.error)}</div><p class="does">Loading…</p>`;
+  $("stage").innerHTML = "";
+}
+
 // The Board: every build by the phase it is at, read from the build list.
 function drawBoard() {
   drawTop();
@@ -712,7 +743,8 @@ async function loadFile(det) {
 async function act(name, needs = {}) {
   state.pending = name; drawStage();
   try {
-    const r = await api(buildPath(state.build.id, `/actions/${encodeURIComponent(name)}`), { method: "POST", body: needs });
+    // A 403 with words here is the service turning down this person at this gate, not a bad key.
+    const r = await api(buildPath(state.build.id, `/actions/${encodeURIComponent(name)}`), { method: "POST", body: needs, own403: true });
     if (r?.build) state.build = r.build;
     else state.build = (await api(buildPath(state.build.id))).build;
     state.asking = null; state.error = "";
@@ -1050,7 +1082,17 @@ async function start() {
   drawTop();
   if (!state.status.signed_in) return drawKey();
   try { await refreshBuilds(); } catch (e) { return problem(e); }
+  await loadMe();
   route();
+}
+
+// Who the key belongs to, and whether the service keeps people. A service that
+// answers neither is drawn as before.
+async function loadMe() {
+  if (state.status?.source !== "service") { state.me = null; state.hasPeople = false; return; }
+  try { state.me = await api("/me"); } catch { state.me = null; }
+  try { state.people = await api("/people"); state.hasPeople = true; } catch { state.people = null; state.hasPeople = false; }
+  drawTop();
 }
 
 start();

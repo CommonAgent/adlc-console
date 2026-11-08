@@ -330,3 +330,24 @@ main .projof a{color:var(--accent)}
 .hb.fin{margin-top:3px}
 .hb.fin i{background:var(--muted)}
 .dashg + .note{font-size:12px;color:var(--muted);margin:12px 0 0}
+/* Who you are, who may answer a gate, and the People page (public/people.js). */
+.top .me{color:var(--fg);font-weight:600}
+.rail .boardl:has(~ .boardl:not([hidden])){margin-bottom:2px}
+.whomay{margin:12px 0 0;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--wait);border-radius:6px;background:var(--wait-bg);color:var(--fg);font-size:13px}
+.people-problems{margin:0 0 16px;max-width:80ch}
+.ppl{margin:0 0 20px}
+.ppl h2{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--muted)}
+.ptable{border-collapse:collapse;width:100%;max-width:900px;background:var(--panel);border:1px solid var(--line);border-radius:6px;font-size:13px}
+.ptable th,.ptable td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.ptable th{font-weight:600;color:var(--muted);font-size:12px}
+.ptable tr:last-child td{border-bottom:0}
+.ptable code{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+.ptable .dim{color:var(--off)}
+.role{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+.role.r-admin{background:var(--done-bg);color:var(--accent);border-color:transparent}
+.role.r-approver{background:var(--wait-bg);color:var(--wait);border-color:transparent}
+.plist{list-style:none;margin:0;padding:0;max-width:900px}
+.plist li{display:flex;gap:12px;flex-wrap:wrap;padding:8px 10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;margin-bottom:6px;font-size:13px}
+.plist li span{color:var(--muted);overflow-wrap:anywhere}
+.pchange{color:var(--muted);font-size:12.5px;max-width:80ch}
+@media (max-width:640px){.ptable th:nth-child(2),.ptable td:nth-child(2){display:none}}
