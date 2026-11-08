@@ -316,3 +316,17 @@ main .projof a{color:var(--accent)}
 @media (max-width:480px){.dt tbody th{width:auto}.dt th,.dt td{padding:7px 4px}}
 .dt .w{color:var(--muted)}
 .dt td.w{white-space:normal}
+
+/* Analytics: the Dashboard's tables over weeks, with a window and a project to choose. */
+.anf{display:flex;flex-wrap:wrap;gap:8px 18px;margin:6px 0 2px;font-size:13px;color:var(--muted)}
+.anf label{display:flex;align-items:center;gap:8px}
+.anf select{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+.dash.wide{grid-column:1/-1}
+.dtx{overflow-x:auto}
+.dt.wk{min-width:max-content}
+.dt.wk tbody th{width:auto;white-space:nowrap;padding-right:14px}
+.dt.wk td{min-width:64px}
+.dt.wk thead th{white-space:nowrap}
+.hb.fin{margin-top:3px}
+.hb.fin i{background:var(--muted)}
+.dashg + .note{font-size:12px;color:var(--muted);margin:12px 0 0}

@@ -10,6 +10,7 @@ import { esc, safeUrl, stateOf, holderWords, holderHtml, stageNoticeHtml, eviden
 import { lifecyclePageHtml, lifecycleHash, lifecycleDraft, referenceHolder, stagesToReset, notUsedHtml, buildLifecycleHtml, addedDraft, addedBody } from "./lifecycle.js";
 import { boardHtml } from "./board.js";
 import { dashboardHtml, span } from "./dashboard.js";
+import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyticsPath } from "./analytics.js";
 
 const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop", not_bound: "unb", not_applicable: "na", not_used: "nu" };
 const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■", not_bound: "?", not_applicable: "", not_used: "" };
@@ -44,6 +45,8 @@ const state = {
   logAll: false, showArchived: false, boardMine: store.get("board-mine") === "1",
   // The Dashboard: each build as GET /builds/:id answered it, kept by id with the list's updated time.
   full: new Map(), fullLoaded: false,
+  // Analytics: whether the service answers it (null until asked), the page's choices, and its answer.
+  analytics: null, anQuery: { window: "30d", project: "" }, anData: null,
   // The Lifecycle page: the stages answer, the roles answer, the holder form open, errors by row, the request in flight.
   lcStages: null, lcRoles: null, noStages: false, project: "", lcEditing: null, lcDraft: null, lcErrors: new Map(), lcPending: null,
 };
@@ -118,6 +121,8 @@ function parseHash() {
   const raw = location.hash.replace(/^#\/?/, "");
   // The Lifecycle page, for the organization or for ?project=<name>.
   if (/^lifecycle(\?|$)/.test(raw)) return { view: "lifecycle", project: (new URLSearchParams(raw.split("?")[1] ?? "").get("project") ?? "").trim() };
+  // Analytics, for ?window=7d|30d|all and ?project=<name>.
+  if (/^analytics(\?|$)/.test(raw)) return { view: "analytics", ...analyticsQuery(raw) };
   const parts = raw.split("/").map(decodeURIComponent);
   if (parts[0] === "new") return { view: "new" };
   if (parts[0] === "board") return { view: "board" };
@@ -134,6 +139,17 @@ async function route() {
   const h = parseHash();
   state.error = "";
   if (!state.status?.signed_in) return drawKey();
+  if (state.analytics === null) await probeAnalytics();
+  if (h.view === "analytics") {
+    if (!state.analytics) return go("#/");
+    const same = state.anQuery.window === h.window && state.anQuery.project === h.project;
+    if (!same) state.anData = null;
+    state.view = "analytics"; state.anQuery = { window: h.window, project: h.project };
+    drawRail(); drawAnalytics();
+    try { state.anData = await api(analyticsPath(state.anQuery)); } catch (e) { if (e.needKey) return problem(e); state.error = e.message; }
+    if (state.view === "analytics") { drawRail(); drawAnalytics(); }
+    return;
+  }
   if (h.view === "new" && state.status?.source !== "file") { state.view = "new"; drawRail(); return drawNew(); }
   if (h.view === "board" && state.status?.source !== "file") {
     state.view = "board"; drawRail(); drawBoard();
@@ -234,6 +250,11 @@ function drawRail() {
   dash.hidden = state.status?.source === "file";
   dash.classList.toggle("on", state.view === "dashboard");
   if (state.view === "dashboard") dash.setAttribute("aria-current", "page"); else dash.removeAttribute("aria-current");
+  // Analytics: only for a service that answers it.
+  const an = $("analytics");
+  an.hidden = !state.analytics || state.status?.source === "file";
+  an.classList.toggle("on", state.view === "analytics");
+  if (state.view === "analytics") an.setAttribute("aria-current", "page"); else an.removeAttribute("aria-current");
   // A lifecycle file holds no builds: a plain line, not an error.
   if (state.status?.source === "file") {
     $("builds").innerHTML = `<p class="none">There are no builds here. The console is keeping your lifecycle in a file.</p>`;
@@ -598,6 +619,27 @@ function drawDashboard() {
   if (state.builds.some((b) => b.at?.state === "working" && !b.archived)) schedule();
 }
 
+// Analytics: questions over time, from the service's history (analytics.js).
+function drawAnalytics() {
+  drawTop();
+  layout("solo");
+  $("main").innerHTML = analyticsHtml(state.anData, state.anQuery, { error: state.error, service: state.status?.service ?? "" });
+  for (const i of document.querySelectorAll(".hb i[data-w]")) i.style.width = `${i.dataset.w}%`;
+  $("stage").innerHTML = "";
+}
+
+// Whether the service answers analytics, a route outside the lifecycle API.
+// Asked once; a service that does not answer it never shows the page. A key
+// the service turned down leaves it to be asked again once there is a key.
+async function probeAnalytics() {
+  if (state.status?.source === "file") { state.analytics = false; return; }
+  try {
+    state.analytics = analyticsOffered(200, await api(analyticsPath({ window: "7d" })));
+  } catch (e) {
+    state.analytics = e.needKey ? null : analyticsOffered(e.status ?? 0, null);
+  }
+}
+
 // Reads each build in the list, again only when the list says it changed.
 async function loadFull() {
   const want = state.builds.filter((b) => state.full.get(b.id)?.updated !== b.updated || !b.updated);
@@ -885,7 +927,7 @@ document.addEventListener("click", async (e) => {
   if (t.closest("#archt")) { state.showArchived = !state.showArchived; return drawRail(); }
   if (t.closest("#forget")) {
     try { state.status = await call("/local/forget-key", { method: "POST" }); } catch (err) { state.error = err.message; }
-    state.build = null; state.builds = [];
+    state.build = null; state.builds = []; state.analytics = null; state.anData = null;
     return route();
   }
   const a = t.closest("[data-act]");
@@ -909,6 +951,8 @@ document.addEventListener("toggle", (e) => {
 
 document.addEventListener("change", (e) => {
   if (e.target.id === "twhere" && state.build) store.set(`against:${state.build.id}`, e.target.value);
+  // Analytics: a new window or project is a new page.
+  if (e.target.closest?.("#an-form")) return go(analyticsHash({ window: $("an-window").value, project: $("an-project").value }));
   // Adding a stage: a new role asks who holds it, and a holder on the mesh asks for its handle.
   if (e.target.closest?.("#added-form") && (e.target.name === "role" || e.target.name === "kind")) {
     state.lcAdding = addedValues(e.target.closest("#added-form"));
@@ -937,7 +981,7 @@ document.addEventListener("submit", async (e) => {
   if (f.id === "key-form") {
     try {
       state.status = await call("/local/key", { method: "POST", body: { key: $("key").value } });
-      state.error = "";
+      state.error = ""; state.analytics = null;
       await start();
     } catch (err) { state.error = err.message; drawKey(); }
     return;
