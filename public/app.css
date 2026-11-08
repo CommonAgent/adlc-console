@@ -569,3 +569,15 @@ details.timeline>.does,details.timeline>.bars{margin:10px 14px}
   .feed .st{grid-column:2}
   .viewer dl,.pcard dl{grid-template-columns:minmax(0,1fr)}
 }
+
+/* The product's boss (lifecycle API 0.4.1): its replies, where they went, its plans, and "Ask the boss" atop the menu. */
+.av.bs{background:var(--accent);color:var(--panel);font-family:inherit;font-weight:700}
+.msg.boss .routed{margin:6px 0 0;font-size:13px}
+.msg.boss .routed a{color:var(--accent);font-weight:600}
+ol.plan{margin:8px 0 4px;padding-left:22px;max-width:640px;font-size:13.5px}
+ol.plan li{margin:0 0 6px}
+ol.plan .pgate{display:block;color:var(--wait);font-size:12px;font-weight:600}
+ol.plan .pgate span{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
+#spine .askboss{display:block;margin:0 0 8px;padding:7px 10px;border:1px solid var(--accent);border-radius:6px;color:var(--accent);font-weight:600;font-size:13px;text-decoration:none}
+#spine .askboss:hover,#spine .askboss.on{background:var(--accent);color:var(--panel)}
+.product .ptab.boss{padding:0}

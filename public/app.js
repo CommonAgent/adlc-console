@@ -12,7 +12,7 @@ import { boardHtml } from "./board.js";
 import { dashboardHtml, span } from "./dashboard.js";
 import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyticsPath } from "./analytics.js";
 import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
-import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, usedStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo } from "./workspace.js";
+import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, usedStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -39,9 +39,13 @@ const state = {
   // The open build's selected stage: the service's workspace for it (null when it has no such route),
   // its chat with the stage's agent (null without the route), the artifact open on the right, the
   // composer's draft, the proposals confirmed, and whether Try it is open on the right.
-  roleDefs: [], stageSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: "versions", chatScroll: null, drawnKey: null,
+  roleDefs: [], stageSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: null, chatScroll: null, drawnKey: null,
   // The products (GET /products, null without the route) and the open product page.
   products: null, product: null,
+  // The product's boss (0.4.1): whether the service has it (null until asked), whose conversation is
+  // held, the builds its open proposals name (for their live actions), the composer, and the proposal
+  // being confirmed.
+  boss: { has: null, name: null, messages: [], builds: new Map(), draft: "", sending: false, error: "", pending: null, confirmed: new Set() },
 };
 
 // ---------- talking to the local server ----------
@@ -125,7 +129,7 @@ function parseHash() {
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
   if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "try"].includes(parts[3]) ? parts[3] : null };
-  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["versions", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
+  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
@@ -177,11 +181,14 @@ async function route() {
   }
   // A lifecycle file has no builds: its page is the Lifecycle page.
   if (state.status?.source === "file") return go(lifecycleHash(""));
-  if (h.view === "product") { if (h.tab) state.ptab = h.tab; return openProduct(h.name); }
+  // A product page opens at the boss, the default place to talk, unless the link names a tab.
+  if (h.view === "product") { state.ptab = h.tab; return openProduct(h.name); }
   state.view = "build";
   const id = h.id || pickBuild();
   if (!id) { drawRail(); return drawEmpty(); }
   if (!(await openBuild(id))) return;
+  // Whether the service has a boss, asked once, so the menu can offer it.
+  if (state.boss.has === null) { try { await loadBoss(productOf(state.build)); } catch (e) { if (e.needKey) return problem(e); } }
   // Opening a build opens the stage it is at now. An old link to Try it opens it beside that stage.
   if (h.sel === "try") state.tab = "try";
   if (h.tab) state.tab = h.tab;
@@ -237,7 +244,81 @@ async function openProduct(name) {
     if (messagesOffered(e.status ?? 0)) state.error = e.message;
   }
   state.product = p && typeof p === "object" && Array.isArray(p.builds) ? p : productFromBuilds(name, state.builds, state.build && productOf(state.build) === name ? state.build : null);
+  try { await loadBoss(name); } catch (e) { if (e.needKey) return problem(e); }
   if (state.view === "product") draw();
+}
+
+// The product's boss: its conversation, and the builds its open proposals name, read for their live
+// actions. A service without the route (404, 405 or 501) has no boss: the tab is shown disabled.
+async function loadBoss(name) {
+  const boss = state.boss;
+  if (boss.name !== name) { boss.name = name; boss.messages = []; boss.builds = new Map(); boss.draft = ""; boss.error = ""; boss.confirmed = new Set(); }
+  let r;
+  try { r = await api(`/products/${encodeURIComponent(name)}/boss/messages`); } catch (e) {
+    if (e.needKey) throw e;
+    if (!messagesOffered(e.status ?? 0)) { boss.has = false; return; }
+    boss.error = e.message;
+    return;
+  }
+  boss.has = true;
+  boss.messages = Array.isArray(r?.messages) ? r.messages : [];
+  for (const id of bossBuildsToRead(boss.messages)) {
+    try { boss.builds.set(id, (await api(buildPath(id))).build); } catch (e) { if (e.needKey) throw e; }
+  }
+}
+const bossWaits = () => state.boss.messages.some((m) => m?.proposes && m.proposes.action !== "start_version" && (m.proposes.state ?? "open") === "open" && !state.boss.builds.get(m.proposes.build)?.actions?.some((a) => a?.name === m.proposes.action));
+
+// A message to the boss. Its reply may say where it routed the message, carry a plan, or propose.
+async function bossSay(text, extra = {}) {
+  const name = state.boss.name;
+  if (!name || (!text.trim() && !extra.confirms)) return;
+  state.boss.sending = true; state.boss.draft = extra.confirms ? state.boss.draft : text; state.boss.error = ""; drawProduct();
+  try {
+    await api(`/products/${encodeURIComponent(name)}/boss/messages`, { method: "POST", body: { text, ...extra }, own403: true });
+    if (!extra.confirms) state.boss.draft = "";
+    await loadBoss(name);
+    // A version it started is a new build: the menu and the product's versions read it.
+    await refreshBuilds();
+    try { const p = await api(`/products/${encodeURIComponent(name)}`); if (Array.isArray(p?.builds)) state.product = p; } catch { /* kept */ }
+  } catch (e) {
+    state.boss.sending = false; state.boss.pending = null;
+    if (e.needKey) return problem(e);
+    state.boss.error = e.message;
+    return drawProduct();
+  }
+  state.boss.sending = false; state.boss.pending = null;
+  drawProduct();
+  requestAnimationFrame(() => { $("thread")?.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" }); if (!extra.confirms) $("boss-say")?.focus(); });
+}
+
+// "Start version 0.2.0?": the person's yes goes to the boss, which starts the build.
+function bossConfirm(pid) {
+  const m = state.boss.messages.find((x) => x?.proposes?.id === pid);
+  if (!m) return;
+  state.boss.pending = pid;
+  return bossSay(`Yes: ${String(m.proposes.words || "start it").replace(/\?$/, "")}.`, { confirms: pid });
+}
+
+// A build's own action the boss proposed: taken with the actions route, so it goes back through its gate.
+async function bossAct(msgId) {
+  const m = state.boss.messages.find((x) => x?.id === msgId);
+  const p = m?.proposes;
+  const b = p ? state.boss.builds.get(p.build) : null;
+  const body = b ? confirmBody(b, p) : null;
+  if (!body) return;
+  state.boss.pending = p.id; drawProduct();
+  try {
+    const r = await api(buildPath(p.build, `/actions/${encodeURIComponent(body.name)}`), { method: "POST", body: body.needs, own403: true });
+    if (state.build?.id === p.build && r?.build) state.build = r.build;
+    state.boss.confirmed.add(p.id);
+    await loadBoss(state.boss.name);
+    await refreshBuilds();
+  } catch (e) {
+    if (e.needKey) { state.boss.pending = null; return problem(e); }
+    state.boss.error = e.message;
+  }
+  state.boss.pending = null;
+  drawProduct();
 }
 function latestBuildOf(name) {
   const fromProducts = (state.products ?? []).find((p) => p.name === name)?.latest?.build;
@@ -380,7 +461,10 @@ function buildMenuHtml() {
     state.status?.read_only ? "" : page(lifecycleHash(buildProject(b)), "Lifecycle"),
     state.hasPeople ? page("#/people", "People") : "",
   ].filter(Boolean).join("");
-  return `${spineHtml(b, spine, { sel: state.view === "build" ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" })}
+  // The boss sits at the top: the default place to talk about the product.
+  const onBoss = state.view === "product" && (state.ptab ?? "boss") === "boss" && state.boss.has === true;
+  const ask = state.boss.has === false ? "" : `<a class="askboss${onBoss ? " on" : ""}" href="${esc(`${productHash(mine)}/boss`)}"${onBoss ? ' aria-current="page"' : ""}>Ask the boss</a>`;
+  return `${ask}${spineHtml(b, spine, { sel: state.view === "build" ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" && !onBoss })}
     ${others || archived ? `<h2>Other products</h2>${others}` : ""}
     ${archived ? `<button class="linkbtn archt" id="archt" type="button" aria-pressed="${state.showArchived}">${state.showArchived ? "Hide archived" : `Show archived (${archived})`}</button>` : ""}
     ${state.status?.read_only ? "" : `<button class="newb" id="new2" type="button">New build</button>`}
@@ -517,11 +601,22 @@ function drawProduct() {
   $("app").classList.add("noarts");
   const b = state.build;
   const same = b && state.product && productOf(b) === state.product.name;
+  const bs = state.boss;
+  const boss = bs.has === true && state.product && bs.name === state.product.name
+    ? { offered: true, messages: bs.messages, builds: bs.builds, confirmed: bs.confirmed, pending: bs.pending, me: typeof state.me?.account?.name === "string" ? state.me.account.name : null, composer: { draft: bs.draft, pending: bs.sending, error: bs.error } }
+    : null;
+  const keep = state.drawnKey === "product/boss" ? getScroll() : null;
   $("main").innerHTML = state.product
-    ? productPageHtml(state.product, { stageName: (id) => def(id).name, when, error: state.error, does: same ? b.does : "", extra: same ? buildLifecycleHtml(b, { day }) : "", buildHref: (id) => hashFor(id) }, state.ptab)
+    ? productPageHtml(state.product, { stageName: (id) => def(id).name, when, error: state.error, does: same ? b.does : "", extra: same ? buildLifecycleHtml(b, { day }) : "", buildHref: (id) => hashFor(id), boss }, state.ptab)
     : `<div class="err" role="alert">${esc(state.error)}</div><p class="does">Loading…</p>`;
   $("stage").innerHTML = "";
-  state.drawnKey = null;
+  const onBoss = Boolean(boss) && (state.ptab ?? "boss") === "boss";
+  // The boss's conversation opens at its newest message, and stays where it was across a redraw.
+  if (onBoss) { if (keep !== null) setScroll(keep); else if (!phone()) setScroll(1e9); }
+  state.drawnKey = onBoss ? "product/boss" : null;
+  drawRail();
+  // A proposal waiting for its build to offer the action (a version that has just started) is checked again.
+  if (onBoss && bossWaits()) schedule();
 }
 
 const KIND = { agent: "an agent working", person: "waiting on a person", external: "waiting on something outside the run" };
@@ -787,6 +882,13 @@ function schedule() {
       if (state.view === "dashboard") drawDashboard();
       return;
     }
+    // The boss's page: read again while a proposal waits for its build to offer the action.
+    if (state.view === "product" && state.boss.name) {
+      if (document.hidden || state.boss.sending || state.boss.pending || typing()) return schedule();
+      try { await loadBoss(state.boss.name); } catch { return schedule(); }
+      if (state.view === "product" && !typing()) drawProduct(); else schedule();
+      return;
+    }
     // Never redrawn under a person's hands: while they type a message or fill a gate's form, it waits.
     if (document.hidden || state.view !== "build" || !state.build || state.pending || state.sayPending || typing()) return schedule();
     try {
@@ -800,7 +902,7 @@ function schedule() {
 
 function typing() {
   const a = document.activeElement;
-  return Boolean(a && (a.id === "say" || a.closest?.("form.ask") || a.closest?.("#clone-form")) && (a.value ?? "").length > 0) || state.asking !== null;
+  return Boolean(a && (a.id === "say" || a.id === "boss-say" || a.closest?.("form.ask") || a.closest?.("#clone-form")) && (a.value ?? "").length > 0) || state.asking !== null;
 }
 
 async function refreshBuilds() {
@@ -1056,6 +1158,11 @@ document.addEventListener("click", async (e) => {
   }
   const confirmBtn = t.closest("[data-confirm]");
   if (confirmBtn) return confirmProposal(confirmBtn.dataset.confirm);
+  // The boss's proposals: starting a version is confirmed with the boss; a build's action with the actions route.
+  const bossYes = t.closest("[data-boss-confirm]");
+  if (bossYes) return bossConfirm(bossYes.dataset.bossConfirm);
+  const bossAction = t.closest("[data-boss-act]");
+  if (bossAction) return bossAct(bossAction.dataset.bossAct);
   if (t.closest("#new") || t.closest("#new2")) return go("#/new");
   const edit = t.closest("[data-edit-role]");
   if (edit) {
@@ -1199,6 +1306,7 @@ document.addEventListener("submit", async (e) => {
   }
   if (f.id === "clone-form") return runLocalCheck($("clone").value);
   if (f.id === "say-form") return say($("say").value);
+  if (f.id === "boss-form") return bossSay($("boss-say").value);
   if (f.dataset.ask) {
     const needs = {};
     for (const x of f.querySelectorAll("[name]")) if (x.value.trim() || x.required) needs[x.name] = x.value;
