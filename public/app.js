@@ -12,7 +12,7 @@ import { boardHtml } from "./board.js";
 import { dashboardHtml, span } from "./dashboard.js";
 import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyticsPath } from "./analytics.js";
 import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
-import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, usedStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead } from "./workspace.js";
+import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -42,6 +42,9 @@ const state = {
   roleDefs: [], stageSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: null, chatScroll: null, drawnKey: null,
   // The products (GET /products, null without the route) and the open product page.
   products: null, product: null,
+  // The when-needed action being taken from the product page (0.4.2), and a role the Setup tab sent the
+  // Lifecycle page to choose a holder for: { role, at }.
+  whenPending: null, lcWant: null,
   // The product's boss (0.4.1): whether the service has it (null until asked), whose conversation is
   // held, the builds its open proposals name (for their live actions), the composer, and the proposal
   // being confirmed.
@@ -117,7 +120,10 @@ const installed = () => stageOf("deploy")?.state === "done";
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, "");
   // The Lifecycle page, for the organization or for ?project=<name>.
-  if (/^lifecycle(\?|$)/.test(raw)) return { view: "lifecycle", project: (new URLSearchParams(raw.split("?")[1] ?? "").get("project") ?? "").trim() };
+  if (/^lifecycle(\?|$)/.test(raw)) {
+    const q = new URLSearchParams(raw.split("?")[1] ?? "");
+    return { view: "lifecycle", project: (q.get("project") ?? "").trim(), edit: (q.get("edit") ?? "").trim() || null, at: (q.get("at") ?? "").trim() || null };
+  }
   // Analytics, for ?window=7d|30d|all and ?project=<name>.
   if (/^analytics(\?|$)/.test(raw)) return { view: "analytics", ...analyticsQuery(raw) };
   const parts = raw.split("/").map(decodeURIComponent);
@@ -129,7 +135,7 @@ function parseHash() {
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
   if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "try"].includes(parts[3]) ? parts[3] : null };
-  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
+  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
@@ -175,6 +181,7 @@ async function route() {
     if (state.status?.read_only) return go("#/");
     if (state.view !== "lifecycle" || state.project !== h.project) { state.lcEditing = null; state.lcDraft = null; state.lcAdding = null; state.lcErrors = new Map(); state.lcStages = null; state.lcRoles = null; }
     state.view = "lifecycle"; state.project = h.project;
+    state.lcWant = h.edit ? { role: h.edit, at: h.at } : null;
     if (h.project) remember(h.project);
     drawRail();
     return loadLifecycle();
@@ -192,8 +199,8 @@ async function route() {
   // Opening a build opens the stage it is at now. An old link to Try it opens it beside that stage.
   if (h.sel === "try") state.tab = "try";
   if (h.tab) state.tab = h.tab;
-  const used = usedStages(state.build).map((s) => s.stage);
-  const stage = used.includes(h.sel) ? h.sel : openingStage(state.build);
+  const used = stepStages(state.build, defs()).map((s) => s.stage);
+  const stage = used.includes(h.sel) ? h.sel : openingStage(state.build, defs());
   if (stage !== state.stageSel) {
     state.stageSel = stage; state.art = null; state.sayDraft = ""; state.sayError = ""; state.asking = null;
     try { await loadStage(); } catch (e) { return problem(e); }
@@ -320,6 +327,27 @@ async function bossAct(msgId) {
   state.boss.pending = null;
   drawProduct();
 }
+async function whenAct(stage) {
+  const a = whenNeededAction(state.product?.when_needed, stage);
+  if (!a || state.whenPending) return;
+  const name = state.product.name;
+  state.whenPending = stage; drawProduct();
+  try {
+    const r = await api(buildPath(a.build, `/actions/${encodeURIComponent(a.name)}`), { method: "POST", body: {}, own403: true });
+    if (state.build?.id === a.build && r?.build) state.build = r.build;
+    state.error = "";
+    await refreshBuilds();
+    try { const p = await api(`/products/${encodeURIComponent(name)}`); if (Array.isArray(p?.builds)) state.product = p; } catch { /* kept */ }
+  } catch (e) {
+    state.whenPending = null;
+    if (e.needKey) return problem(e);
+    state.error = e.message;
+    return drawProduct();
+  }
+  state.whenPending = null;
+  drawProduct();
+}
+
 function latestBuildOf(name) {
   const fromProducts = (state.products ?? []).find((p) => p.name === name)?.latest?.build;
   if (fromProducts) return fromProducts;
@@ -607,7 +635,12 @@ function drawProduct() {
     : null;
   const keep = state.drawnKey === "product/boss" ? getScroll() : null;
   $("main").innerHTML = state.product
-    ? productPageHtml(state.product, { stageName: (id) => def(id).name, when, error: state.error, does: same ? b.does : "", extra: same ? buildLifecycleHtml(b, { day }) : "", buildHref: (id) => hashFor(id), boss }, state.ptab)
+    ? productPageHtml(state.product, {
+      stageName: (id) => def(id).name, when, error: state.error, does: same ? b.does : "", extra: same ? buildLifecycleHtml(b, { day }) : "", buildHref: (id) => hashFor(id), boss,
+      roleName: (id) => state.roleDefs.find((r) => r.id === id)?.name ?? id,
+      chooseHref: state.status?.read_only ? null : (role, stage, project) => `${lifecycleHash(project ?? "")}${project ? "&" : "?"}edit=${encodeURIComponent(role)}&at=${encodeURIComponent(stage)}`,
+      whenPending: state.whenPending,
+    }, state.ptab)
     : `<div class="err" role="alert">${esc(state.error)}</div><p class="does">Loading…</p>`;
   $("stage").innerHTML = "";
   const onBoss = Boolean(boss) && (state.ptab ?? "boss") === "boss";
@@ -1037,6 +1070,13 @@ async function loadLifecycle() {
   if (ro.status === "rejected") errs.push(ro.reason.message);
   state.error = [...new Set(errs)].join(" ");
   drawLifecycle();
+  // Sent from the product's Setup tab to choose who holds a role: its holder form opens, and saving it uses the roles route.
+  const want = state.lcWant;
+  state.lcWant = null;
+  if (want && lcRole(want.role) && !state.status?.read_only) {
+    const r = lcRole(want.role);
+    lcOpen(want.role, want.at ?? r.stages?.[0] ?? "", effectiveHolder(r)?.kind ?? "your_agent");
+  }
 }
 
 function drawLifecycle() {
@@ -1163,6 +1203,8 @@ document.addEventListener("click", async (e) => {
   if (bossYes) return bossConfirm(bossYes.dataset.bossConfirm);
   const bossAction = t.closest("[data-boss-act]");
   if (bossAction) return bossAct(bossAction.dataset.bossAct);
+  const whenBtn = t.closest("[data-when-act]");
+  if (whenBtn) return whenAct(whenBtn.dataset.whenAct);
   if (t.closest("#new") || t.closest("#new2")) return go("#/new");
   const edit = t.closest("[data-edit-role]");
   if (edit) {

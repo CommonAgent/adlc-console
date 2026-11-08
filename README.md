@@ -8,8 +8,11 @@ install, and try the agent before you accept it.
 A build opens at the stage it is at. The menu on the left is the product and its
 build's stages; the page is that stage, with its gate on top when it waits on
 you, and two tabs: Chat, to talk to the agent holding the stage, and Artifacts,
-what the stage read and made. A product page lists its versions, run plan and
-activity.
+what the stage read and made. The spine holds the stages that run on every
+build. A product page lists its versions, its setup (the stages set up once
+for the product and carried forward to each version), its run plan and
+activity, and the actions run when needed, each enabled only when the service
+can run it.
 
 It holds no lifecycle logic. It reads the stage definitions, reads your builds
 from a service that implements the ADLC, and shows the actions that service

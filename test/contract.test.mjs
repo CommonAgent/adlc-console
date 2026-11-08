@@ -179,8 +179,9 @@ const del = (d, path, q = "") => d.handle("DELETE", path, new URLSearchParams(q)
 const ROLE_IDS = DOC.roles.map((r) => r.id);
 const roleOf = (body, id) => body.roles.find((r) => r.role === id);
 
-test("stages.json 1.2.0 lists the roles, each stage's role ids, and the evidence formats", () => {
-  assert.equal(DOC.version, "1.2.0");
+test("stages.json 1.3.0 lists the roles, each stage's role ids and cadence, and the evidence formats", () => {
+  assert.equal(DOC.version, "1.3.0");
+  for (const s of DOC.stages) assert.ok(["every_build", "setup", "when_needed"].includes(s.cadence), `${s.id}: cadence`);
   assert.equal(DOC.roles.length, 19);
   for (const r of DOC.roles) {
     assert.equal(r.contract, `https://agentroles.ai/${r.id}.html`);
@@ -295,8 +296,9 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.4.1, with the stages operations, not_used, products, stage workspaces, chats and the boss", () => {
-  assert.equal(SCHEMA.version, "0.4.1");
+test("the vendored schema is lifecycle API 0.4.2, with the stages operations, not_used, products, stage workspaces, chats, the boss and cadence", () => {
+  assert.equal(SCHEMA.version, "0.4.2");
+  for (const k of ["setup", "when_needed"]) assert.ok(SCHEMA.$defs.ProductAnswer.properties[k], k);
   for (const op of ["GET /products/{name}/boss/messages", "POST /products/{name}/boss/messages", "GET /products/{name}/boss/commitments"]) assert.ok(SCHEMA.operations.some((o) => `${o.method} ${o.path}` === op), op);
   const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
   for (const op of ["GET /stages", "PUT /stages/{stage}", "DELETE /stages/{stage}"]) assert.ok(ops.includes(op), op);
