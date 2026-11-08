@@ -6,34 +6,18 @@ const PHASES = [
   ["define", "Define"], ["make", "Make"], ["ship", "Ship"], ["prove", "Prove"],
   ["use", "Use"], ["run", "Run"], ["change", "Change"],
 ];
-import { esc, safeUrl, stateOf, holderWords, holderHtml, stageNoticeHtml, evidenceHtml, holderFrom, effectiveHolder, WORD } from "./roles.js";
-import { lifecyclePageHtml, lifecycleHash, lifecycleDraft, referenceHolder, stagesToReset, notUsedHtml, buildLifecycleHtml, addedDraft, addedBody } from "./lifecycle.js";
+import { esc, stateOf, holderHtml, evidenceHtml, holderFrom, effectiveHolder, WORD } from "./roles.js";
+import { lifecyclePageHtml, lifecycleHash, lifecycleDraft, referenceHolder, stagesToReset, buildLifecycleHtml, addedDraft, addedBody } from "./lifecycle.js";
 import { boardHtml } from "./board.js";
 import { dashboardHtml, span } from "./dashboard.js";
 import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyticsPath } from "./analytics.js";
 import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
+import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, usedStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo } from "./workspace.js";
 
-const CLS = { done: "done", waiting_on_you: "wait", not_started: "todo", not_offered: "off", working: "work", refused: "bad", stopped: "stop", not_bound: "unb", not_applicable: "na", not_used: "nu" };
-const MARK = { done: "✓", waiting_on_you: "!", not_started: "○", not_offered: "", working: "…", refused: "✕", stopped: "■", not_bound: "?", not_applicable: "", not_used: "" };
+// A stage's state as the pill beside its name.
+const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
 
 const $ = (id) => document.getElementById(id);
-const pad = (n) => String(n).padStart(2, "0");
-const sentence = (s) => { const t = String(s ?? "").trim(); return t ? t[0].toUpperCase() + t.slice(1) + (/[.!?”"]$/.test(t) ? "" : ".") : ""; };
-// A field from stages.json: its list items are lines starting with "- ".
-function prose(text, lead = "") {
-  const lines = String(text ?? "").split(/\r?\n/);
-  const head = lines.filter((l) => !l.startsWith("- ")).join(" ").trim();
-  const items = lines.filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
-  const first = sentence(`${lead}${head}`.trim());
-  const p = first ? `<p>${esc(items.length ? first.replace(/[.:]?$/, ":") : first)}</p>` : "";
-  return p + (items.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : "");
-}
-// One of the words a stage handed back: a bare web address becomes a link.
-function wordsHtml(w) {
-  const t = String(w).trim();
-  const url = /^https?:\/\/\S+$/.test(t) ? safeUrl(t) : null;
-  return url ? `<p><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a></p>` : `<p>${esc(w)}</p>`;
-}
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* fine */ } },
@@ -52,6 +36,12 @@ const state = {
   lcStages: null, lcRoles: null, noStages: false, project: "", lcEditing: null, lcDraft: null, lcErrors: new Map(), lcPending: null,
   // Who the key belongs to (GET /me), and the People page (GET /people), when the service keeps people.
   me: null, people: null, hasPeople: false,
+  // The open build's selected stage: the service's workspace for it (null when it has no such route),
+  // its chat with the stage's agent (null without the route), the artifact open on the right, the
+  // composer's draft, the proposals confirmed, and whether Try it is open on the right.
+  roleDefs: [], stageSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: "versions", chatScroll: null, drawnKey: null,
+  // The products (GET /products, null without the route) and the open product page.
+  products: null, product: null,
 };
 
 // ---------- talking to the local server ----------
@@ -133,11 +123,14 @@ function parseHash() {
   if (parts[0] === "people") return { view: "people" };
   // The Roles page is now part of the Lifecycle page; an old link still lands there.
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
-  if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null };
+  // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
+  if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "try"].includes(parts[3]) ? parts[3] : null };
+  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["versions", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 const hashFor = (id, sel) => `#/b/${encodeURIComponent(id)}${sel ? `/${encodeURIComponent(sel)}` : ""}`;
+const productHash = (name) => `#/p/${encodeURIComponent(name)}`;
 
 async function route() {
   const h = parseHash();
@@ -184,18 +177,80 @@ async function route() {
   }
   // A lifecycle file has no builds: its page is the Lifecycle page.
   if (state.status?.source === "file") return go(lifecycleHash(""));
+  if (h.view === "product") { if (h.tab) state.ptab = h.tab; return openProduct(h.name); }
   state.view = "build";
   const id = h.id || pickBuild();
   if (!id) { drawRail(); return drawEmpty(); }
-  if (!state.build || state.build.id !== id) {
-    state.tries = []; state.lastTry = null; state.logAll = false; state.asking = null; state.wrongFor = null;
-    try {
-      state.build = (await api(buildPath(id))).build;
-    } catch (e) { return problem(e); }
+  if (!(await openBuild(id))) return;
+  // Opening a build opens the stage it is at now. An old link to Try it opens it beside that stage.
+  if (h.sel === "try") state.tab = "try";
+  if (h.tab) state.tab = h.tab;
+  const used = usedStages(state.build).map((s) => s.stage);
+  const stage = used.includes(h.sel) ? h.sel : openingStage(state.build);
+  if (stage !== state.stageSel) {
+    state.stageSel = stage; state.art = null; state.sayDraft = ""; state.sayError = ""; state.asking = null;
+    try { await loadStage(); } catch (e) { return problem(e); }
   }
-  state.sel = h.sel || defaultStage();
-  if (state.sel === "try") await loadTries();
+  if (state.tab === "try") await loadTries();
   draw();
+}
+
+async function openBuild(id) {
+  if (state.build && state.build.id === id) return true;
+  state.tries = []; state.lastTry = null; state.asking = null; state.wrongFor = null; if (state.tab === "try") state.tab = "chat";
+  state.stageSel = null; state.wsAnswer = null; state.chat = null; state.hasChat = false; state.art = null; state.confirmed = new Set();
+  try { state.build = (await api(buildPath(id))).build; } catch (e) { problem(e); return false; }
+  return true;
+}
+
+// The selected stage: the service's workspace for it, and its chat with the stage's agent. A service
+// without those routes (404, 405 or 501) gets the stage made from the build answer, and no composer.
+async function loadStage() {
+  const b = state.build;
+  const stage = state.stageSel;
+  if (!b || !stage) return;
+  const [ws, chat] = await Promise.allSettled([
+    api(buildPath(b.id, `/stages/${encodeURIComponent(stage)}`)),
+    api(`/products/${encodeURIComponent(productOf(b))}/stages/${encodeURIComponent(stage)}/messages`),
+  ]);
+  if (state.build?.id !== b.id || state.stageSel !== stage) return;
+  for (const r of [ws, chat]) if (r.status === "rejected" && r.reason?.needKey) throw r.reason;
+  state.wsAnswer = ws.status === "fulfilled" ? ws.value : null;
+  state.hasChat = chat.status === "fulfilled";
+  state.chat = state.hasChat && Array.isArray(chat.value?.messages) ? chat.value.messages : null;
+  const errs = [ws, chat].filter((r) => r.status === "rejected" && messagesOffered(r.reason?.status ?? 0)).map((r) => r.reason.message);
+  if (errs.length) state.error = [...new Set(errs)].join(" ");
+}
+
+// The product page: GET /products/:name, or made from the build list without that route.
+// The menu keeps showing the product's latest build.
+async function openProduct(name) {
+  state.view = "product";
+  const latest = latestBuildOf(name);
+  if (latest && !(await openBuild(latest))) return;
+  state.stageSel = null;
+  if (state.product?.name !== name) state.product = null;
+  drawRail(); drawProduct();
+  let p = null;
+  try { p = await api(`/products/${encodeURIComponent(name)}`); state.error = ""; } catch (e) {
+    if (e.needKey) return problem(e);
+    if (messagesOffered(e.status ?? 0)) state.error = e.message;
+  }
+  state.product = p && typeof p === "object" && Array.isArray(p.builds) ? p : productFromBuilds(name, state.builds, state.build && productOf(state.build) === name ? state.build : null);
+  if (state.view === "product") draw();
+}
+function latestBuildOf(name) {
+  const fromProducts = (state.products ?? []).find((p) => p.name === name)?.latest?.build;
+  if (fromProducts) return fromProducts;
+  const mine = state.builds.filter((b) => (b.product || b.name) === name);
+  return (mine.find((b) => !b.archived) ?? mine[0])?.id ?? null;
+}
+
+async function loadProducts() {
+  try {
+    const r = await api("/products");
+    state.products = Array.isArray(r?.products) ? r.products : null;
+  } catch (e) { if (e.needKey) throw e; state.products = null; }
 }
 
 function pickBuild() {
@@ -203,17 +258,6 @@ function pickBuild() {
   const b = live.find((x) => x.at?.state === "waiting_on_you") ?? live[0];
   return b?.id ?? null;
 }
-function defaultStage() {
-  const b = state.build;
-  const s = b.stages.find((x) => x.state === "waiting_on_you")
-    ?? b.stages.find((x) => x.state === "working" || x.state === "stopped" || x.state === "refused")
-    // A read-only source has nothing coming next; open what it holds.
-    ?? (state.status?.read_only ? b.stages.find((x) => x.state === "done") : null)
-    ?? b.stages.find((x) => x.state === "not_started")
-    ?? b.stages[0];
-  return s?.stage ?? null;
-}
-
 function problem(e) {
   if (e.needKey) {
     state.status = { ...state.status, signed_in: false };
@@ -254,6 +298,12 @@ function railLine(b) {
 
 function drawRail() {
   const cur = state.view === "build" ? state.build?.id : null;
+  // With a build open, the menu is that build: its steps, the other builds, New build and the factory pages.
+  const spine = $("spine");
+  const open = Boolean(state.build) && (state.view === "build" || state.view === "product") && state.status?.source !== "file";
+  spine.hidden = !open;
+  $("railhome").hidden = open;
+  if (open) spine.innerHTML = buildMenuHtml();
   const board = $("board");
   board.hidden = state.status?.source === "file";
   board.classList.toggle("on", state.view === "board");
@@ -292,6 +342,51 @@ function drawRail() {
   drawLifecycles();
 }
 
+const defs = () => state.byId;
+const stepsNow = () => steps(state.build, { defs: defs(), roleDefs: state.roleDefs, when });
+const buildProject = (b) => {
+  const lc = b?.lifecycle;
+  const p = lc && typeof lc === "object" ? lc.project : b?.project;
+  return typeof p === "string" ? p : "";
+};
+
+/** The left menu while a build is open: the product and its build's stages, the other products, New build, the factory pages. */
+function buildMenuHtml() {
+  const b = state.build;
+  const spine = stepsNow();
+  const mine = productOf(b);
+  const stageName = (id) => def(id).name;
+  let others = "";
+  let archived = 0;
+  if (Array.isArray(state.products)) {
+    others = state.products.filter((p) => p?.name && p.name !== mine).map((p) => {
+      const l = productLine(p, { stageName });
+      const id = p.latest?.build;
+      return `<a class="ob" href="${esc(id ? hashFor(id) : productHash(p.name))}"><b>${esc(p.name)}</b><small class="${l.wait ? "w" : ""}">${esc(l.text)}</small></a>`;
+    }).join("");
+  } else {
+    // No products route: each other build in the list stands for its product.
+    const rest = state.builds.filter((x) => (x.product || x.name) !== mine);
+    archived = rest.filter((x) => x.archived).length;
+    others = rest.filter((x) => state.showArchived || !x.archived).map((x) => {
+      const l = railLine(x);
+      return `<a class="ob${x.archived ? " ar" : ""}" href="${hashFor(x.id)}" title="${esc(x.does)}"><b>${esc(x.name)}</b><small class="${l.wait ? "w" : ""}${l.paused ? " p" : ""}">${x.archived ? "Archived · " : ""}${esc(l.text)}</small></a>`;
+    }).join("");
+  }
+  const page = (href, name) => `<a href="${esc(href)}">${esc(name)}</a>`;
+  const pages = [
+    page("#/board", "Board"), page("#/dashboard", "Dashboard"),
+    state.analytics ? page("#/analytics", "Analytics") : "",
+    state.status?.read_only ? "" : page(lifecycleHash(buildProject(b)), "Lifecycle"),
+    state.hasPeople ? page("#/people", "People") : "",
+  ].filter(Boolean).join("");
+  return `${spineHtml(b, spine, { sel: state.view === "build" ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" })}
+    ${others || archived ? `<h2>Other products</h2>${others}` : ""}
+    ${archived ? `<button class="linkbtn archt" id="archt" type="button" aria-pressed="${state.showArchived}">${state.showArchived ? "Hide archived" : `Show archived (${archived})`}</button>` : ""}
+    ${state.status?.read_only ? "" : `<button class="newb" id="new2" type="button">New build</button>`}
+    <h2>Factory</h2><div class="pages">${pages}</div>`;
+}
+
 // The rail's Lifecycles: the organization's, then each project this page knows of.
 // The service lists no projects, so these are the ones seen on a build or typed here.
 function drawLifecycles() {
@@ -322,52 +417,112 @@ function remember(project) {
 function layout(kind) {
   $("app").classList.toggle("solo", kind === "solo");
   $("app").classList.toggle("bare", kind === "bare");
+  $("app").classList.toggle("thread", kind === "thread");
+  if (kind !== "thread") $("app").classList.remove("noarts");
+}
+
+const artifactsOf = (b) => (Array.isArray(b?.artifacts) ? b.artifacts.filter((a) => a && typeof a.id === "string") : []);
+const currentWs = () => stageWorkspace(state.build, state.stageSel, state.wsAnswer, { defs: defs() });
+
+// What the stage's gate card and chat need from the page: times, names, the gate buttons, the clone check.
+function stageCtx(ws) {
+  const b = state.build;
+  const kind = stageOf(ws.stage)?.holder?.kind;
+  return {
+    build: b, when, me: typeof state.me?.account?.name === "string" ? state.me.account.name : null,
+    artifacts: new Map([...artifactsOf(b), ...ws.outputs, ...ws.given].map((a) => [a.id, a])), selected: state.art,
+    actionsHtml, checkHtml: localCheckHtml, cloneOpen: state.cloneOpen,
+    confirmed: state.confirmed, pending: state.pending, theirs: kind === "your_agent" || kind === "contracted",
+  };
+}
+
+// The tab body scrolls on its own beside the menu; at phone width the page scrolls instead.
+const phone = () => matchMedia("(max-width:760px)").matches;
+const getScroll = () => (phone() ? window.scrollY : $("tabbody")?.scrollTop ?? 0);
+function setScroll(top) {
+  if (phone()) return window.scrollTo(0, top);
+  const el = $("tabbody");
+  if (el) el.scrollTop = top;
+}
+// Remembers where the chat was, so coming back to it lands in the same place.
+function leaveTab() {
+  if (state.tab === "chat" && state.view === "build" && state.build) state.chatScroll = { key: `${state.build.id}/${state.stageSel}`, top: getScroll() };
 }
 
 function draw() {
   drawTop();
   drawRail();
-  if (state.view !== "build" || !state.build) return;
-  layout("full");
+  if (!state.build) return;
+  if (state.view === "product") return drawProduct();
+  if (state.view !== "build") return;
   const b = state.build;
+  const ws = currentWs();
+  const ctx = stageCtx(ws);
+  const s = stageOf(ws.stage) ?? { stage: ws.stage };
+  const spine = stepsNow();
+  const x = spine.find((y) => y.stage === ws.stage);
   const canTry = state.status?.can_try !== false && (Boolean(prStage()) || installed());
+  if (state.tab === "try" && !canTry) state.tab = "chat";
+  const agent = holderName(ws.holder, s, def(ws.stage), state.roleDefs);
+  const who = holderHtml(ws.holder);
+  const talk = state.hasChat && canTalkTo(ws.holder);
+  const msgs = state.hasChat && Array.isArray(state.chat) ? state.chat : fallbackChat(b, ws.stage, { defs: defs(), roleDefs: state.roleDefs });
+  const gate = gateCardHtml(ws, b, ctx);
+  const st = stateOf({ state: ws.state });
+  const tabs = [
+    { id: "chat", label: "Chat", count: msgs.filter((m) => m?.from?.kind !== "system").length },
+    { id: "artifacts", label: "Artifacts", count: artifactCount(ws) ?? undefined },
+    ...(canTry ? [{ id: "try", label: "Try it" }] : []),
+  ];
+  let body;
+  if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list) => filesHtml(list, false) });
+  else if (state.tab === "try") body = `<div class="stage trypane" id="trybody"></div>`;
+  else body = `<div class="thread" id="thread">${chatHtml(msgs, { ...ctx, empty: talk ? `Nothing has been said here yet. Ask ${agent} about what it read or made.` : "Nothing has been said here yet." })}
+      ${ws.evidence.length ? `<div class="evid">${evidenceHtml(ws.evidence, { when, fileHtml: (f) => filesHtml([f], false) })}</div>` : ""}</div>${timeline()}`;
+  // Where the tab body was, kept across a redraw of the same stage and tab.
+  const key = `${b.id}/${ws.stage}/${state.tab}`;
+  const keep = key === state.drawnKey ? getScroll() : null;
+  layout("thread");
+  $("app").classList.add("noarts");
   $("main").innerHTML = `
-    <div class="err" role="alert">${esc(state.error)}</div>
-    <div class="head"><h1>${esc(b.name)}</h1>${canTry ? `<button class="try${state.sel === "try" ? " on" : ""}" id="try" type="button">Try it</button>` : ""}</div>
-    <p class="does">${esc(b.does)}</p>
-    ${buildLifecycleHtml(b, { day })}
-    ${b.summary ? `<p class="sum${b.paused ? " paused" : ""}">${esc(b.summary)}${b.archived ? " · archived" : ""}</p>` : ""}
-    ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
-    <div id="phases">${phases()}</div>
-    ${timeline()}
-    ${buildLog()}`;
+    <section class="thread-wrap work">
+      <div class="whead">
+        <div class="hd"><div><h1>${esc(ws.name)}${x ? `<span>Step ${x.number} of ${spine.length}</span>` : ""}</h1><p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p></div></div>
+        <div class="err" role="alert">${esc(state.error)}</div>
+        ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
+        ${gate ? `<div class="pin">${gate}</div>` : ""}
+        ${tabsHtml(tabs, state.tab, { label: `${ws.name}` })}
+      </div>
+      <div class="wbody tab-${esc(state.tab)}" id="tabbody" role="tabpanel">${body}</div>
+      ${state.tab === "chat" ? (talk ? composerHtml(agent, { draft: state.sayDraft, pending: state.sayPending, error: state.sayError }) : state.hasChat && ws.holder ? `<div class="compose quiet"><p class="hint">${esc(`${agent || "A person"} holds this stage. There is no agent here to talk to.`)}</p></div>` : "") : ""}
+    </section>`;
+  $("stage").innerHTML = "";
   // The bars placed through the CSSOM: the page's policy takes no style attribute.
   for (const i of document.querySelectorAll(".timeline .track i")) { i.style.left = `${i.dataset.l}%`; i.style.width = `${i.dataset.w}%`; }
-  drawStage();
-  if (b.stages.some((s) => s.state === "working")) schedule();
+  for (const det of document.querySelectorAll("#tabbody details[open][data-file]")) loadFile(det);
+  if (state.tab === "try") drawTry();
+  if (keep !== null) setScroll(keep);
+  else if (state.tab === "chat") {
+    const saved = state.chatScroll?.key === `${b.id}/${ws.stage}` ? state.chatScroll.top : null;
+    // A stage's chat opens at its newest message; coming back to it lands where it was.
+    if (saved !== null) setScroll(saved); else if (!phone()) setScroll(1e9);
+  } else if (!phone()) setScroll(0);
+  state.drawnKey = key;
+  if (b.stages.some((y) => y.state === "working")) schedule();
 }
 
-function phases() {
+// The product page: tabs for its versions, run plan and activity.
+function drawProduct() {
+  layout("thread");
+  $("app").classList.add("noarts");
   const b = state.build;
-  const known = new Map(b.stages.map((s) => [s.stage, s]));
-  const rows = state.stages.length ? state.stages : b.stages.map((s, i) => ({ id: s.stage, number: i + 1, phase: "", name: s.stage }));
-  return PHASES.map(([pid, pname]) => {
-    const here = rows.filter((d) => d.phase === pid);
-    if (!here.length) return "";
-    return `<div class="phase"><span>${pname}</span><div class="st">${here.map((d) => {
-      const s = known.get(d.id) ?? { stage: d.id, state: "not_offered", runs: 0 };
-      const st = stateOf(s);
-      const mark = MARK[st];
-      const on = s.stage === state.sel;
-      // The holder in words; one held by anyone but the reference agent says so on the chip too.
-      const who = st === "not_offered" || st === "not_applicable" || st === "not_used" ? "" : holderWords(s.holder);
-      const handle = s.holder?.handle ? ` · ${s.holder.handle}` : "";
-      const shown = who && s.holder?.kind !== "reference_agent" ? `<small>${esc(who)}</small>` : "";
-      return `<button class="c ${CLS[st]}${on ? " sel" : ""}" type="button" data-stage="${esc(d.id)}" aria-pressed="${on}"${who ? ` title="${esc(`Held by ${who}${handle}`)}"` : ""} aria-label="${esc(`${d.name}, ${WORD[st]}${who ? `, held by ${who}` : ""}${s.runs > 1 ? `, ran ${s.runs} times` : ""}`)}"><i>${pad(d.number)}</i><span class="cn">${esc(d.name)}${shown}</span>${mark ? `<b>${mark}</b>` : ""}${s.runs > 1 ? `<u>×${s.runs}</u>` : ""}</button>`;
-    }).join("")}</div></div>`;
-  }).join("");
+  const same = b && state.product && productOf(b) === state.product.name;
+  $("main").innerHTML = state.product
+    ? productPageHtml(state.product, { stageName: (id) => def(id).name, when, error: state.error, does: same ? b.does : "", extra: same ? buildLifecycleHtml(b, { day }) : "", buildHref: (id) => hashFor(id) }, state.ptab)
+    : `<div class="err" role="alert">${esc(state.error)}</div><p class="does">Loading…</p>`;
+  $("stage").innerHTML = "";
+  state.drawnKey = null;
 }
-
 
 const KIND = { agent: "an agent working", person: "waiting on a person", external: "waiting on something outside the run" };
 
@@ -389,14 +544,7 @@ function timeline() {
       + '<div class="track" aria-hidden="true"><i data-l="' + left.toFixed(2) + '" data-w="' + width.toFixed(2) + '"></i></div>'
       + '<div class="bk">' + esc(KIND[x.kind] ?? x.kind) + (x.holder ? " · " + esc(x.holder) : "") + " · " + esc(x.status) + "</div></li>";
   }).join("");
-  return '<section class="timeline"><h2>How long each step took</h2><p class="does">' + esc(span(whole)) + " from the first step to the last. Steps that ran at the same time overlap.</p><ol class=\"bars\">" + rows + "</ol></section>";
-}
-
-function buildLog() {
-  const log = state.build.log ?? [];
-  if (!log.length) return "";
-  const shown = state.logAll ? log : log.slice(0, 6);
-  return `<section class="buildlog"><h2>What happened, newest first</h2><ul class="log">${shown.map((e) => `<li><time>${esc(when(e.at))}</time>${esc(e.said)}</li>`).join("")}</ul>${log.length > shown.length ? `<div class="acts"><button class="linkbtn" type="button" id="logall">Show all ${log.length}</button></div>` : ""}</section>`;
+  return '<details class="timeline"' + (state.timelineOpen ? " open" : "") + '><summary>How long each step took <span>' + esc(span(whole)) + '</span></summary><p class="does">' + esc(span(whole)) + " from the first step to the last. Steps that ran at the same time overlap.</p><ol class=\"bars\">" + rows + "</ol></details>";
 }
 
 function actionsFor(stage) {
@@ -416,10 +564,10 @@ function buttonsHtml(list) {
   const busy = state.pending !== null;
   // Stop is never drawn as the main action, even when it is the only one.
   const main = list.findIndex((a) => a.name !== "stop");
-  let h = `<div class="acts">${list.map((a, i) => `<button class="btn${i === main ? " p" : ""}" type="button" data-act="${esc(a.name)}"${busy ? " disabled" : ""}>${esc(state.pending === a.name ? "Sending…" : a.label)}</button>`).join("")}</div>`;
-  const ask = list.find((a) => a.name === state.asking && a.needs?.length);
+  let h = `<div class="acts">${list.map((a, i) => `<button class="btn${i === main ? " p" : ""}" type="button" data-act="${esc(a.name)}" data-act-stage="${esc(a.stage)}"${busy ? " disabled" : ""}>${esc(state.pending === a.name ? "Sending…" : a.label)}</button>`).join("")}</div>`;
+  const ask = list.find((a) => `${a.stage}\n${a.name}` === state.asking && a.needs?.length);
   if (ask) {
-    h += `<form class="ask" data-ask="${esc(ask.name)}">${ask.needs.map((n) => {
+    h += `<form class="ask" data-ask="${esc(ask.name)}" data-ask-stage="${esc(ask.stage)}">${ask.needs.map((n) => {
       const id = `need-${esc(n.name)}`;
       const long = /words|text|long|reason|why|comment/i.test(n.kind);
       // A need the service marks optional may be left empty, and is then not sent.
@@ -456,77 +604,6 @@ function localCheckHtml() {
   return `<form class="clone" id="clone-form"><label for="clone">The folder your clone is in</label><input type="text" id="clone" value="${esc(saved)}" autocomplete="off" spellcheck="false" placeholder="The whole path, from the top of the drive"><button class="btn" type="submit"${r === "running" ? " disabled" : ""}>Check my clone</button></form><div class="local" aria-live="polite">${out}</div>`;
 }
 
-function drawStage() {
-  const el = $("stage");
-  if (state.sel === "try") return drawTry();
-  const s = stageOf(state.sel) ?? { stage: state.sel, state: "not_offered" };
-  const st = stateOf(s);
-  const d = def(state.sel);
-  const phaseName = PHASES.find(([p]) => p === d.phase)?.[1] ?? "";
-  let h = `<h2>Stage ${pad(d.number)}${phaseName ? ` · ${phaseName}` : ""}</h2>
-    <h3>${esc(d.name)} <span class="pill ${CLS[st]}">${WORD[st]}</span></h3>`;
-  if (st === "not_offered") {
-    h += `<div class="sec">${d.hands_back ? prose(d.hands_back, "It hands back ") : ""}<p class="notyet">${esc(state.status?.source === "github" ? "A repository does not show this stage." : `${state.status?.demo ? "The demo" : state.status?.service ?? "This service"} does not run this stage yet.`)}</p></div>`;
-    el.innerHTML = h;
-    return;
-  }
-  // The build's lifecycle leaves this stage out: say so, and which lifecycle.
-  if (st === "not_used") {
-    el.innerHTML = h + notUsedHtml(state.build, { day });
-    return;
-  }
-  if (st === "not_bound" || st === "not_applicable") {
-    const lc = state.build.lifecycle;
-    const project = lc && typeof lc === "object" ? lc.project : state.build.project;
-    el.innerHTML = h + stageNoticeHtml(st, lifecycleHash(typeof project === "string" ? project : ""));
-    return;
-  }
-  const future = st === "not_started";
-  const holder = holderHtml(s.holder);
-  if (holder) h += `<p class="who">${future ? "Will be held by" : "Held by"} ${holder}</p>`;
-  else if (d.reference_holder) h += `<p class="who">Its reference agent is ${esc(d.reference_holder)}</p>`;
-  else if (d.role) h += `<p class="who">Its role: ${esc(d.role)}</p>`;
-  const given = s.given ? `<p>${esc(s.given)}</p>` : prose(d.given);
-  if (given) h += `<div class="sec"><h4>${future ? "Will be given" : "Given"}</h4>${given}</div>`;
-
-  if (s.where?.kind === "pull_request") {
-    const url = safeUrl(s.where.url);
-    const pr = prWords(s.where.url);
-    const c = s.where.check;
-    // The check's own verdict colours its title; a stage still working on a refused push is not neutral.
-    const tone = c?.passed === true ? "good" : c?.passed === false ? "back" : s.state === "waiting_on_you" || s.state === "done" ? "good" : s.state === "refused" ? "back" : "";
-    h += `<div class="sec"><h4>Where</h4><p>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(pr.text)}</a>` : esc(pr.text)}</p>
-      ${c ? `<div class="check"><div class="t ${tone}">${esc(c.title)}</div>${esc(c.words)}${c.items?.length ? `<ul>${c.items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>` : ""}
-      ${localCheckHtml()}
-      ${actionsHtml(s.stage)}</div>`;
-  }
-
-  if (s.rounds?.length) {
-    h += `<div class="sec"><h4>${s.rounds.length === 1 ? "1 round" : `${s.rounds.length} rounds, newest first`}</h4><ol class="rounds">${s.rounds.map((r) =>
-      `<li class="${r.back ? "back" : "done"}"><div class="rh"><b>${esc(r.label)}</b><span>${esc(when(r.at))}</span></div><div class="rv">${r.back ? "↩ " : "✓ "}${esc(r.verdict)}</div>${r.words ? `<p>${esc(r.words)}</p>` : ""}</li>`).join("")}</ol></div>`;
-  }
-
-  const words = s.handed_back?.words ?? [];
-  const files = s.handed_back?.files ?? [];
-  if (words.length || files.length) {
-    h += `<div class="sec"><h4>${future ? "Will hand back" : "Handed back"}</h4>${words.map(wordsHtml).join("")}${files.length ? filesHtml(files) : ""}</div>`;
-  } else if (future && d.hands_back) {
-    h += `<div class="sec"><h4>Will hand back</h4>${prose(d.hands_back)}</div>`;
-  }
-  // Evidence an outside holder handed in, as the service read it.
-  h += evidenceHtml(s.evidence, { when, fileHtml: (f) => filesHtml([f], false) });
-
-  if (!s.where) h += actionsHtml(s.stage);
-  if (s.stage === "acceptance" && (prStage() || installed())) h += `<div class="acts"><button class="btn${actionsFor(s.stage).length ? "" : " p"}" type="button" data-tryit>Try it</button></div>`;
-
-  if (d.done_when) {
-    const met = s.done_when_met === true ? `<p class="met">✓ Met</p>` : s.done_when_met === false && !future ? `<p class="notyet">Not met yet</p>` : "";
-    h += `<div class="sec"><h4>Done when</h4>${prose(d.done_when)}${met}</div>`;
-  }
-  if (s.log?.length) h += `<div class="sec"><h4>What happened</h4><ul class="log">${s.log.map((e) => `<li><time>${esc(when(e.at))}</time>${esc(e.said)}</li>`).join("")}</ul></div>`;
-  el.innerHTML = h;
-  for (const det of el.querySelectorAll("details[open][data-file]")) loadFile(det);
-}
 
 // ---------- Try it ----------
 
@@ -586,7 +663,7 @@ function drawTry() {
   }
   el(h);
 }
-function el(h) { $("stage").innerHTML = h; }
+function el(h) { const t = $("trybody"); if (t) t.innerHTML = h; }
 
 // ---------- the key, a new build, nothing yet ----------
 
@@ -710,17 +787,25 @@ function schedule() {
       if (state.view === "dashboard") drawDashboard();
       return;
     }
-    if (document.hidden || state.view !== "build" || !state.build || state.pending) return schedule();
+    // Never redrawn under a person's hands: while they type a message or fill a gate's form, it waits.
+    if (document.hidden || state.view !== "build" || !state.build || state.pending || state.sayPending || typing()) return schedule();
     try {
       state.build = (await api(buildPath(state.build.id))).build;
+      await loadStage();
       await refreshBuilds();
-      draw();
+      if (!typing()) draw(); else schedule();
     } catch { schedule(); }
   }, 5000);
 }
 
+function typing() {
+  const a = document.activeElement;
+  return Boolean(a && (a.id === "say" || a.closest?.("form.ask") || a.closest?.("#clone-form")) && (a.value ?? "").length > 0) || state.asking !== null;
+}
+
 async function refreshBuilds() {
   try { state.builds = (await api("/builds?archived=1")).builds ?? []; } catch (e) { if (e.needKey) throw e; state.error = e.message; }
+  await loadProducts();
 }
 
 async function loadFile(det) {
@@ -742,23 +827,56 @@ async function loadFile(det) {
 }
 
 async function act(name, needs = {}) {
-  state.pending = name; drawStage();
+  state.pending = name; draw();
   try {
     // A 403 with words here is the service turning down this person at this gate, not a bad key.
     const r = await api(buildPath(state.build.id, `/actions/${encodeURIComponent(name)}`), { method: "POST", body: needs, own403: true });
     if (r?.build) state.build = r.build;
     else state.build = (await api(buildPath(state.build.id))).build;
     state.asking = null; state.error = "";
+    await loadStage();
     await refreshBuilds();
   } catch (e) {
     state.pending = null;
     return problem(e);
   }
   state.pending = null;
-  // When the gate just answered is closed and another one now waits on the
-  // person, open that one.
-  const next = state.build.stages.find((s) => s.state === "waiting_on_you");
-  if (next && next.stage !== state.sel && !actionsFor(state.sel).length) return go(hashFor(state.build.id, next.stage));
+  draw();
+}
+
+// A message to the agent holding the selected stage, kept in that stage's chat for the product.
+// A reply that proposes a change carries a confirm button that takes the build's own action.
+async function say(text) {
+  const b = state.build;
+  const stage = state.stageSel;
+  if (!b || !stage || !text.trim()) return;
+  state.sayPending = true; state.sayDraft = text; state.sayError = ""; draw();
+  try {
+    const r = await api(`/products/${encodeURIComponent(productOf(b))}/stages/${encodeURIComponent(stage)}/messages`, { method: "POST", body: { text, build: b.id }, own403: true });
+    if (state.build?.id !== b.id || state.stageSel !== stage) return;
+    state.sayDraft = "";
+    // The chat as the service now keeps it; the two new messages if it cannot be read again.
+    try { await loadStage(); } catch { /* kept below */ }
+    if (!(state.chat ?? []).some((m) => m.id === r?.reply?.id)) state.chat = [...(state.chat ?? []), r?.message, r?.reply].filter(Boolean);
+    // A proposal is shown from the reply as it came back, even when the chat does not repeat it.
+    if (r?.reply?.proposes) state.chat = state.chat.map((m) => (m.id === r.reply.id && !m.proposes ? { ...m, proposes: r.reply.proposes } : m));
+  } catch (e) {
+    state.sayPending = false;
+    if (e.needKey) return problem(e);
+    state.sayError = e.message;
+    return draw();
+  }
+  state.sayPending = false;
+  draw();
+  requestAnimationFrame(() => { $("thread")?.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" }); $("say")?.focus(); });
+}
+
+async function confirmProposal(msgId) {
+  const m = (state.chat ?? []).find((x) => x.id === msgId);
+  const body = m ? confirmBody(state.build, m.proposes) : null;
+  if (!body) return;
+  await act(body.name, body.needs);
+  if (state.error === "") state.confirmed.add(msgId);
   draw();
 }
 
@@ -786,14 +904,14 @@ async function markTry(tid, what, body) {
 async function runLocalCheck(folder) {
   const id = state.build.id;
   store.set(`clone:${id}`, folder);
-  state.checks.set(id, "running"); drawStage();
+  state.checks.set(id, "running"); draw();
   try {
     const r = await call("/local/check", { method: "POST", body: { folder, agent: state.build?.name ?? "" } });
     state.checks.set(id, r.result);
   } catch (e) {
     state.checks.set(id, { error: e.message });
   }
-  if (state.build?.id === id && state.sel !== "try") drawStage();
+  if (state.build?.id === id) draw();
 }
 
 // ---------- the Lifecycle page ----------
@@ -913,18 +1031,32 @@ function formValues(f) {
 
 document.addEventListener("click", async (e) => {
   const t = e.target;
-  const chip = t.closest("[data-stage]");
-  if (chip) {
-    go(hashFor(state.build.id, chip.dataset.stage));
-    if (matchMedia("(max-width:820px)").matches) requestAnimationFrame(() => $("stage").scrollIntoView({ behavior: "smooth", block: "start" }));
+  // The stage's tabs: Chat, Artifacts, Try it. Leaving Chat remembers where it was.
+  const tab = t.closest("[data-tab]");
+  if (tab || t.closest("[data-tryit]")) {
+    const to = tab ? tab.dataset.tab : "try";
+    if (to === state.tab) return;
+    leaveTab();
+    state.tab = to;
+    if (to === "try") await loadTries();
+    return draw();
+  }
+  const ptab = t.closest("[data-ptab]");
+  if (ptab) { state.ptab = ptab.dataset.ptab; return drawProduct(); }
+  // An attachment in the chat, or a row of the Given and Outputs: the Artifacts tab, with it open in the reader.
+  const art = t.closest("[data-art]");
+  if (art) {
+    state.art = art.dataset.art;
+    if (state.tab !== "artifacts") { leaveTab(); state.tab = "artifacts"; }
+    const top = state.drawnKey?.endsWith("/artifacts") ? getScroll() : 0;
+    draw();
+    if (phone()) requestAnimationFrame(() => $("reader")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    else setScroll(t.closest(".alist") ? top : 0);
     return;
   }
-  if (t.closest("#try") || t.closest("[data-tryit]")) {
-    go(hashFor(state.build.id, "try"));
-    if (matchMedia("(max-width:820px)").matches) requestAnimationFrame(() => $("stage").scrollIntoView({ behavior: "smooth", block: "start" }));
-    return;
-  }
-  if (t.closest("#new")) return go("#/new");
+  const confirmBtn = t.closest("[data-confirm]");
+  if (confirmBtn) return confirmProposal(confirmBtn.dataset.confirm);
+  if (t.closest("#new") || t.closest("#new2")) return go("#/new");
   const edit = t.closest("[data-edit-role]");
   if (edit) {
     const r = lcRole(edit.dataset.editRole);
@@ -956,7 +1088,6 @@ document.addEventListener("click", async (e) => {
     store.set("board-mine", state.boardMine ? "1" : "");
     return drawBoard();
   }
-  if (t.closest("#logall")) { state.logAll = true; return draw(); }
   if (t.closest("#archt")) { state.showArchived = !state.showArchived; return drawRail(); }
   if (t.closest("#forget")) {
     try { state.status = await call("/local/forget-key", { method: "POST" }); } catch (err) { state.error = err.message; }
@@ -965,12 +1096,13 @@ document.addEventListener("click", async (e) => {
   }
   const a = t.closest("[data-act]");
   if (a) {
-    const action = actionsFor(state.sel).find((x) => x.name === a.dataset.act);
+    const action = actionsFor(a.dataset.actStage).find((x) => x.name === a.dataset.act);
     if (!action) return;
-    if (action.needs?.length) { state.asking = action.name; drawStage(); $("stage").querySelector(".ask textarea, .ask input")?.focus(); return; }
+    if (action.needs?.length) { state.asking = `${action.stage}
+${action.name}`; draw(); $("main").querySelector(".ask textarea, .ask input")?.focus(); return; }
     return act(action.name);
   }
-  if (t.closest("[data-cancel]")) { state.asking = null; state.wrongFor = null; return state.sel === "try" ? drawTry() : drawStage(); }
+  if (t.closest("[data-cancel]")) { const tr = state.tab === "try" && t.closest("#trybody"); state.asking = null; state.wrongFor = null; return tr ? drawTry() : draw(); }
   const keep = t.closest("[data-keep]");
   if (keep) return markTry(keep.dataset.keep, "keep", {});
   const wrong = t.closest("[data-wrong]");
@@ -980,7 +1112,14 @@ document.addEventListener("click", async (e) => {
 document.addEventListener("toggle", (e) => {
   const det = e.target;
   if (det.matches?.("details[data-file]") && det.open) loadFile(det);
+  // Kept open across redraws: the timeline and the clone check.
+  if (det.matches?.("details.timeline")) state.timelineOpen = det.open;
+  if (det.matches?.("details.clonecheck")) state.cloneOpen = det.open;
 }, true);
+
+document.addEventListener("input", (e) => {
+  if (e.target.id === "say") state.sayDraft = e.target.value;
+});
 
 document.addEventListener("change", (e) => {
   if (e.target.id === "twhere" && state.build) store.set(`against:${state.build.id}`, e.target.value);
@@ -1059,6 +1198,7 @@ document.addEventListener("submit", async (e) => {
     return markTry(f.dataset.tid, "wrong", why ? { why } : {});
   }
   if (f.id === "clone-form") return runLocalCheck($("clone").value);
+  if (f.id === "say-form") return say($("say").value);
   if (f.dataset.ask) {
     const needs = {};
     for (const x of f.querySelectorAll("[name]")) if (x.value.trim() || x.required) needs[x.name] = x.value;
@@ -1075,6 +1215,7 @@ async function start() {
     state.stages = (Array.isArray(doc) ? doc : doc.stages ?? []).slice().sort((a, b) => a.number - b.number);
     if (Array.isArray(doc.phases) && doc.phases.length) PHASES.splice(0, PHASES.length, ...doc.phases.map((p) => [p.id, p.name]));
     state.byId = new Map(state.stages.map((s) => [s.id, s]));
+    state.roleDefs = Array.isArray(doc.roles) ? doc.roles : [];
     state.evidenceFormats = Array.isArray(doc.evidence_formats) ? doc.evidence_formats : [];
   } catch (e) {
     $("main").innerHTML = `<div class="err" role="alert">${esc(e.message)}</div>`;

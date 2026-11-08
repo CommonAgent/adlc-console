@@ -295,10 +295,11 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.3, with the stages operations and not_used", () => {
-  assert.equal(SCHEMA.version, "0.3");
+test("the vendored schema is lifecycle API 0.4, with the stages operations, not_used, products, stage workspaces and chats", () => {
+  assert.equal(SCHEMA.version, "0.4");
   const ops = SCHEMA.operations.map((o) => `${o.method} ${o.path}`);
   for (const op of ["GET /stages", "PUT /stages/{stage}", "DELETE /stages/{stage}"]) assert.ok(ops.includes(op), op);
+  for (const op of ["GET /products", "GET /products/{name}", "GET /builds/{id}/stages/{stage}", "GET /products/{name}/stages/{stage}/messages", "POST /products/{name}/stages/{stage}/messages"]) assert.ok(ops.includes(op), op);
   assert.ok(SCHEMA.$defs.State.enum.includes("not_used"));
   assert.deepEqual(SCHEMA.$defs.StageChoice.required, ["stage", "name", "phase", "roles", "used", "from", "can_leave_out"]);
   assert.deepEqual(SCHEMA.$defs.StagesAnswer.required, ["project", "stages"]);
