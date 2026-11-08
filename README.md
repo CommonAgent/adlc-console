@@ -57,6 +57,22 @@ records, never estimated:
 Each is a plain table with a bar drawn in CSS. The page reads GET /builds and
 GET /builds/:id, and refreshes while any build is working.
 
+## Analytics
+
+Analytics, below Dashboard in the rail, asks questions over time of a service
+that keeps a history of its builds. It is shown only when the service answers
+GET /v1/lifecycle/analytics, a route outside the lifecycle API standard that
+Product Factory adds; for any other service it stays hidden. Choose the window
+(the last 7 or 30 days, or all time) and a project. It shows, week by week:
+
+- builds started and finished;
+- the median time per stage;
+- how often each stage's work is sent back, over the window;
+- time waiting on people against time with an agent working.
+
+Each is a plain table with bars drawn in CSS, from the service's answer as it
+is. The demo answers the route with made-up weeks.
+
 ## Define your ADLC with no service
 
 ```

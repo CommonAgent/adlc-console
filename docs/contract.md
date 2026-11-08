@@ -100,6 +100,20 @@ build adds timeline?: [{ phase, round, holder, kind, start, end, duration_ms, st
   // adds a stage's time from the bars that name it; a bar without one is not counted.
 ```
 
+An addition a service may make, outside the lifecycle API standard (Product
+Factory answers it from its history of builds; other services need not):
+
+```
+GET  /v1/lifecycle/analytics?window=7d|30d|all&project=<name>
+  -> { window, project, from, to,
+       weeks: ["YYYY-MM-DD", ...],           // the Mondays the window covers, oldest first
+       projects?: [names],                   // for the page's project filter
+       builds: [{ week, started, finished, stopped? }],
+       stage_times: [{ stage, name?, weeks: [{ week, median_ms, builds }] }],
+       send_backs: [{ stage, name?, rounds, back, rate, builds? }],   // over the window
+       waiting: [{ week, person_ms, agent_ms }] }
+```
+
 ## How the console reads it
 
 - A stage in stages.json that a build does not list is shown as not offered,
@@ -143,13 +157,17 @@ build adds timeline?: [{ phase, round, holder, kind, start, end, duration_ms, st
   them is open. Send-backs are rounds with `back: true`. Waiting now is from
   the list: `waiting_on_you` or `refused` is on a person, `working` is an
   agent working; builds in Done are left out.
+- Analytics is shown in the rail only when the service answers
+  GET /v1/lifecycle/analytics with weeks; a 404, or any other answer, keeps it
+  hidden. The page passes on only `window` and `project`, and draws the
+  service's answer as it is: it works nothing out itself.
 - The list is read with `?archived=1`. Archived builds are hidden, with a
   "Show archived (N)" toggle at the foot of the list. `archive`,
   `unarchive` and `resume_agent` are actions like any other: one button each.
 
 `lib/contract.mjs` holds these shapes as checks. A service author can run
 their own answers through `checkBuildList`, `checkBuild`, `checkTry`,
-`checkTries`, `checkRoles` and `checkStages`; each returns a list of
+`checkTries`, `checkRoles`, `checkStages` and `checkAnalytics`; each returns a list of
 problems, empty when the shape is right. `checkStages(body, { stages, project })`
 takes stages.json's stages, to check the order, names, phases and role ids,
 and the project asked about, which the answer must echo.
