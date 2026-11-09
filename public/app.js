@@ -12,6 +12,7 @@ import { boardHtml } from "./board.js";
 import { dashboardHtml, span } from "./dashboard.js";
 import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyticsPath } from "./analytics.js";
 import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
+import { featuresMatrixHtml, featureDecision, cellTarget } from "./features.js";
 import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
@@ -45,6 +46,12 @@ const state = {
   // The when-needed action being taken from the product page (0.4.2), and a role the Setup tab sent the
   // Lifecycle page to choose a holder for: { role, at }.
   whenPending: null, lcWant: null,
+  // Features (0.4.3): whether the service keeps them (null until asked), the product's matrix for the
+  // version chosen, the feature whose history is open and that history, the build's own matrix for its
+  // Requirements stage, the answer being sent, and the feature a reader is opened at.
+  feat: { has: null, name: null, version: null, answer: null, error: "", sel: null, history: null, historyError: "" },
+  bfeat: { build: null, answer: null, sel: null, history: null, historyError: "" },
+  featPending: null, featFocus: null, openAt: null,
   // The product's boss (0.4.1): whether the service has it (null until asked), whose conversation is
   // held, the builds its open proposals name (for their live actions), the composer, and the proposal
   // being confirmed.
@@ -135,7 +142,7 @@ function parseHash() {
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
   if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "try"].includes(parts[3]) ? parts[3] : null };
-  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
+  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "features", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
@@ -202,9 +209,14 @@ async function route() {
   const used = stepStages(state.build, defs()).map((s) => s.stage);
   const stage = used.includes(h.sel) ? h.sel : openingStage(state.build, defs());
   if (stage !== state.stageSel) {
-    state.stageSel = stage; state.art = null; state.sayDraft = ""; state.sayError = ""; state.asking = null;
+    state.stageSel = stage; state.art = null; state.featFocus = null; state.sayDraft = ""; state.sayError = ""; state.asking = null;
     try { await loadStage(); } catch (e) { return problem(e); }
   }
+  // A Features cell opened this stage: its artifact, at its feature.
+  if (state.openAt && state.openAt.build === state.build.id && state.openAt.stage === stage) {
+    state.art = state.openAt.artifact; state.featFocus = state.openAt.feature; state.tab = "artifacts";
+  }
+  state.openAt = null;
   if (state.tab === "try") await loadTries();
   draw();
 }
@@ -230,6 +242,10 @@ async function loadStage() {
   if (state.build?.id !== b.id || state.stageSel !== stage) return;
   for (const r of [ws, chat]) if (r.status === "rejected" && r.reason?.needKey) throw r.reason;
   state.wsAnswer = ws.status === "fulfilled" ? ws.value : null;
+  // At Requirements, the build's features matrix (0.4.3) for its Artifacts tab; a service without it has none.
+  if (stage === "requirements") {
+    try { state.bfeat = { ...state.bfeat, build: b.id, answer: await api(buildPath(b.id, "/features")) }; } catch (e) { if (e.needKey) throw e; state.bfeat = { build: b.id, answer: null, sel: null, history: null, historyError: "" }; }
+  }
   state.hasChat = chat.status === "fulfilled";
   state.chat = state.hasChat && Array.isArray(chat.value?.messages) ? chat.value.messages : null;
   const errs = [ws, chat].filter((r) => r.status === "rejected" && messagesOffered(r.reason?.status ?? 0)).map((r) => r.reason.message);
@@ -252,7 +268,56 @@ async function openProduct(name) {
   }
   state.product = p && typeof p === "object" && Array.isArray(p.builds) ? p : productFromBuilds(name, state.builds, state.build && productOf(state.build) === name ? state.build : null);
   try { await loadBoss(name); } catch (e) { if (e.needKey) return problem(e); }
+  try { await loadFeatures(name); } catch (e) { if (e.needKey) return problem(e); }
   if (state.view === "product") draw();
+}
+
+// The product's features matrix (0.4.3), for the version chosen. A service without the route (404, 405
+// or 501) keeps no features: the tab is shown disabled.
+async function loadFeatures(name) {
+  const fs0 = state.feat;
+  if (fs0.name !== name) state.feat = { has: fs0.has, name, version: null, answer: null, error: "", sel: null, history: null, historyError: "" };
+  const v = state.feat.version;
+  try {
+    state.feat.answer = await api(`/products/${encodeURIComponent(name)}/features${v ? `?version=${encodeURIComponent(v)}` : ""}`);
+    state.feat.has = true; state.feat.error = "";
+  } catch (e) {
+    if (e.needKey) throw e;
+    if (!messagesOffered(e.status ?? 0)) { state.feat.has = false; return; }
+    state.feat.error = e.message;
+  }
+  if (state.feat.sel) await loadHistory(state.feat, name, state.feat.sel);
+}
+
+// One feature's history, into the matrix that opened it.
+async function loadHistory(holder, name, id) {
+  holder.history = null; holder.historyError = "";
+  try { holder.history = await api(`/products/${encodeURIComponent(name)}/features/${encodeURIComponent(id)}`); } catch (e) {
+    if (e.needKey) throw e;
+    holder.historyError = e.message;
+  }
+}
+
+// An answer to a feature proposal: Approve feature, Not now, or Ask the approvers. The chat it sits in is
+// read again, so the proposal shows its answer, and so are the features.
+async function answerFeature(d) {
+  const go1 = featureDecision(d);
+  if (!go1 || state.featPending) return;
+  const onProduct = state.view === "product";
+  state.featPending = `${d.featProposal} ${d.feat}`;
+  onProduct ? drawProduct() : draw();
+  try {
+    await api(go1.path, { method: "POST", body: go1.body, own403: true });
+    state.error = ""; state.boss.error = "";
+    if (onProduct) { await loadBoss(state.boss.name); await loadFeatures(state.product?.name ?? state.boss.name); }
+    else { await loadStage(); state.build = (await api(buildPath(state.build.id))).build; }
+  } catch (e) {
+    state.featPending = null;
+    if (e.needKey) return problem(e);
+    if (onProduct) state.boss.error = e.message; else state.error = e.message;
+  }
+  state.featPending = null;
+  onProduct ? drawProduct() : draw();
 }
 
 // The product's boss: its conversation, and the builds its open proposals name, read for their live
@@ -544,7 +609,7 @@ function stageCtx(ws) {
     build: b, when, me: typeof state.me?.account?.name === "string" ? state.me.account.name : null,
     artifacts: new Map([...artifactsOf(b), ...ws.outputs, ...ws.given].map((a) => [a.id, a])), selected: state.art,
     actionsHtml, checkHtml: localCheckHtml, cloneOpen: state.cloneOpen,
-    confirmed: state.confirmed, pending: state.pending, theirs: kind === "your_agent" || kind === "contracted",
+    confirmed: state.confirmed, pending: state.pending, featPending: state.featPending, theirs: kind === "your_agent" || kind === "contracted",
   };
 }
 
@@ -587,7 +652,9 @@ function draw() {
     ...(canTry ? [{ id: "try", label: "Try it" }] : []),
   ];
   let body;
-  if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list) => filesHtml(list, false) });
+  const bf = ws.stage === "requirements" && state.bfeat.build === b.id && state.bfeat.answer ? state.bfeat : null;
+  const focusName = state.featFocus ? (state.bfeat.answer?.features ?? state.feat.answer?.features ?? []).find((x) => x.id === state.featFocus)?.name ?? "" : "";
+  if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list) => filesHtml(list, false), feature: state.featFocus, featureName: focusName, featuresHtml: bf ? () => featuresMatrixHtml(bf.answer, { when, selected: bf.sel, history: bf.history, historyError: bf.historyError, stageName: (id) => def(id).name }) : null });
   else if (state.tab === "try") body = `<div class="stage trypane" id="trybody"></div>`;
   else body = `<div class="thread" id="thread">${chatHtml(msgs, { ...ctx, empty: talk ? `Nothing has been said here yet. Ask ${agent} about what it read or made.` : "Nothing has been said here yet." })}
       ${ws.evidence.length ? `<div class="evid">${evidenceHtml(ws.evidence, { when, fileHtml: (f) => filesHtml([f], false) })}</div>` : ""}</div>${timeline()}`;
@@ -631,7 +698,7 @@ function drawProduct() {
   const same = b && state.product && productOf(b) === state.product.name;
   const bs = state.boss;
   const boss = bs.has === true && state.product && bs.name === state.product.name
-    ? { offered: true, messages: bs.messages, builds: bs.builds, confirmed: bs.confirmed, pending: bs.pending, me: typeof state.me?.account?.name === "string" ? state.me.account.name : null, composer: { draft: bs.draft, pending: bs.sending, error: bs.error } }
+    ? { offered: true, messages: bs.messages, builds: bs.builds, confirmed: bs.confirmed, pending: bs.pending, featPending: state.featPending, me: typeof state.me?.account?.name === "string" ? state.me.account.name : null, composer: { draft: bs.draft, pending: bs.sending, error: bs.error } }
     : null;
   const keep = state.drawnKey === "product/boss" ? getScroll() : null;
   $("main").innerHTML = state.product
@@ -640,6 +707,7 @@ function drawProduct() {
       roleName: (id) => state.roleDefs.find((r) => r.id === id)?.name ?? id,
       chooseHref: state.status?.read_only ? null : (role, stage, project) => `${lifecycleHash(project ?? "")}${project ? "&" : "?"}edit=${encodeURIComponent(role)}&at=${encodeURIComponent(stage)}`,
       whenPending: state.whenPending,
+      features: { offered: state.feat.has === true && state.feat.name === state.product.name, answer: state.feat.answer, error: state.feat.error, selected: state.feat.sel, history: state.feat.history, historyError: state.feat.historyError, stageName: (id) => def(id).name },
     }, state.ptab)
     : `<div class="err" role="alert">${esc(state.error)}</div><p class="does">Loading…</p>`;
   $("stage").innerHTML = "";
@@ -679,16 +747,17 @@ function actionsFor(stage) {
   return (state.build.actions ?? []).filter((a) => a.stage === stage);
 }
 
-function actionsHtml(stage) {
+function actionsHtml(stage, opts = {}) {
   const list = actionsFor(stage);
   // A gate this key may not answer: the service leaves its buttons out and says who may.
   const whoMay = whoMayHtml(stageOf(stage));
-  if (whoMay) return `${whoMay}${list.length ? buttonsHtml(list) : ""}`;
+  if (whoMay) return `${whoMay}${list.length ? buttonsHtml(list, opts) : ""}`;
   if (!list.length) return "";
-  return buttonsHtml(list);
+  return buttonsHtml(list, opts);
 }
 
-function buttonsHtml(list) {
+function buttonsHtml(list, { labels = {} } = {}) {
+  list = list.map((a) => (labels[a.name] ? { ...a, label: labels[a.name] } : a));
   const busy = state.pending !== null;
   // Stop is never drawn as the main action, even when it is the only one.
   const main = list.findIndex((a) => a.name !== "stop");
@@ -1185,10 +1254,35 @@ document.addEventListener("click", async (e) => {
   }
   const ptab = t.closest("[data-ptab]");
   if (ptab) { state.ptab = ptab.dataset.ptab; return drawProduct(); }
+  // Features (0.4.3): an answer to a proposal, a cell that opens its artifact at the feature, a row that opens its history.
+  const featBtn = t.closest("[data-feat]");
+  if (featBtn) return answerFeature(featBtn.dataset);
+  const featCell = t.closest("[data-feat-cell]");
+  if (featCell) {
+    const to = cellTarget(featCell.dataset);
+    if (!to) return;
+    state.openAt = to;
+    if (state.build?.id === to.build && state.stageSel === to.stage && state.view === "build") { state.art = to.artifact; state.featFocus = to.feature; leaveTab(); state.tab = "artifacts"; state.openAt = null; return draw(); }
+    state.tab = "artifacts";
+    return go(to.hash);
+  }
+  const featRow = t.closest("[data-feat-row]");
+  if (featRow) {
+    const onProduct = state.view === "product";
+    const holder = onProduct ? state.feat : state.bfeat;
+    const id = featRow.dataset.featRow;
+    holder.sel = holder.sel === id ? null : id;
+    const redraw = () => (onProduct ? drawProduct() : draw());
+    redraw();
+    if (holder.sel) { try { await loadHistory(holder, onProduct ? state.product.name : productOf(state.build), id); } catch (x) { return problem(x); } redraw(); }
+    return;
+  }
+  if (t.closest("[data-feat-unfocus]")) { state.featFocus = null; return draw(); }
   // An attachment in the chat, or a row of the Given and Outputs: the Artifacts tab, with it open in the reader.
   const art = t.closest("[data-art]");
   if (art) {
     state.art = art.dataset.art;
+    state.featFocus = null;
     if (state.tab !== "artifacts") { leaveTab(); state.tab = "artifacts"; }
     const top = state.drawnKey?.endsWith("/artifacts") ? getScroll() : 0;
     draw();
@@ -1272,6 +1366,12 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   if (e.target.id === "twhere" && state.build) store.set(`against:${state.build.id}`, e.target.value);
+  // The Features tab's version filter (0.4.3).
+  if (e.target.matches?.("[data-feat-version]") && state.product) {
+    state.feat.version = e.target.value; state.feat.sel = null; state.feat.history = null;
+    loadFeatures(state.product.name).then(drawProduct, problem);
+    return;
+  }
   // Analytics: a new window or project is a new page.
   if (e.target.closest?.("#an-form")) return go(analyticsHash({ window: $("an-window").value, project: $("an-project").value }));
   // Adding a stage: a new role asks who holds it, and a holder on the mesh asks for its handle.

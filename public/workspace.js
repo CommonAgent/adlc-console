@@ -18,6 +18,7 @@
 // without them still gets each stage, made from the build answer (fallback*).
 
 import { esc, safeUrl } from "./roles.js";
+import { featureProposalsHtml, requirementsGateHtml, featuresMatrixHtml, focusHtml, featuresOfTest } from "./features.js";
 
 // The stages a build's lifecycle does not use, or the service does not run: not on the spine.
 const OFF = new Set(["not_used", "not_offered", "not_applicable"]);
@@ -232,6 +233,8 @@ export function gateCardHtml(ws, build, ctx = {}) {
   if (g.state === "answered") {
     return `<div class="gcard done" id="gate"><h4>${esc(ws.name)}: answered</h4>${dw}<div class="acts"><span class="btn used">${esc(answeredWords(g.answered, build, when))}</span></div></div>`;
   }
+  // At Requirements with features (0.4.3): only what is still open, and start building with these features.
+  if (ws.stage === "requirements" && isObj(g.features)) return requirementsGateHtml(ws, g, ctx);
   const check = ws.where?.kind === "pull_request" ? ws.where.check : null;
   const items = words(check?.items);
   const chips = items.length ? (items.every((x) => x.length <= 40) ? `<div class="chips">${items.map((x) => `<span>${esc(x)}</span>`).join("")}</div>` : `<ul class="citems">${items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`) : "";
@@ -326,7 +329,7 @@ export function messageHtml(m, ctx = {}) {
     return `<div class="msg mine"><div class="av me" aria-hidden="true">${esc(av)}</div><div><div class="mwho">${esc(shown)}${ver}${at}</div><div class="mbody"><span class="bubble">${esc(m.text).replace(/\n/g, "<br>")}</span>${attHtml(m.attachments, ctx)}</div></div></div>`;
   }
   const name = str(m.from?.name) || "The agent";
-  return `<div class="msg"><div class="av${ctx.theirs ? " cc" : ""}" aria-hidden="true">${esc(initials(name))}</div><div><div class="mwho">${esc(name)}${ver}${at}</div><div class="mbody">${paras(m.text)}${attHtml(m.attachments, ctx)}${proposalHtml(m, ctx.build, { done: ctx.confirmed?.has(m.id), pending: ctx.pending ?? null })}</div></div></div>`;
+  return `<div class="msg"><div class="av${ctx.theirs ? " cc" : ""}" aria-hidden="true">${esc(initials(name))}</div><div><div class="mwho">${esc(name)}${ver}${at}</div><div class="mbody">${paras(m.text)}${attHtml(m.attachments, ctx)}${proposalHtml(m, ctx.build, { done: ctx.confirmed?.has(m.id), pending: ctx.pending ?? null })}${featureProposalsHtml(m, ctx)}</div></div></div>`;
 }
 
 function attHtml(ids, ctx) {
@@ -375,16 +378,19 @@ const dl = (rows, cls = "") => {
 };
 
 /** An artifact's summary, readably, per kind. Only the fields each kind names are read, and only as words: never raw JSON. */
-export function artifactBodyHtml(a, { stageName = (x) => x } = {}) {
+export function artifactBodyHtml(a, { stageName = (x) => x, feature = null } = {}) {
   const s = isObj(a?.summary) ? a.summary : null;
   if (!s) return "";
   switch (a.kind) {
     case "statement": {
       const offers = list(s.offerings).filter(isObj).map((o) => `<b>${esc(str(o.name))}</b>${str(o.does) ? `: ${esc(str(o.does))}` : ""}`);
       const open = words(s.open);
+      // The feature list (0.4.3): opened at one feature, that one is marked.
+      const feats = list(s.features).filter((f) => isObj(f) && str(f.id)).map((f) => `<span class="fl${f.id === feature ? " at" : ""}"><b>${esc(f.id)}</b> ${esc(str(f.name))}${str(f.does) ? `: ${esc(str(f.does))}` : ""}${f.state === "proposed" ? ` <i class="fst">proposed</i>` : ""}${str(f.offering) ? ` <small>${esc(str(f.offering))}</small>` : ""}</span>`);
       return dl([
         ["Agent", esc(str(s.agent))],
         [offers.length > 1 ? "Offerings" : "Offering", offers.join("<br>")],
+        ["Features", feats.join("")],
         ["Refuses", esc(words(s.refuses).join("; "))],
         ["Records", esc(words(s.records).join("; "))],
         ["Price", esc(str(s.price))],
@@ -393,6 +399,12 @@ export function artifactBodyHtml(a, { stageName = (x) => x } = {}) {
     case "suite": {
       const tests = words(s.tests);
       const count = Number.isInteger(s.count) ? s.count : tests.length;
+      // Opened at a feature (0.4.3): the tests naming it, then how many others there are.
+      if (feature) {
+        const mine = tests.filter((t) => featuresOfTest(t).includes(feature));
+        const others = count - mine.length;
+        return `<p>${mine.length} of ${count} ${count === 1 ? "test" : "tests"} name ${esc(feature)}.</p>${mine.length ? `<ul class="fat">${mine.map((t) => `<li>${esc(t)}</li>`).join("")}${others > 0 ? `<li class="more">and ${others} ${others === 1 ? "test" : "tests"} for other things</li>` : ""}</ul>` : ""}`;
+      }
       const shown = tests.slice(0, 8);
       const more = count - shown.length;
       return `<p>${count} ${count === 1 ? "test" : "tests"}.</p>${shown.length ? `<ul>${shown.map((t) => `<li>${esc(t)}</li>`).join("")}${more > 0 ? `<li class="more">and ${more} more</li>` : ""}</ul>` : ""}`;
@@ -486,7 +498,7 @@ export function artifactsTabHtml(ws, selId, ctx = {}) {
   const meta = [stageName(sel.stage), str(sel.by), str(sel.version), sel.at && ctx.when ? ctx.when(sel.at) : ""].filter(Boolean).join(" · ");
   const said = sel.state && sel.state !== "made" ? `<p class="said">${esc(STATE_SAID[sel.state] ?? "")}</p>` : "";
   const fl = list(sel.files).length ? `<div class="vfiles">${files(list(sel.files))}</div>` : "";
-  const viewer = `<h3>${esc(sel.name)}</h3><div class="vm">${esc(meta)}${str(sel.digest) ? ` · <code>${esc(str(sel.digest).slice(0, 19))}</code>` : ""}</div>${said}${artifactBodyHtml(sel, { stageName })}${fl}`;
+  const viewer = `<h3>${esc(sel.name)}</h3><div class="vm">${esc(meta)}${str(sel.digest) ? ` · <code>${esc(str(sel.digest).slice(0, 19))}</code>` : ""}</div>${said}${focusHtml(sel, ctx.feature, ctx.featureName)}${artifactBodyHtml(sel, { stageName, feature: ctx.feature ?? null })}${fl}`;
   const row = (a) => {
     const right = a.state === "made" || !a.state ? (str(a.version) ? `<span class="v">${esc(str(a.version))}</span>` : "") : `<span class="need ${esc(a.state)}">${esc(STATE_TAG[a.state] ?? a.state)}</span>`;
     const by = [given.includes(a) ? stageName(a.stage) : "", str(a.by)].filter(Boolean).join(" · ");
@@ -495,7 +507,7 @@ export function artifactsTabHtml(ws, selId, ctx = {}) {
   const made = outputs.filter((a) => a.state === "made").length;
   return `<div class="atab"><div class="viewer" id="reader">${viewer}</div><div class="alist"><p class="acount">${given.length} given · ${made} of ${outputs.length} made</p>
     <div class="grp">Given</div>${given.length ? given.map(row).join("") : `<p class="gw">${esc(ws.givenWords || "Nothing from an earlier stage.")}</p>`}
-    <div class="grp">Outputs</div>${outputs.length ? outputs.map(row).join("") : `<p class="gw">Nothing yet.</p>`}</div></div>`;
+    <div class="grp">Outputs</div>${outputs.length ? outputs.map(row).join("") : `<p class="gw">Nothing yet.</p>`}</div></div>${ctx.featuresHtml ? `<section class="afeat" aria-label="Features"><div class="grp">Features in this build</div>${ctx.featuresHtml()}</section>` : ""}`;
 }
 
 // ---------- the product page ----------
@@ -516,6 +528,7 @@ export function productFromBuilds(name, builds, latest = null) {
 export const PRODUCT_TABS = [
   { id: "boss", label: "Boss" },
   { id: "versions", label: "Versions" },
+  { id: "features", label: "Features" },
   { id: "setup", label: "Setup" },
   { id: "plan", label: "Run plan" },
   { id: "activity", label: "Activity" },
@@ -655,7 +668,7 @@ export function bossMessageHtml(m, ctx = {}) {
     ? `<p class="routed"><a href="${esc(stageChatHref(m.routed.build, m.routed.stage))}">Open the ${esc(stageName(m.routed.stage))} chat</a></p>` : "";
   const dropped = list(m.dropped).filter((d) => isObj(d) && str(d.stage) && str(d.build)).map((d) => `<a href="${esc(stageChatHref(d.build, d.stage))}">${esc(stageName(d.stage))}</a>`);
   const started = isObj(m.started) && str(m.started.build) ? `<p class="routed"><a href="#/b/${esc(encodeURIComponent(m.started.build))}">Open version ${esc(str(m.started.version))}</a></p>` : "";
-  return `<div class="msg boss"><div class="av bs" aria-hidden="true">B</div><div><div class="mwho">${esc(str(m.from?.name) || "The boss")}${at}</div><div class="mbody">${paras(m.text)}${routed}${dropped.length ? `<p class="routed">Told: ${dropped.join(", ")}</p>` : ""}${planHtml(m.plan, { stageName })}${started}${bossProposalHtml(m, ctx)}</div></div></div>`;
+  return `<div class="msg boss"><div class="av bs" aria-hidden="true">B</div><div><div class="mwho">${esc(str(m.from?.name) || "The boss")}${at}</div><div class="mbody">${paras(m.text)}${routed}${dropped.length ? `<p class="routed">Told: ${dropped.join(", ")}</p>` : ""}${planHtml(m.plan, { stageName })}${started}${bossProposalHtml(m, ctx)}${featureProposalsHtml(m, ctx)}</div></div></div>`;
 }
 
 /** The boss's conversation, oldest first. */
@@ -695,17 +708,21 @@ export function productPageHtml(p, ctx = {}, tab = null) {
   // The boss is the default place to talk, when the service has one.
   const boss = isObj(ctx.boss) && ctx.boss.offered ? ctx.boss : null;
   const hasSetup = Array.isArray(p?.setup);
+  // The Features tab (0.4.3): the matrix for a version, and the history of the feature picked.
+  const feats = isObj(ctx.features) && ctx.features.offered ? ctx.features : null;
   const todo = setupToDo(p?.setup);
   const tabs = PRODUCT_TABS.map((t) => ({
     ...t,
     ...(t.id === "boss" && !boss ? { disabled: true, title: "This service has no boss" } : {}),
     ...(t.id === "setup" && !hasSetup ? { disabled: true, title: "This service does not say how the product is set up" } : {}),
-    count: t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : t.id === "setup" && todo ? todo : undefined,
+    ...(t.id === "features" && !feats ? { disabled: true, title: "This service keeps no feature list" } : {}),
+    count: t.id === "features" && feats?.answer ? list(feats.answer.features).length : t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : t.id === "setup" && todo ? todo : undefined,
   }));
   const want = tab ?? (boss ? "boss" : "versions");
   const on = tabs.some((t) => t.id === want && !t.disabled) ? want : "versions";
   const body = on === "boss" ? `<div class="thread" id="thread">${bossChatHtml(boss.messages, { ...ctx, ...boss, stageName, when })}</div>`
     : on === "setup" ? setupHtml(p.setup, { stageName, roleName: ctx.roleName, chooseHref: ctx.chooseHref })
+    : on === "features" ? featuresMatrixHtml(feats.answer, { ...feats, when, filter: true })
     : on === "plan" ? (plan || `<p class="gw">No run plan yet. Deploy makes it.</p>`)
       : on === "activity" ? (acts ? `<ul class="feed">${acts}</ul>` : `<p class="gw">Nothing yet.</p>`)
         : (vers ? `<ul class="vers">${vers}</ul>` : `<p class="gw">No builds yet.</p>`);
