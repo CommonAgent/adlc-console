@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { specHtml, specTabHtml, specOf, specFeature, featureCounts, featureSpecHtml, interfacesHtml } from "../public/spec.js";
 import { artifactBodyHtml, artifactsTabHtml, stageWorkspace } from "../public/workspace.js";
-import { requirementsFeaturesHtml, ARTIFACT_STAGE } from "../public/features.js";
+import { requirementsFeaturesHtml, ARTIFACT_STAGE, featuresOfTest } from "../public/features.js";
 import { checkArtifacts } from "../standards/lifecycle-api-check.mjs";
 import { createDemoService } from "../lib/demo.mjs";
 
@@ -116,6 +116,17 @@ test("the Features tab shows, under each feature the spec holds, its requirement
   assert.doesNotMatch(requirementsFeaturesHtml(m, {}), /rfspec/);
   assert.equal(featureCounts(specFeature(SUMMARY, "F2")), "1 requirement · 1 scenario");
   assert.equal(featureSpecHtml(null), "");
+});
+
+test("a test named by an acceptance scenario names its feature; a kept interface's test names none; [F1] still works", () => {
+  assert.deepEqual(featuresOfTest("[F1.A1] forty stories"), ["F1"]);
+  assert.deepEqual(featuresOfTest("[F1.A1, F2.A3] both"), ["F1", "F2"]);
+  assert.deepEqual(featuresOfTest("[F3.R2] a requirement"), ["F3"]);
+  assert.deepEqual(featuresOfTest("[I4] read-news keeps its flags"), []);
+  assert.deepEqual(featuresOfTest("[F1] count words"), ["F1"]);
+  // A suite opened at a feature shows the tests of its scenarios.
+  const suite = { id: "suite", stage: "test", name: "The suite", by: "test writer", kind: "suite", state: "made", version: "v1", summary: { count: 4, tests: ["counts words", "[F1.A1] forty stories", "[F1.A2] none", "[I1] read-news keeps its flags"] } };
+  assert.match(visible(artifactBodyHtml(suite, { feature: "F1" })), /^2 of 4 tests name F1\. \[F1\.A1\] forty stories \[F1\.A2\] none and 2 tests for other things$/);
 });
 
 test("the demo's Requirements hands back a spec, and its agent's own files are made at Design", async () => {

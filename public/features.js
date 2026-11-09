@@ -28,12 +28,17 @@ const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 /** The matrix's columns, in their order, with their headings. */
 export const FEATURE_COLUMNS = [["spec", "Spec"], ["tests", "Tests"], ["code", "Code"], ["review", "Review"], ["docs", "Docs"]];
 
-/** The features a test names: the ids in square brackets its name starts with ("[F3] ..." or "[F1, F2] ..."). */
+/**
+ * The features a test names: the ids in square brackets its name starts with ("[F3] ..." or "[F1, F2] ...").
+ * From 0.4.8 a test is named by the acceptance scenario of the spec it checks ("[F3.A1] ..."), which names
+ * feature F3; a test of a kept interface ("[I4] ...") names no feature.
+ */
 export function featuresOfTest(name) {
   const m = /^\s*\[([^\]]+)\]/.exec(String(name ?? ""));
   if (!m) return [];
   const ids = m[1].split(",").map((s) => s.trim());
-  return ids.every((id) => /^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(id)) ? [...new Set(ids)] : [];
+  if (!ids.every((id) => /^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(id))) return [];
+  return [...new Set(ids.filter((id) => !/^I[1-9]\d*$/.test(id)).map((id) => /^(F[1-9]\d*)\.[AR][1-9]\d*$/.exec(id)?.[1] ?? id))];
 }
 
 /** An approver as a button names them: "Ana Lee" from "Ana Lee (ana@example.com)", and "an approver in the team web" as it is. */
