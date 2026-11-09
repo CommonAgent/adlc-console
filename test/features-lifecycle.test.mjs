@@ -131,7 +131,7 @@ test("each stage's features in its Artifacts tab: tests per feature with to-do, 
   assert.equal(stageWorkspace(build, "test", { stage: "test", given: [], outputs: [] }, { defs }).features, null, "a service without them has none");
 });
 
-test("the spine shows each stage's feature count beside its name", () => {
+test("the spine keeps each stage's feature count in its label only, not beside its name", () => {
   const stage = (id, state, features) => ({ stage: id, state, holder: null, runs: 1, rounds: [], given: "", handed_back: { words: [], files: [] }, done_when_met: null, log: [], where: null, cadence: "every_build", ...(features ? { features } : {}) });
   const build = { id: "b1", name: "word-counter", version: "0.1.0", summary: "Done", actions: [], artifacts: [], stages: [
     stage("requirements", "done", { covered: 4, total: 5, words: "4 of 5 approved" }),
@@ -142,9 +142,10 @@ test("the spine shows each stage's feature count beside its name", () => {
   const spine = steps(build, { defs });
   assert.deepEqual(spine.map((x) => [x.stage, x.count ?? null]), [["requirements", "4 of 5 approved"], ["test", "4 of 5 features"], ["code", "3 of 5 features pass"], ["package", null]]);
   const html = spineHtml(build, spine, { sel: "test", href: (s) => `#/b/b1/${s}` });
-  assert.match(html, /<span class="rn">Test<em class="fct" title="Features at Test">4 of 5 features<\/em><\/span>/);
+  assert.match(html, /<span class="rn">Test<\/span>/);
+  assert.doesNotMatch(html, /class="fct"/);
   assert.match(html, /aria-label="2\. Test: [^"]*; 4 of 5 features"/);
-  assert.match(visible(html), /Test 4 of 5 features/);
+  assert.doesNotMatch(visible(html), /4 of 5 features/);
   assert.doesNotMatch(html.split('href="#/b/b1/package"')[1], /class="fct"/, "a stage without features has no count");
 });
 

@@ -43,7 +43,7 @@ test("the spine is the every-build stages the build runs, done, now or next, and
   const html = spineHtml(b, spine, { sel: "code", href: (s) => `#/b/${b.id}/${s}`, productHref: "#/p/palindrome-judge" });
   assert.match(html, /<a class="rb" href="#\/p\/palindrome-judge"/);
   assert.match(html, /<a class="rs now sel" href="#\/b\/b_palindrome_judge\/code" aria-current="page"/);
-  assert.match(visible(html), /^palindrome-judge 0\.1\.0 Step 3 of 10 · waiting on you ✓ Requirements approved .* 3 Code your OK on pull request #5 /);
+  assert.match(visible(html), /^palindrome-judge 0\.1\.0 ✓ Requirements .* 3 Code /);
   assert.doesNotMatch(html, /Impact|Retract|Architecture|Monitor/);
 
   // A finished build opens at its last stage, and says where it ended.
@@ -257,7 +257,8 @@ test("the product page has tabs for its versions, setup, run plan and activity; 
   const p = (await get(d, "/v1/lifecycle/products/lunch-poll")).body;
   const ctx = { stageName: (s) => defs.get(s)?.name ?? s, when: () => "t", does: "Runs the poll.", buildHref: (id) => `#/b/${id}` };
   const versions = productPageHtml(p, ctx, "versions");
-  assert.match(visible(versions), /^lunch-poll Runs the poll\. When needed Reverse engineering Impact Retract Reconfigure Rollback Decommission Why they are off .* Boss Versions 1 Features Setup 1 Run plan Activity \d+ 1\.0\.0 Installed · conforms started t$/);
+  assert.match(visible(versions), /^lunch-poll Runs the poll\. Boss Versions 1 Features Setup 1 Run plan Activity \d+ Info 1\.0\.0 Installed · conforms started t$/);
+  assert.match(visible(productPageHtml(p, ctx, "info")), /When needed Reverse engineering Impact Retract Reconfigure Rollback Decommission Why they are off /);
   assert.match(versions, /<button type="button" role="tab" class="tab" aria-selected="false" disabled title="This service has no boss">Boss<\/button>/);
   // Without a boss, the page opens at Versions.
   assert.match(productPageHtml(p, ctx), /class="tab on" aria-selected="true" data-ptab="versions"/);

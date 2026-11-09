@@ -11,7 +11,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { newBuildHtml, newBuildBody, STARTS } from "../public/start.js";
-import { steps, spineHtml, stepLabel, stepStages, ranStageZero, artifactBodyHtml, asBuiltSource, productPageHtml, whenNeededHtml, sourceHtml } from "../public/workspace.js";
+import { steps, stepHeader, spineHtml, stepLabel, stepStages, ranStageZero, artifactBodyHtml, asBuiltSource, productPageHtml, whenNeededHtml, sourceHtml } from "../public/workspace.js";
 import { featureProposalHtml, featureDecision, requirementsFeaturesHtml, featuresMatrixHtml, featureStateOf, fixesHtml, asBuiltOf } from "../public/features.js";
 import { boardHtml } from "../public/board.js";
 import { validate, checkArtifacts, checkFeatures, checkFeatureDecision, checkProduct, checkBuild } from "../standards/lifecycle-api-check.mjs";
@@ -56,7 +56,7 @@ test("Reverse engineering reads 00: in the spine of a build that ran it, on the 
   assert.equal(stepLabel(spine[1], spine), "Step 1 of 4");
   const html = spineHtml(b, spine, { href: (s) => `#/b/b_adopt/${s}` });
   assert.match(html, /aria-label="00\. Reverse engineering: /);
-  assert.match(visible(html), /word-counter 0\.1\.0 Step 1 of 4 · waiting on you ✓ Reverse engineering/);
+  assert.match(visible(html), /word-counter 0\.1\.0 ✓ Reverse engineering/);
   // A build that did not run it has no step 00, whatever its cadence: it is the product's action then.
   const idea = adopted({ zero: "not_offered" });
   idea.stages[0].runs = 0;
@@ -66,7 +66,7 @@ test("Reverse engineering reads 00: in the spine of a build that ran it, on the 
   assert.equal(ranStageZero({ stage: "reverse-engineering", state: "not_used", runs: 0 }), false);
   // A build working at Reverse engineering is at step 00.
   const working = adopted({ at: "reverse-engineering", zero: "working" });
-  assert.match(visible(spineHtml(working, steps(working, { defs }))), /Step 00 of 4 · working/);
+  assert.match(stepHeader(working, steps(working, { defs })).text, /Step 00 of 4 · working/);
   // The board places it in Define at 00.
   const board = boardHtml([{ id: "b_adopt", name: "word-counter", does: "x", version: "0.1.0", at: { stage: "reverse-engineering", state: "working", summary: "Working at Reverse engineering" }, updated: AT }], DOC.stages, PHASES);
   assert.match(visible(board), /00 · Reverse engineering/);
@@ -236,5 +236,5 @@ test("the product page says the last commit any build knew beside Reverse engine
   assert.match(sourceHtml(p.source), /class="srcw drift"/);
   assert.match(sourceHtml({ ...p.source, current: "3f2a9c1d0e", drift: false, words: "No change since 3f2a9c1." }), /class="srcw" role="note"><b>Reverse engineering:<\/b> No change since 3f2a9c1\./);
   assert.equal(sourceHtml(null), "");
-  assert.match(visible(productPageHtml(p, { builds: [] })), /When needed Reverse engineer the change Impact .* Reverse engineering: The code changed outside the lifecycle/);
+  assert.match(visible(productPageHtml(p, { builds: [] }, "info")), /When needed Reverse engineer the change Impact .* Reverse engineering: The code changed outside the lifecycle/);
 });

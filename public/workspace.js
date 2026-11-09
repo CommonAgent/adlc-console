@@ -159,14 +159,12 @@ export function stepHeader(build, spine) {
 
 /** The product at the top of the menu, then its build's stages: selecting one opens it. */
 export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, productHref = "#", onProduct = false } = {}) {
-  const head = stepHeader(build, spine);
   const items = spine.map((x) => {
     const on = x.stage === sel;
     const dot = x.mark === "done" ? "✓" : stepNumber(x);
-    const count = x.count ? `<em class="fct" title="Features at ${esc(x.name)}">${esc(x.count)}</em>` : "";
-    return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${stepNumber(x)}. ${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(x.name)}${count}</span><small>${esc(x.line)}</small></a>`;
+    return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${stepNumber(x)}. ${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(x.name)}</span></a>`;
   }).join("");
-  return `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its versions, run plan and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b><small class="${head.tone}">${esc(head.text)}</small></a><div class="spine">${items}</div>`;
+  return `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its versions, run plan and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b></a><div class="spine">${items}</div>`;
 }
 
 /** What another product waits on, from the products answer's latest build: "Waiting on you at Code". */
@@ -625,6 +623,7 @@ export const PRODUCT_TABS = [
   { id: "setup", label: "Setup" },
   { id: "plan", label: "Run plan" },
   { id: "activity", label: "Activity" },
+  { id: "info", label: "Info" },
 ];
 
 // ---------- setup and when needed (lifecycle API 0.4.2) ----------
@@ -993,7 +992,7 @@ export function bossChatHtml(messages, ctx = {}) {
 export function bossComposerHtml({ draft = "", pending = false, error = "" } = {}) {
   return `<div class="compose" id="compose"><div class="to">To <b>the boss</b></div>
     <form class="box" id="boss-form"><label class="sr" for="boss-say">Your message to the boss</label><input id="boss-say" type="text" value="${esc(draft)}" autocomplete="off" placeholder="Ask about the product, or say what should change. The boss routes it or plans it."><button class="btn p" type="submit"${pending ? " disabled" : ""}>${pending ? "Sending…" : "Send"}</button></form>
-    ${error ? `<div class="err" role="alert">${esc(error)}</div>` : ""}<div class="hint">The boss never answers a gate. Every change is proposed here for you to confirm.</div></div>`;
+    ${error ? `<div class="err" role="alert">${esc(error)}</div>` : ""}</div>`;
 }
 
 /** The open proposals whose build the page must read for its live actions. */
@@ -1031,12 +1030,15 @@ export function productPageHtml(p, ctx = {}, tab = null) {
   }));
   const want = tab ?? (boss ? "boss" : "versions");
   const on = tabs.some((t) => t.id === want && !t.disabled) ? want : "versions";
+  // Info (which version runs, the lifecycle the build follows, the when-needed actions) is a tab, so it never takes room above the others.
+  const info = `${runningHtml(p)}${ctx.extra ?? ""}${whenNeededHtml(p?.when_needed, { stageName, pending: ctx.whenPending ?? null, source: p?.source ?? null })}${whenCardHtml(p, ctx, stageName)}`;
   const body = on === "boss" ? `<div class="thread" id="thread">${bossChatHtml(boss.messages, { ...ctx, ...boss, stageName, when })}</div>`
     : on === "setup" ? setupHtml(p.setup, { stageName, roleName: ctx.roleName, chooseHref: ctx.chooseHref, ...(isObj(ctx.setup) ? ctx.setup : {}), readOnly: !ctx.chooseHref, bossOffered: Boolean(boss) })
     : on === "features" ? featuresMatrixHtml(feats.answer, { ...feats, when, filter: true })
     : on === "plan" ? (plan || `<p class="gw">No run plan yet. Deploy makes it.</p>`)
+      : on === "info" ? (info || `<p class="gw">Nothing to show yet.</p>`)
       : on === "activity" ? (acts ? `<ul class="feed">${acts}</ul>` : `<p class="gw">Nothing yet.</p>`)
         : (vers ? `<ul class="vers">${vers}</ul>` : `<p class="gw">No builds yet.</p>`);
-  return `<section class="thread-wrap work product"><div class="whead"><div class="hd"><div><h1>${esc(str(p?.name))}</h1>${ctx.does ? `<p class="sub">${esc(ctx.does)}</p>` : ""}${ctx.extra ?? ""}${runningHtml(p)}${whenNeededHtml(p?.when_needed, { stageName, pending: ctx.whenPending ?? null, source: p?.source ?? null })}${whenCardHtml(p, ctx, stageName)}</div></div>${tabsHtml(tabs, on, { attr: "ptab", label: "Product" })}</div>
+  return `<section class="thread-wrap work product"><div class="whead"><div class="hd"><div><h1>${esc(str(p?.name))}</h1>${ctx.does ? `<p class="sub">${esc(ctx.does)}</p>` : ""}</div></div>${tabsHtml(tabs, on, { attr: "ptab", label: "Product" })}</div>
     <div class="wbody${on === "boss" ? " tab-chat" : ""}" id="tabbody"><div class="err" role="alert">${esc(ctx.error ?? "")}</div><div class="ptab ${on}">${body}</div></div>${on === "boss" ? bossComposerHtml(boss.composer ?? {}) : ""}</section>`;
 }
