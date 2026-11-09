@@ -123,7 +123,9 @@ export function steps(build, { defs = new Map(), roleDefs = [], when = (x) => x 
       line = firstNext ? "next" : def.person_gate ? "your approval" : holderName(s.holder, s, def, roleDefs).toLowerCase() || "later";
       firstNext = false;
     }
-    return { stage: s.stage, name: def.name ?? cap(s.stage), number: i + 1, mark, state: s.state, line };
+    // 0.4.5: how many of the product's features the stage covers, such as "4 of 5 features".
+    const count = isObj(s.features) ? str(s.features.words) : "";
+    return { stage: s.stage, name: def.name ?? cap(s.stage), number: i + 1, mark, state: s.state, line, ...(count ? { count } : {}) };
   });
 }
 
@@ -142,7 +144,8 @@ export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, pro
   const items = spine.map((x) => {
     const on = x.stage === sel;
     const dot = x.mark === "done" ? "✓" : String(x.number);
-    return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${x.number}. ${x.name}: ${x.line}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(x.name)}</span><small>${esc(x.line)}</small></a>`;
+    const count = x.count ? `<em class="fct" title="Features at ${esc(x.name)}">${esc(x.count)}</em>` : "";
+    return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${x.number}. ${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(x.name)}${count}</span><small>${esc(x.line)}</small></a>`;
   }).join("");
   return `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its versions, run plan and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b><small class="${head.tone}">${esc(head.text)}</small></a><div class="spine">${items}</div>`;
 }
@@ -188,6 +191,8 @@ export function stageWorkspace(build, stageId, answer = null, { defs = new Map()
       outputs: list(answer.outputs).filter((a) => a && typeof a.id === "string"),
       gate: isObj(answer.gate) ? answer.gate : live.length ? { actions: live.map((a) => a.name), state: "open" } : null,
       doneWhen: str(answer.done_when) || str(def.done_when),
+      // 0.4.5: the stage's features, one line each.
+      features: isObj(answer.features) ? answer.features : null,
     };
   }
   return {
@@ -508,7 +513,7 @@ export function artifactsTabHtml(ws, selId, ctx = {}) {
   const made = outputs.filter((a) => a.state === "made").length;
   return `<div class="atab"><div class="viewer" id="reader">${viewer}</div><div class="alist"><p class="acount">${given.length} given · ${made} of ${outputs.length} made</p>
     <div class="grp">Given</div>${given.length ? given.map(row).join("") : `<p class="gw">${esc(ws.givenWords || "Nothing from an earlier stage.")}</p>`}
-    <div class="grp">Outputs</div>${outputs.length ? outputs.map(row).join("") : `<p class="gw">Nothing yet.</p>`}</div></div>${ctx.featuresHtml ? `<section class="afeat" aria-label="Features"><div class="grp">Features in this build</div>${ctx.featuresHtml()}</section>` : ""}`;
+    <div class="grp">Outputs</div>${outputs.length ? outputs.map(row).join("") : `<p class="gw">Nothing yet.</p>`}</div></div>${ctx.featuresHtml ? `<section class="afeat" aria-label="Features"><div class="grp">${esc(ctx.featuresTitle ?? "Features in this build")}</div>${ctx.featuresHtml()}</section>` : ""}`;
 }
 
 // ---------- the product page ----------

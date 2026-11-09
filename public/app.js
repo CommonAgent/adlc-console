@@ -12,7 +12,7 @@ import { boardHtml } from "./board.js";
 import { dashboardHtml, span } from "./dashboard.js";
 import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyticsPath } from "./analytics.js";
 import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
-import { featuresMatrixHtml, featureDecision, cellTarget } from "./features.js";
+import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
 import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
@@ -55,7 +55,7 @@ const state = {
   // Requirements stage, the answer being sent, and the feature a reader is opened at.
   feat: { has: null, name: null, version: null, answer: null, error: "", sel: null, history: null, historyError: "" },
   bfeat: { build: null, answer: null, sel: null, history: null, historyError: "" },
-  featPending: null, featFocus: null, openAt: null,
+  featPending: null, featFocus: null, openAt: null, featAllPending: false, featListing: false,
   // The product's boss (0.4.1): whether the service has it (null until asked), whose conversation is
   // held, the builds its open proposals name (for their live actions), the composer, and the proposal
   // being confirmed.
@@ -145,7 +145,7 @@ function parseHash() {
   // The Roles page is now part of the Lifecycle page; an old link still lands there.
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
-  if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "try"].includes(parts[3]) ? parts[3] : null };
+  if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "try", "features"].includes(parts[3]) ? parts[3] : null };
   if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "features", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
@@ -215,6 +215,8 @@ async function route() {
   if (stage !== state.stageSel) {
     state.stageSel = stage; state.art = null; state.featFocus = null; state.sayDraft = ""; state.sayError = ""; state.asking = null;
     try { await loadStage(); } catch (e) { return problem(e); }
+    // 0.4.5: Requirements opens at its Features tab, the first one, when the service has features; other stages never have it.
+    if (!h.tab) { if (stage === "requirements" && hasReqFeatures()) state.tab = "features"; else if (state.tab === "features") state.tab = "chat"; }
   }
   // A Features cell opened this stage: its artifact, at its feature.
   if (state.openAt && state.openAt.build === state.build.id && state.openAt.stage === stage) {
@@ -291,6 +293,41 @@ async function loadFeatures(name) {
     state.feat.error = e.message;
   }
   if (state.feat.sel) await loadHistory(state.feat, name, state.feat.sel);
+}
+
+/** Whether the open build's Requirements has the features list (lifecycle API 0.4.3 and later): its Features tab is shown. */
+const hasReqFeatures = () => Boolean(state.build && state.bfeat.build === state.build.id && state.bfeat.answer);
+
+// Approve all (0.4.5): every proposal waiting on this person, in one answer. The stage and the build are read again.
+async function approveAll(d) {
+  const req = approveAllRequest(d);
+  if (!req || state.featAllPending || state.featPending) return;
+  state.featAllPending = true; draw();
+  try {
+    await api(req.path, { method: "POST", body: req.body, own403: true });
+    state.error = "";
+    await loadStage(); state.build = (await api(buildPath(state.build.id))).build;
+  } catch (e) {
+    if (e.needKey) { state.featAllPending = false; return problem(e); }
+    state.error = e.message;
+  }
+  state.featAllPending = false; draw();
+}
+
+// List this product's features (0.4.5): the spec writer lists them from the statement of the job, through
+// the Requirements chat. It answers through the model, so it may take a few minutes.
+async function listFeatures(buildId) {
+  if (state.featListing || !buildId) return;
+  state.featListing = true; draw();
+  try {
+    await api(buildPath(buildId, "/features/backfill"), { method: "POST", body: {}, own403: true });
+    state.error = "";
+    await loadStage(); state.build = (await api(buildPath(state.build.id))).build;
+  } catch (e) {
+    if (e.needKey) { state.featListing = false; return problem(e); }
+    state.error = e.message;
+  }
+  state.featListing = false; draw();
 }
 
 // One feature's history, into the matrix that opened it.
@@ -730,6 +767,9 @@ function draw() {
   const x = spine.find((y) => y.stage === ws.stage);
   const canTry = state.status?.can_try !== false && (Boolean(prStage()) || installed());
   if (state.tab === "try" && !canTry) state.tab = "chat";
+  // The Features tab (0.4.5) is Requirements' own, first, before Chat.
+  const reqFeat = ws.stage === "requirements" && hasReqFeatures();
+  if (state.tab === "features" && !reqFeat) state.tab = "chat";
   const agent = holderName(ws.holder, s, def(ws.stage), state.roleDefs);
   const who = holderHtml(ws.holder);
   const talk = state.hasChat && canTalkTo(ws.holder);
@@ -737,14 +777,17 @@ function draw() {
   const gate = gateCardHtml(ws, b, ctx);
   const st = stateOf({ state: ws.state });
   const tabs = [
+    ...(reqFeat ? [{ id: "features", label: "Features", count: Array.isArray(state.bfeat.answer.features) ? state.bfeat.answer.features.length : undefined }] : []),
     { id: "chat", label: "Chat", count: msgs.filter((m) => m?.from?.kind !== "system").length },
     { id: "artifacts", label: "Artifacts", count: artifactCount(ws) ?? undefined },
     ...(canTry ? [{ id: "try", label: "Try it" }] : []),
   ];
   let body;
-  const bf = ws.stage === "requirements" && state.bfeat.build === b.id && state.bfeat.answer ? state.bfeat : null;
   const focusName = state.featFocus ? (state.bfeat.answer?.features ?? state.feat.answer?.features ?? []).find((x) => x.id === state.featFocus)?.name ?? "" : "";
-  if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list) => filesHtml(list, false), feature: state.featFocus, featureName: focusName, featuresHtml: bf ? () => featuresMatrixHtml(bf.answer, { when, selected: bf.sel, history: bf.history, historyError: bf.historyError, stageName: (id) => def(id).name }) : null });
+  // Each stage's features (0.4.5) in its Artifacts tab, one short line per feature; Requirements has its own Features tab.
+  const slice = ws.stage !== "requirements" && ws.features ? ws.features : null;
+  if (state.tab === "features" && reqFeat) body = requirementsFeaturesHtml(state.bfeat.answer, { pending: state.featPending, allPending: state.featAllPending, listing: state.featListing });
+  else if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list) => filesHtml(list, false), feature: state.featFocus, featureName: focusName, featuresTitle: "Features at this stage", featuresHtml: slice ? () => stageFeaturesHtml(slice) : null });
   else if (state.tab === "try") body = `<div class="stage trypane" id="trybody"></div>`;
   else body = `<div class="thread" id="thread">${chatHtml(msgs, { ...ctx, empty: talk ? `Nothing has been said here yet. Ask ${agent} about what it read or made.` : "Nothing has been said here yet." })}
       ${ws.evidence.length ? `<div class="evid">${evidenceHtml(ws.evidence, { when, fileHtml: (f) => filesHtml([f], false) })}</div>` : ""}</div>${timeline()}`;
@@ -1349,6 +1392,11 @@ document.addEventListener("click", async (e) => {
   // Features (0.4.3): an answer to a proposal, a cell that opens its artifact at the feature, a row that opens its history.
   const featBtn = t.closest("[data-feat]");
   if (featBtn) return answerFeature(featBtn.dataset);
+  // 0.4.5: Approve all, and List this product's features.
+  const featAll = t.closest("[data-feat-all]");
+  if (featAll) return approveAll(featAll.dataset);
+  const featList = t.closest("[data-feat-backfill]");
+  if (featList) return listFeatures(featList.dataset.featBackfill);
   const featCell = t.closest("[data-feat-cell]");
   if (featCell) {
     const to = cellTarget(featCell.dataset);

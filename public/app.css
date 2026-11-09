@@ -722,3 +722,50 @@ input[type=number]{width:100%;padding:7px 9px;border:1px solid var(--line);borde
 .wresult.bad{border-color:var(--bad);background:var(--bad-bg)}
 .wreport{margin-top:8px}
 .wreport pre{max-height:320px;overflow:auto;white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--code);padding:8px;border-radius:6px;margin:6px 0 0}
+
+/* Features at every stage (lifecycle API 0.4.5) */
+.rs .fct{display:table;font-style:normal;font-family:var(--mono);font-size:10.5px;font-weight:500;color:var(--muted);margin:2px 0 1px;padding:0 5px;border:1px solid var(--line);border-radius:99px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.rs.done .fct{color:var(--accent);border-color:var(--accent)}
+.btn.sm{padding:5px 10px;font-size:12.5px}
+.wbody .rfeat,.wbody .rfeat-none,.wbody > .gw{margin:12px 18px 18px}
+.rfeat{max-width:880px}
+.wbody .afeat{padding:0 18px 18px}
+ul.rfl{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.rf{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:10px 12px;border-left:3px solid var(--line)}
+.rf.approved{border-left-color:var(--accent)}
+.rf.proposed{border-left-color:var(--wait)}
+.rf.changed{border-left-color:var(--wait)}
+.rf.not_now{border-left-style:dashed;opacity:.85}
+.rfh{display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+.rfh .fn{font-size:14px}
+.rfh small{color:var(--muted);font-size:12px;margin-left:6px}
+.fb.s-approved{border-color:var(--accent);color:var(--accent);background:var(--done-bg)}
+.fb.s-proposed,.fb.s-changed{border-color:var(--wait);color:var(--wait);background:var(--wait-bg)}
+.fb.s-not_now{border-style:dashed}
+.rf .fdoes{margin:4px 0 0;color:var(--muted);font-size:13px}
+.rf .fnew,.rf .fwas{margin:4px 0 0;font-size:12.5px}
+.rf .fnew span,.rf .fwas span{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-right:6px}
+.rfm{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:12.5px}
+.rfm .ft{color:var(--muted);font-family:var(--mono);font-size:11.5px}
+.rfm .acts{display:flex;gap:6px;margin-left:auto}
+details.unmapped,details.untied{margin-top:12px;font-size:13px}
+details.unmapped summary,details.untied summary{cursor:pointer;color:var(--muted)}
+details.unmapped ul,details.untied ul{margin:6px 0 0;padding-left:18px;color:var(--muted)}
+.rfeat-none{max-width:640px}
+.sfeat .fsum{margin:0 0 8px;font-weight:600;color:var(--fg)}
+ul.sfl{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:13px}
+.sf{display:block}
+.sf > .cs,.sf summary .cs{margin-right:6px;vertical-align:middle}
+.sf details,details.unmapped,details.untied{border:0;border-radius:0;overflow:visible}
+.sf summary,details.unmapped>summary,details.untied>summary{display:list-item;list-style:revert;padding:2px 0;font-family:var(--sans);font-size:13px}
+.sf summary span,details.unmapped>summary span,details.untied>summary span{white-space:normal;color:inherit}
+.sf details[open] summary,details.unmapped[open]>summary,details.untied[open]>summary{border-bottom:0}
+.sf summary .fid{color:var(--fg)}
+.sf summary b{font-weight:600}
+.sf.s-done .cs{background:var(--accent)}
+.sf.s-stale .cs{background:var(--wait)}
+.sf.s-failing .cs,.sf.s-findings .cs{background:var(--bad)}
+.sf.s-to_do .cs{background:transparent;border:1.5px solid var(--off)}
+.sf.s-to_do .sfw{color:var(--wait);font-weight:600}
+.sf.s-failing .sfw,.sf.s-findings .sfw{color:var(--bad);font-weight:600}
+ul.sft{margin:4px 0 6px 22px;padding:0;color:var(--muted);font-size:12.5px}

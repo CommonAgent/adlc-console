@@ -186,3 +186,106 @@ export function cellTarget(d) {
   if (!stage) return null;
   return { build: d.cellBuild, stage, artifact: d.cellArtifact, feature: d.featCell, hash: `#/b/${encodeURIComponent(d.cellBuild)}/${encodeURIComponent(stage)}/artifacts` };
 }
+
+// ---------- 0.4.5: the Requirements Features tab, and each stage's features ----------
+
+/** A feature's state on the Requirements list: approved, proposed, changed in this version, or not now. */
+export function featureStateOf(r) {
+  if (!isObj(r)) return { key: "proposed", label: "Proposed" };
+  const waiting = isObj(r.pending) && ["open", "asked"].includes(r.pending.state);
+  if (r.state !== "approved" && r.backlog) return { key: "not_now", label: "Not now" };
+  if (r.state === "approved" && waiting && r.pending.change === "changed") return { key: "changed", label: "Change proposed" };
+  if (r.state === "approved" && r.badge === "changed") return { key: "changed", label: "Changed in this version" };
+  if (r.state === "approved") return { key: "approved", label: "Approved" };
+  return { key: "proposed", label: "Proposed" };
+}
+
+/** Where a feature was proposed: the stage's chat on its build, or the boss. */
+export function fromHref(from, product = "") {
+  if (!isObj(from) || !str(from.message) || !str(from.build)) return null;
+  return str(from.stage) ? `#/b/${encodeURIComponent(from.build)}/${encodeURIComponent(from.stage)}/chat` : `#/p/${encodeURIComponent(product)}/boss`;
+}
+
+/** The proposals Approve all approves: each waiting proposal this person may approve, not those left for later. */
+export function approveAllIds(m) {
+  return list(m?.features).filter((r) => isObj(r?.pending) && ["open", "asked"].includes(r.pending.state) && r.pending.you_may_approve).map((r) => str(r.pending.proposal)).filter(Boolean);
+}
+
+/** What Approve all sends: the route's path and body, from its button's data. */
+export function approveAllRequest(d) {
+  if (!isObj(d) || !str(d.featAll) || !str(d.featBuild)) return null;
+  const proposals = d.featAll.split(" ").filter(Boolean);
+  if (!proposals.length) return null;
+  return { path: `/builds/${encodeURIComponent(d.featBuild)}/features/approve_all`, body: { proposals, ...(str(d.featMessage) ? { message: d.featMessage } : {}) } };
+}
+
+/**
+ * The Requirements stage's Features tab: the product's features as this build
+ * holds them, each with its state, the message it came from, its tests, and
+ * Approve feature and Not now inline while it waits. With none yet, and the
+ * service offering it, "List this product's features". ctx.pending: the
+ * "<proposal> <decision>" being sent; ctx.allPending, ctx.listing: Approve all
+ * or the listing being sent.
+ */
+export function requirementsFeaturesHtml(m, ctx = {}) {
+  if (ctx.error && !isObj(m)) return `<p class="gw err">${esc(ctx.error)}</p>`;
+  if (!isObj(m)) return `<p class="gw">Loading…</p>`;
+  const rows = list(m.features).filter((x) => isObj(x) && str(x.id));
+  const product = str(m.product);
+  const busy = Boolean(ctx.pending || ctx.allPending || ctx.listing);
+  if (!rows.length) {
+    const bf = isObj(m.backfill) ? m.backfill : null;
+    if (bf?.offered) {
+      return `<div class="gcard prop rfeat-none"><h4>No features yet</h4><p>${esc(str(bf.words))}</p><div class="acts"><button class="btn p" type="button" data-feat-backfill="${esc(str(m.build))}"${busy ? " disabled" : ""}>${ctx.listing ? "Listing…" : "List this product's features"}</button></div>${ctx.listing ? `<p class="hint">The spec writer is reading the statement of the job and the suite. This can take a few minutes.</p>` : ""}</div>`;
+    }
+    return `<p class="gw">${esc(str(m.words) || str(bf?.words) || "No features yet.")}</p>`;
+  }
+  const n = (k) => rows.filter((r) => featureStateOf(r).key === k).length;
+  const ids = approveAllIds(m);
+  const froms = [...new Set(rows.filter((r) => ids.includes(str(r.pending?.proposal))).map((r) => str(r.from?.message)).filter(Boolean))];
+  const msg = froms.length === 1 ? froms[0] : "";
+  const all = ids.length > 1 ? `<button class="btn p" type="button" data-feat-all="${esc(ids.join(" "))}" data-feat-build="${esc(str(m.build))}"${msg ? ` data-feat-message="${esc(msg)}"` : ""}${busy ? " disabled" : ""}>${ctx.allPending ? "Approving…" : `Approve all ${ids.length}`}</button>` : "";
+  const sum = [`${rows.length} ${rows.length === 1 ? "feature" : "features"} in ${esc(str(m.version))}`, n("approved") + n("changed") ? `${n("approved") + n("changed")} approved` : "", n("proposed") ? `${n("proposed")} proposed` : "", n("changed") ? `${n("changed")} changed` : "", n("not_now") ? `${n("not_now")} not now` : ""].filter(Boolean).join(" · ");
+  const item = (r) => {
+    const st = featureStateOf(r);
+    const p = isObj(r.pending) ? r.pending : null;
+    const href = fromHref(r.from, product);
+    let btns = "";
+    if (p && ["open", "asked", "not_now"].includes(p.state)) {
+      const build = str(r.from?.build) || str(m.build);
+      const data = (decision) => `data-feat="${esc(decision)}" data-feat-id="${esc(r.id)}" data-feat-proposal="${esc(str(p.proposal))}" data-feat-build="${esc(build)}" data-feat-message="${esc(str(r.from?.message))}"`;
+      const btn = (decision, label, main = false) => `<button class="btn sm${main ? " p" : ""}" type="button" ${data(decision)}${busy ? " disabled" : ""}>${esc(ctx.pending === `${p.proposal} ${decision}` ? "Sending…" : label)}</button>`;
+      if (p.you_may_approve) btns = `${btn("approve", "Approve feature", true)}${p.state === "not_now" ? "" : btn("not_now", "Not now")}`;
+      else if (p.state === "asked") btns = `<span class="btn sm used">${esc(`Waiting on ${approverWords(p.asked?.to ?? p.approvers)}`)}</span>`;
+      else btns = `${btn("ask", `Ask ${approverWords(p.approvers)} to approve`, true)}${p.state === "not_now" ? "" : btn("not_now", "Not now")}`;
+    }
+    const was = p?.change === "changed" && isObj(p.was) ? `<p class="fwas"><span>Was</span> ${esc(str(p.was.name))}: ${esc(str(p.was.does))}</p>` : "";
+    const proposedWords = p && r.state === "approved" && p.change === "changed" && p.state !== "approved" ? `<p class="fnew"><span>Proposed</span> ${esc(str(p.name))}: ${esc(str(p.does))}</p>` : "";
+    const tests = Array.isArray(r.tests) ? `<span class="ft">${r.tests.length ? `${r.tests.length} ${r.tests.length === 1 ? "test" : "tests"}` : "no test yet"}</span>` : "";
+    return `<li class="rf ${esc(st.key)}"><div class="rfh"><span class="fid">${esc(r.id)}</span><b class="fn">${esc(str(r.name))}</b><span class="fb s-${esc(st.key)}">${esc(st.label)}</span>${str(r.offering) ? `<small>${esc(str(r.offering))}</small>` : ""}</div><p class="fdoes">${esc(str(r.does))}</p>${proposedWords}${was}<div class="rfm">${href ? `<a href="${esc(href)}">From the message</a>` : ""}${tests}${btns ? `<span class="acts">${btns}</span>` : ""}</div></li>`;
+  };
+  const unmapped = list(m.unmapped).map(str).filter(Boolean);
+  const loose = unmapped.length ? `<details class="unmapped"><summary>${unmapped.length} ${unmapped.length === 1 ? "test" : "tests"} not tied to a feature</summary><ul>${unmapped.map((t) => `<li>${esc(t)}</li>`).join("")}</ul><p class="hint">Left unmapped: nothing in the test's name or content made clear which feature it checks.</p></details>` : "";
+  return `<div class="rfeat"><div class="fhead"><p class="fsum">${sum}</p>${all}</div><ul class="rfl">${rows.map(item).join("")}</ul>${loose}</div>`;
+}
+
+const SLICE_TITLE = { requirements: "Features", test: "Tests per feature", code: "Passing per feature", review: "Findings per feature", docs: "Documented features" };
+
+/**
+ * A stage's features (0.4.5), for its Artifacts tab: the count, then one short
+ * line per feature, then what is not tied to a feature. Nothing beyond what
+ * the service said.
+ */
+export function stageFeaturesHtml(s) {
+  if (!isObj(s)) return "";
+  const items = list(s.items).filter((x) => isObj(x) && str(x.id));
+  const line = (x) => {
+    let extra = "";
+    if (Array.isArray(x.tests) && x.tests.length) extra = `<ul class="sft">${x.tests.map((t) => `<li>${esc(str(t))}</li>`).join("")}</ul>`;
+    else if (Array.isArray(x.findings) && x.findings.length) extra = `<ul class="sft">${x.findings.filter(isObj).map((f) => `<li>${str(f.place) ? `<code>${esc(str(f.place))}</code> ` : ""}${esc(str(f.claim))}${f.open ? "" : " <small>outside the change</small>"}</li>`).join("")}</ul>`;
+    const head = `<span class="cs" aria-hidden="true"></span><span class="fid">${esc(x.id)}</span> <b>${esc(str(x.name))}</b>: <span class="sfw">${esc(str(x.words))}</span>`;
+    return `<li class="sf s-${esc(str(x.state))}">${extra ? `<details><summary>${head}</summary>${extra}</details>` : head}</li>`;
+  };
+  const u = isObj(s.untied) && list(s.untied.items).length ? `<details class="untied"><summary>${esc(str(s.untied.words))}</summary><ul>${list(s.untied.items).map((t) => `<li>${esc(str(t))}</li>`).join("")}</ul></details>` : "";
+  return `<div class="sfeat"><p class="fsum">${esc(SLICE_TITLE[s.stage] ?? "Features")} · ${esc(str(s.words))}</p>${items.length ? `<ul class="sfl">${items.map(line).join("")}</ul>` : `<p class="gw">No approved features yet.</p>`}${u}</div>`;
+}
