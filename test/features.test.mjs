@@ -29,7 +29,7 @@ test("a proposed feature on a reply: Approve feature and Not now for someone who
   const m = reply([proposal()]);
   assert.deepEqual(checkMessages({ messages: [m] }, "requirements"), []);
   const html = messageHtml(m, { when });
-  assert.match(visible(html), /F3 New feature Empty passage in Count Answers 0 for an empty passage\. Approve feature Not now Approving it is your Requirements decision for this feature alone\. The statement of the job gets a new version with it\./);
+  assert.match(visible(html), /F3 New feature Empty passage in Count Answers 0 for an empty passage\. Approve feature Not now Approving it is your Requirements decision for this feature alone\. The spec gets a new version with it\./);
   assert.match(html, /<button class="btn p" type="button" data-feat="approve" data-feat-id="F3" data-feat-proposal="fp_1" data-feat-build="b1" data-feat-message="t_2">Approve feature<\/button>/);
   assert.match(html, /data-feat="not_now"[^>]*>Not now</);
   // A button's data is the route's path and body.

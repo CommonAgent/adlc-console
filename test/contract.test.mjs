@@ -181,8 +181,9 @@ const del = (d, path, q = "") => d.handle("DELETE", path, new URLSearchParams(q)
 const ROLE_IDS = DOC.roles.map((r) => r.id);
 const roleOf = (body, id) => body.roles.find((r) => r.role === id);
 
-test("stages.json 1.5.0 lists the roles, each stage's role ids and cadence, the evidence formats and the starting points", () => {
-  assert.equal(DOC.version, "1.5.0");
+test("stages.json 1.6.0 lists the roles, each stage's role ids and cadence, the evidence formats and the starting points, and Requirements hands back the spec", () => {
+  assert.equal(DOC.version, "1.6.0");
+  assert.equal(DOC.stages.find((x) => x.id === "requirements").asset, "Spec");
   assert.equal(DOC.starting_points.find((p) => p.id === "existing-code").enters, "reverse-engineering");
   assert.equal(DOC.starting_points.find((p) => p.id === "as-built-record").enters, "requirements");
   for (const s of DOC.stages) assert.ok(["every_build", "setup", "when_needed"].includes(s.cadence), `${s.id}: cadence`);
@@ -300,8 +301,10 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.4.7, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage, starting from existing code or an as-built record, and back_to_requirements", () => {
-  assert.equal(SCHEMA.version, "0.4.7");
+test("the vendored schema is lifecycle API 0.4.8, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage, starting from existing code or an as-built record, back_to_requirements, and the spec", () => {
+  assert.equal(SCHEMA.version, "0.4.8");
+  assert.ok(SCHEMA.$defs.Artifact.properties.kind.enum.includes("spec"));
+  assert.deepEqual(SCHEMA.$defs.SpecSummary.required, ["product", "features", "open"]);
   assert.match(SCHEMA.$defs.Action.properties.name.description, /back_to_requirements/);
   assert.match(SCHEMA.$defs.StartRequest.properties.starting_point.description, /as-built-record/);
   for (const [d, k] of [["StartSource", "path"], ["BuildSource", "record"], ["AsBuiltSummary", "brought"]]) assert.ok(SCHEMA.$defs[d].properties[k], `${d}.${k}`);

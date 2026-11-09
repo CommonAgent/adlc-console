@@ -81,13 +81,13 @@ test("Approve all sends every waiting proposal in one answer; someone who may no
 });
 
 test("with no features, the tab offers List this product's features when the service can, and says why not otherwise", () => {
-  const offered = matrix([], { words: "No features yet. This build was made before features.", backfill: { offered: true, words: "The spec writer lists the features of the statement of the job v4, and maps the 29 tests already in the build to them where their names or content make it clear." } });
+  const offered = matrix([], { words: "No features yet. This build was made before features.", backfill: { offered: true, words: "The spec writer lists the features of the spec v4, and maps the 29 tests already in the build to them where their names or content make it clear." } });
   assert.deepEqual(checkFeatures(offered, "b1"), []);
   const html = requirementsFeaturesHtml(offered);
-  assert.match(visible(html), /^No features yet The spec writer lists the features of the statement of the job v4, and maps the 29 tests already in the build to them where their names or content make it clear\. List this product's features$/);
+  assert.match(visible(html), /^No features yet The spec writer lists the features of the spec v4, and maps the 29 tests already in the build to them where their names or content make it clear\. List this product's features$/);
   assert.match(html, /<button class="btn p" type="button" data-feat-backfill="b1">List this product's features<\/button>/);
-  assert.match(visible(requirementsFeaturesHtml(offered, { listing: true })), /Listing… The spec writer is reading the statement of the job and the suite\. This can take a few minutes\./);
-  const not = matrix([], { words: "No features yet.", backfill: { offered: false, words: "There is no statement of the job yet." } });
+  assert.match(visible(requirementsFeaturesHtml(offered, { listing: true })), /Listing… The spec writer is reading the spec and the suite\. This can take a few minutes\./);
+  const not = matrix([], { words: "No features yet.", backfill: { offered: false, words: "There is no spec yet." } });
   assert.equal(visible(requirementsFeaturesHtml(not)), "No features yet.");
   assert.doesNotMatch(requirementsFeaturesHtml(not), /data-feat-backfill/);
   assert.equal(visible(requirementsFeaturesHtml(null)), "Loading…");
@@ -169,5 +169,5 @@ test("the page's features module is served with the 0.4.5 parts", async () => {
   for (const name of ["requirementsFeaturesHtml", "stageFeaturesHtml", "approveAllRequest"]) assert.match(src, new RegExp(`export function ${name}\\(`));
   const app = await readFile(join(HERE, "..", "public", "app.js"), "utf8");
   assert.match(app, /\{ id: "features", label: "Features"/, "the Requirements stage's Features tab");
-  assert.match(app, /\.\.\.\(reqFeat \? \[\{ id: "features"[^\n]*\n\s*\{ id: "chat"/, "Features comes before Chat");
+  assert.match(app, /\.\.\.\(reqFeat \? \[\{ id: "features"[^\n]*\n\s*\.\.\.\(spec \? \[\{ id: "spec"[^\n]*\n\s*\{ id: "chat"/, "Features, then Spec, come before Chat");
 });

@@ -337,6 +337,32 @@ How the console reads these:
 - The product page's Features tab stays the matrix, the overview. The matrix no longer sits under
   the Requirements stage's Artifacts tab.
 
+Read by the console since lifecycle API 0.4.8 (additive): the spec (stages.json 1.6.0,
+spec-v1). What Requirements hands back is the spec, the analysis of the product's functional
+requirements and capabilities; the agent's own files (the statement artifact) are made at Design.
+
+```
+artifact kind spec, summary (SpecSummary):
+  { product, purpose?,
+    features: [{ id, name, does, offering?, as_built?,
+                 requirements: [{ id, shall, kind?, exact?: [<words>] }],   // F1.R1
+                 acceptance: [{ id, gherkin }] }],                         // F1.A1, Gherkin text
+    interfaces?: [{ id, kind?, name, keep, about? }],                      // I1; keep: must stay exactly
+    constraints?: [<words>], open: [<words>],
+    systems?: [<words>], settings?: [<words>], price? }                    // drawn when a service gives them
+```
+
+How the console reads these:
+
+- The Requirements stage has a **Spec** tab, after Features, when the stage hands back a spec:
+  the product and its purpose, each feature with its requirements (the shall line, its kind, and
+  the exact words in code style) and its Gherkin scenarios, then the interfaces with the ones to
+  keep marked, the constraints, the systems, the settings and what is still open.
+- The Features tab shows, under each feature the spec holds, its requirements and scenarios,
+  folded, with their count.
+- The Artifacts reader draws an artifact of kind `spec` the same way. The asset is named Spec;
+  the agent's own files read as the `statement` kind always did.
+
 Read by the console since lifecycle API 0.4.7 (additive): starting from an as-built record of
 code kept elsewhere (stages.json 1.5.0), and the action back_to_requirements.
 

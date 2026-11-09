@@ -14,6 +14,7 @@ import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyti
 import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
+import { specOf, specTabHtml } from "./spec.js";
 import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
@@ -146,7 +147,7 @@ function parseHash() {
   // The Roles page is now part of the Lifecycle page; an old link still lands there.
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
-  if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "try", "features"].includes(parts[3]) ? parts[3] : null };
+  if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "try", "features", "spec"].includes(parts[3]) ? parts[3] : null };
   if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "features", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
@@ -217,7 +218,7 @@ async function route() {
     state.stageSel = stage; state.art = null; state.featFocus = null; state.sayDraft = ""; state.sayError = ""; state.asking = null;
     try { await loadStage(); } catch (e) { return problem(e); }
     // 0.4.5: Requirements opens at its Features tab, the first one, when the service has features; other stages never have it.
-    if (!h.tab) { if (stage === "requirements" && hasReqFeatures()) state.tab = "features"; else if (state.tab === "features") state.tab = "chat"; }
+    if (!h.tab) { if (stage === "requirements" && hasReqFeatures()) state.tab = "features"; else if (state.tab === "features" || state.tab === "spec") state.tab = "chat"; }
   }
   // A Features cell opened this stage: its artifact, at its feature.
   if (state.openAt && state.openAt.build === state.build.id && state.openAt.stage === stage) {
@@ -315,7 +316,7 @@ async function approveAll(d) {
   state.featAllPending = false; draw();
 }
 
-// List this product's features (0.4.5): the spec writer lists them from the statement of the job, through
+// List this product's features (0.4.5): the spec writer lists them from the spec, through
 // the Requirements chat. It answers through the model, so it may take a few minutes.
 async function listFeatures(buildId) {
   if (state.featListing || !buildId) return;
@@ -773,6 +774,9 @@ function draw() {
   // The Features tab (0.4.5) is Requirements' own, first, before Chat.
   const reqFeat = ws.stage === "requirements" && hasReqFeatures();
   if (state.tab === "features" && !reqFeat) state.tab = "chat";
+  // The spec (0.4.8): what Requirements hands back, on a tab of its own beside Features.
+  const spec = ws.stage === "requirements" ? specOf(ws.outputs) : null;
+  if (state.tab === "spec" && !spec) state.tab = "chat";
   const agent = holderName(ws.holder, s, def(ws.stage), state.roleDefs);
   const who = holderHtml(ws.holder);
   const talk = state.hasChat && canTalkTo(ws.holder);
@@ -781,6 +785,7 @@ function draw() {
   const st = stateOf({ state: ws.state });
   const tabs = [
     ...(reqFeat ? [{ id: "features", label: "Features", count: Array.isArray(state.bfeat.answer.features) ? state.bfeat.answer.features.length : undefined }] : []),
+    ...(spec ? [{ id: "spec", label: "Spec" }] : []),
     { id: "chat", label: "Chat", count: msgs.filter((m) => m?.from?.kind !== "system").length },
     { id: "artifacts", label: "Artifacts", count: artifactCount(ws) ?? undefined },
     ...(canTry ? [{ id: "try", label: "Try it" }] : []),
@@ -789,7 +794,8 @@ function draw() {
   const focusName = state.featFocus ? (state.bfeat.answer?.features ?? state.feat.answer?.features ?? []).find((x) => x.id === state.featFocus)?.name ?? "" : "";
   // Each stage's features (0.4.5) in its Artifacts tab, one short line per feature; Requirements has its own Features tab.
   const slice = ws.stage !== "requirements" && ws.features ? ws.features : null;
-  if (state.tab === "features" && reqFeat) body = requirementsFeaturesHtml(state.bfeat.answer, { pending: state.featPending, allPending: state.featAllPending, listing: state.featListing });
+  if (state.tab === "features" && reqFeat) body = requirementsFeaturesHtml(state.bfeat.answer, { pending: state.featPending, allPending: state.featAllPending, listing: state.featListing, spec: spec?.summary ?? null });
+  else if (state.tab === "spec" && spec) body = specTabHtml(spec, { when });
   else if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list) => filesHtml(list, false), feature: state.featFocus, featureName: focusName, featuresTitle: "Features at this stage", featuresHtml: slice ? () => stageFeaturesHtml(slice) : null });
   else if (state.tab === "try") body = `<div class="stage trypane" id="trybody"></div>`;
   else body = `<div class="thread" id="thread">${chatHtml(msgs, { ...ctx, empty: talk ? `Nothing has been said here yet. Ask ${agent} about what it read or made.` : "Nothing has been said here yet." })}

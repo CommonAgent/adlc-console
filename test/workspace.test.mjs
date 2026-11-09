@@ -86,7 +86,7 @@ test("the gate is pinned on the stage: open with the build's live actions, answe
   const ans = (await get(d, `${PJ}/stages/code`)).body;
   const ws = stageWorkspace(b, "code", ans, { defs });
   assert.equal(ws.from, "service");
-  assert.deepEqual(ws.given.map((a) => a.id), ["pj-statement", "pj-design", "pj-suite"]);
+  assert.deepEqual(ws.given.map((a) => a.id), ["pj-spec", "pj-agent", "pj-design", "pj-suite"]);
   assert.deepEqual(ws.outputs.map((a) => a.id), ["pj-programs"]);
   const open = gateCardHtml(ws, b, { actionsHtml: live(b), checkHtml: () => "<form id=clone-form></form>" });
   assert.match(open, /<div class="gcard gate" id="gate"><h4>Pull request #5: Ready for your OK<\/h4>/);
@@ -137,11 +137,11 @@ test("the Artifacts tab opens an artifact in its reader beside the stage's Given
   const b = (await get(d, PJ)).body.build;
   const ws = stageWorkspace(b, "code", (await get(d, `${PJ}/stages/code`)).body, { defs });
   assert.equal(defaultArtifact(ws), "pj-programs");
-  assert.equal(artifactCount(ws), 4);
+  assert.equal(artifactCount(ws), 5);
   const html = artifactsTabHtml(ws, "pj-suite", { stageName: (s) => defs.get(s).name, filesHtml: (f) => `<files n=${f.length}>` });
   const v = visible(html);
   assert.match(v, /^The suite Test · test writer · 14 tests 14 tests\./);
-  assert.match(v, /3 given · 1 of 1 made Given Statement of the job v3 Requirements · spec writer Design v1 Architecture and Design · spec writer The suite 14 tests Test · test writer Outputs The programs 0da3161/);
+  assert.match(v, /4 given · 1 of 1 made Given Spec v3 Requirements · spec writer The agent's own files v1 Architecture and Design · spec writer Design v1 Architecture and Design · spec writer The suite 14 tests Test · test writer Outputs The programs 0da3161/);
   assert.match(html, /<div class="viewer" id="reader">/);
   assert.match(html, /<button class="arow sel" type="button" data-art="pj-suite" aria-pressed="true">/);
   assert.match(html, /<files n=2>/);

@@ -20,6 +20,7 @@
 
 import { esc, safeUrl } from "./roles.js";
 import { featureProposalsHtml, requirementsGateHtml, featuresMatrixHtml, focusHtml, featuresOfTest } from "./features.js";
+import { specHtml } from "./spec.js";
 
 // The stages a build's lifecycle does not use, or the service does not run: not on the spine.
 const OFF = new Set(["not_used", "not_offered", "not_applicable"]);
@@ -433,6 +434,10 @@ export function artifactBodyHtml(a, { stageName = (x) => x, feature = null } = {
   const s = isObj(a?.summary) ? a.summary : null;
   if (!s) return "";
   switch (a.kind) {
+    // The spec of Requirements (0.4.8): each feature with its requirements and scenarios, and the rest of the spec.
+    case "spec":
+      return specHtml(s, { feature });
+    // The agent's own files (0.4.8: made at Design, from the spec).
     case "statement": {
       const offers = list(s.offerings).filter(isObj).map((o) => `<b>${esc(str(o.name))}</b>${str(o.does) ? `: ${esc(str(o.does))}` : ""}`);
       const open = words(s.open);
