@@ -31,10 +31,13 @@ function row(html, id) {
 }
 const selected = (h, role) => (new RegExp(`data-role-kind="${role}"[^>]*>(?:(?!</select>).)*<option value="([^"]*)" selected`, "s").exec(h) ?? [])[1];
 
-test("the 24 stages are listed by phase, in order, with their numbers and roles", async () => {
+test("the 24 stages and Reverse engineering are listed by phase, in order, with their numbers and roles", async () => {
   const { stages, roles } = await answers();
   const html = lifecyclePageHtml(stages, roles, ctx());
-  assert.equal((html.match(/class="cols row/g) ?? []).length, 24);
+  assert.equal((html.match(/class="cols row/g) ?? []).length, 25);
+  // Reverse engineering is stage 0, and reads "00"; Requirements stays 01.
+  assert.match(row(html, "reverse-engineering"), /<span class="num">00<\/span>/);
+  assert.match(row(html, "requirements"), /<span class="num">01<\/span>/);
   const heads = [...html.matchAll(/<div class="ph">([^<]+)<\/div>/g)].map((m) => m[1]);
   assert.deepEqual(heads, ["Define", "Make", "Ship", "Prove", "Use", "Run", "Change"]);
   const ids = [...html.matchAll(/class="cols row[^"]*" id="lc-([a-z-]+)"/g)].map((m) => m[1]);
@@ -157,13 +160,15 @@ test("the service's refusal shows on the row in its own words", async () => {
 
 test("the summary line counts the stages used, and who holds them", async () => {
   const { stages, roles } = await answers();
-  assert.deepEqual(lifecycleSummary(stages, roles), { used: 20, total: 24, ours: 12, others: 7, open: 1 });
+  assert.deepEqual(lifecycleSummary(stages, roles), { used: 21, total: 25, ours: 12, others: 7, open: 2 });
   const html = lifecyclePageHtml(stages, roles, ctx());
-  assert.match(visible(html), /20 of 24 stages used 12 held by the service's own agents 7 held by others 1 not chosen/);
+  assert.match(visible(html), /21 of 25 stages used 12 held by the service's own agents 7 held by others 2 not chosen/);
   // With every role held, "not chosen" is not shown.
   const all = structuredClone(roles);
   const critic = all.roles.find((r) => r.role === "agent-critic");
   Object.assign(critic, { from: "org", binding: { role: "agent-critic", holder: { kind: "person", name: "QA team" }, scope: { org: true } } });
+  const rev = all.roles.find((r) => r.role === "reverse-engineer");
+  Object.assign(rev, { from: "org", binding: { role: "reverse-engineer", holder: { kind: "person", name: "Platform team" }, scope: { org: true } } });
   assert.doesNotMatch(visible(lifecyclePageHtml(stages, all, ctx())), /not chosen/);
   // A stage counts as not chosen when any of its roles has nobody; as the service's own only when every role is.
   const m = new Map(all.roles.map((r) => [r.role, r]));
@@ -190,7 +195,7 @@ test("a project's page names it, and offers going back only for what the project
 test("a service without the stages operations still lists every stage, for choosing holders", async () => {
   const { roles } = await answers();
   const html = lifecyclePageHtml(null, roles, ctx({ noStages: true, fallback: DOC.stages }));
-  assert.equal((html.match(/class="cols row/g) ?? []).length, 24);
+  assert.equal((html.match(/class="cols row/g) ?? []).length, 25);
   assert.doesNotMatch(html, /data-use=/);
   assert.match(visible(html), /This service does not let you choose stages yet\. You can still choose who holds each role\./);
   assert.doesNotMatch(html, /data-reset-stages/);

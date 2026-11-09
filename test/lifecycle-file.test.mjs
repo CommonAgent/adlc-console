@@ -96,7 +96,7 @@ test("a stage of the organization's own is added in place, changed, chosen per p
   const add = await f.handleAdded("POST", null, q(), LEGAL);
   assert.equal(add.status, 201, add.body.error);
   const list = ids(add.body.stages);
-  assert.equal(list.length, 25);
+  assert.equal(list.length, 26);
   assert.equal(list[list.indexOf("security") + 1], "legal-review");
   const s = one(add.body.stages, "legal-review");
   assert.deepEqual([s.name, s.phase, s.roles, s.used, s.from], ["Legal review", "make", ["legal-reviewer"], true, "default"]);
@@ -231,7 +231,7 @@ test("the local server answers the page's routes from the file, and says where i
     assert.equal(add.status, 201, add.json?.error);
     assert.ok(add.json.stages.stages.some((x) => x.stage === "legal-review" && x.added));
     const got = await hit(s.url, { path: "/api/v1/lifecycle/stages", headers: { host: s.host } });
-    assert.equal(got.json.stages.length, 25);
+    assert.equal(got.json.stages.length, 26);
     const edit = await hit(s.url, { method: "PUT", path: "/local/added-stages/legal-review", headers: s.h, body: { ...LEGAL, name: "Legal sign-off" } });
     assert.equal(one(edit.json.stages, "legal-review").name, "Legal sign-off");
     const off = await hit(s.url, { method: "PUT", path: "/api/v1/lifecycle/stages/legal-review", headers: s.h, body: { used: false } });
@@ -240,7 +240,7 @@ test("the local server answers the page's routes from the file, and says where i
     assert.equal((await hit(s.url, { method: "POST", path: "/local/added-stages", headers: { host: s.host, "x-adlc-console": "0", "content-type": "application/json" }, body: LEGAL })).status, 403);
     const rm = await hit(s.url, { method: "DELETE", path: "/local/added-stages/legal-review", headers: s.h });
     assert.equal(rm.status, 200);
-    assert.equal(rm.json.stages.stages.length, 24);
+    assert.equal(rm.json.stages.stages.length, 25);
   } finally { await s.done(); }
 });
 
@@ -265,7 +265,7 @@ test("the page draws an added stage in place, as the organization's own, and off
   const roles = (await f.handle("GET", "/v1/lifecycle/roles", q(), {})).body;
   const phases = STAGES.phases.map((p) => [p.id, p.name]);
   const html = lifecyclePageHtml(stages, roles, { phases, canAdd: true, local: true });
-  assert.equal((html.match(/class="cols row/g) ?? []).length, 25);
+  assert.equal((html.match(/class="cols row/g) ?? []).length, 26);
   const order = [...html.matchAll(/id="lc-([a-z-]+)"/g)].map((m) => m[1]);
   assert.equal(order[order.indexOf("security") + 1], "legal-review");
   assert.match(html, /data-add-stage>Add a stage</);

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Refreshes standards/stages.json, the copy of the 24 ADLC stages this
+// Refreshes standards/stages.json, the copy of the 24 ADLC stages (and, from
+// stages.json 1.4.0, Reverse engineering as stage 0) this
 // package ships.
 //
 // The stages' home is standards/stages.json in the adlc repository
@@ -132,7 +133,9 @@ async function main() {
       stages: parsePage(html),
     };
   }
-  if (doc.stages.length !== 24) throw new Error(`expected 24 stages, found ${doc.stages.length}`);
+  // The 24 stages, and from stages.json 1.4.0 Reverse engineering as stage 0.
+  const numbered = doc.stages.filter((s) => s.number !== 0).length;
+  if (numbered !== 24) throw new Error(`expected 24 numbered stages, found ${numbered}`);
   await writeFile(OUT, JSON.stringify(doc, null, 2) + "\n");
   console.log(`wrote ${doc.stages.length} stages to ${OUT}`);
 }

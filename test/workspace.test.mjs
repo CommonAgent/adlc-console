@@ -257,7 +257,7 @@ test("the product page has tabs for its versions, setup, run plan and activity; 
   const p = (await get(d, "/v1/lifecycle/products/lunch-poll")).body;
   const ctx = { stageName: (s) => defs.get(s)?.name ?? s, when: () => "t", does: "Runs the poll.", buildHref: (id) => `#/b/${id}` };
   const versions = productPageHtml(p, ctx, "versions");
-  assert.match(visible(versions), /^lunch-poll Runs the poll\. When needed Impact Retract Reconfigure Rollback Decommission Why they are off .* Boss Versions 1 Features Setup 1 Run plan Activity \d+ 1\.0\.0 Installed · conforms started t$/);
+  assert.match(visible(versions), /^lunch-poll Runs the poll\. When needed Reverse engineering Impact Retract Reconfigure Rollback Decommission Why they are off .* Boss Versions 1 Features Setup 1 Run plan Activity \d+ 1\.0\.0 Installed · conforms started t$/);
   assert.match(versions, /<button type="button" role="tab" class="tab" aria-selected="false" disabled title="This service has no boss">Boss<\/button>/);
   // Without a boss, the page opens at Versions.
   assert.match(productPageHtml(p, ctx), /class="tab on" aria-selected="true" data-ptab="versions"/);
