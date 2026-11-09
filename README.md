@@ -41,6 +41,12 @@ npx adlc-console --demo
 The demo shows made-up builds, including one waiting on you at Code with a
 pull request, so every part of the page can be seen and clicked.
 
+New build starts from an idea, or from existing code (lifecycle API 0.4.6):
+name the product and its repository, or a folder on the service's computer,
+and the build starts at Reverse engineering, stage 00. Its as-built record has
+its own reader, and at Requirements each behavior it found is answered with
+Approve feature, This is a bug (kept as a fix item, never approved) or Drop.
+
 ## The Board
 
 Board, at the top of the rail, shows every build as a card in the column of
