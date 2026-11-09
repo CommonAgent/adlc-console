@@ -266,8 +266,8 @@ How the console reads these:
 - The product page's **Features** tab is the matrix for the version chosen in its filter.
   A cell opens its artifact at that feature (the statement marks it, the suite shows the tests
   naming it); a row opens the feature's history, each entry linking to its message or artifact.
-  The same matrix, for the build, sits under the Requirements stage's Artifacts tab. A service
-  without the routes has the tab disabled.
+  From 0.4.5 the build's features are the Requirements stage's own Features tab instead (below).
+  A service without the routes has the tab disabled.
 
 Read by the console since lifecycle API 0.4.4 (additive): the guided setup and the when-needed actions.
 
@@ -302,6 +302,40 @@ How the console reads these:
   refusal stays on the card in the service's words. Without a card, the button posts at once,
   as in 0.4.2.
 - `running` and `retired` are a line under the product's name.
+
+Read by the console since lifecycle API 0.4.5 (additive): features at every stage, and features
+listed after the build.
+
+```
+build stage adds features?: { covered, total, words }        // "4 of 5 features", every-build stages
+GET /v1/lifecycle/builds/:id/stages/:stage adds
+  features?: { stage, covered, total, words,
+               items: [{ id, name, state: done | to_do | failing | stale | findings, words,
+                         tests?, passed?, of?, findings?: [{ place, claim, open }] }],
+               untied?: { words, items: [<words>] } }
+GET /v1/lifecycle/builds/:id/features adds
+  features[].pending?: FeatureProposal, features[].from?: { build, message, stage? }, features[].tests?,
+  unmapped?: [<test name>], backfill?: { offered, words }
+POST /v1/lifecycle/builds/:id/features/backfill   {}  -> { message, reply }   // reply.features: proposals,
+                                                        // each with tests?; 409 in words when not offered
+POST /v1/lifecycle/builds/:id/features/approve_all   { proposals: [<id>], message? }
+  -> { approved: [FeatureProposal], features: [FeatureEntry], statement? }   // 403 / 400 in words
+```
+
+How the console reads these:
+
+- The Requirements stage's first tab is **Features**, before Chat and Artifacts, and the stage
+  opens on it. It lists every feature with its state (approved, proposed, changed in this
+  version, not now), what it does, a link to the message it came from, how many tests check it,
+  and **Approve feature** and **Not now** (or **Ask <approver>**) inline while it waits. With
+  more than one waiting, **Approve all** answers them together. The tests that check no feature
+  are listed under it as not tied to a feature. With no features and `backfill` offered, it shows
+  **List this product's features**, which posts the backfill and reads the stage again.
+- Every other stage with `features` shows them at the foot of its Artifacts tab, one short line
+  per feature (tests, passing, findings, documented), and what is not tied to a feature.
+- The spine shows each stage's count beside its name.
+- The product page's Features tab stays the matrix, the overview. The matrix no longer sits under
+  the Requirements stage's Artifacts tab.
 
 Read by the console since 0.1 (CommonAgent/adlc, standards/lifecycle-api.schema.json, TimelineBar):
 

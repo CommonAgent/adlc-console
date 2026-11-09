@@ -296,8 +296,10 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.4.4, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms and confirm cards", () => {
-  assert.equal(SCHEMA.version, "0.4.4");
+test("the vendored schema is lifecycle API 0.4.5, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards and features at every stage", () => {
+  assert.equal(SCHEMA.version, "0.4.5");
+  for (const op of ["POST /builds/{id}/features/backfill", "POST /builds/{id}/features/approve_all"]) assert.ok(SCHEMA.operations.some((o) => `${o.method} ${o.path}` === op), op);
+  for (const d of ["FeatureSlice", "FeatureCount"]) assert.ok(SCHEMA.$defs[d], d);
   for (const op of ["GET /builds/{id}/features", "POST /builds/{id}/features/{feature}/approve", "GET /products/{name}/features", "GET /products/{name}/features/{feature}"]) assert.ok(SCHEMA.operations.some((o) => `${o.method} ${o.path}` === op), op);
   for (const k of ["setup", "when_needed"]) assert.ok(SCHEMA.$defs.ProductAnswer.properties[k], k);
   for (const d of ["SetupForm", "WhenNeededConfirm", "WhenNeededLast", "ActionResult"]) assert.ok(SCHEMA.$defs[d], d);
