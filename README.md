@@ -47,6 +47,14 @@ and the build starts at Reverse engineering, stage 00. Its as-built record has
 its own reader, and at Requirements each behavior it found is answered with
 Approve feature, This is a bug (kept as a fix item, never approved) or Drop.
 
+New build can also start from an as-built record (lifecycle API 0.4.7): the
+record of code kept elsewhere, to build it again without taking that code on,
+as in a rewrite, a port or a clean-room rebuild. Name the product and the
+record's folder on the service's computer, or a repository, commit and path
+that hold it. The build starts at Requirements, and the code is written fresh.
+At Code, Send back to Requirements reopens the spec with your words when the
+spec, not the suite, is what has to change.
+
 ## The Board
 
 Board, at the top of the rail, shows every build as a card in the column of

@@ -160,9 +160,10 @@ test("the service's refusal shows on the row in its own words", async () => {
 
 test("the summary line counts the stages used, and who holds them", async () => {
   const { stages, roles } = await answers();
-  assert.deepEqual(lifecycleSummary(stages, roles), { used: 21, total: 25, ours: 12, others: 7, open: 2 });
+  // From stages.json 1.4.1 the reverse engineer role names its reference agent, so the service holds it.
+  assert.deepEqual(lifecycleSummary(stages, roles), { used: 21, total: 25, ours: 13, others: 7, open: 1 });
   const html = lifecyclePageHtml(stages, roles, ctx());
-  assert.match(visible(html), /21 of 25 stages used 12 held by the service's own agents 7 held by others 2 not chosen/);
+  assert.match(visible(html), /21 of 25 stages used 13 held by the service's own agents 7 held by others 1 not chosen/);
   // With every role held, "not chosen" is not shown.
   const all = structuredClone(roles);
   const critic = all.roles.find((r) => r.role === "agent-critic");

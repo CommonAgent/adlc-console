@@ -14,7 +14,7 @@ import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyti
 import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
-import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -805,6 +805,7 @@ function draw() {
         <div class="hd"><div><h1>${esc(ws.name)}${x ? `<span>${esc(stepLabel(x, spine))}</span>` : ""}</h1><p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p></div></div>
         <div class="err" role="alert">${esc(state.error)}</div>
         ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
+        ${ws.stage === STAGE_ZERO ? buildSourceHtml(b.source) : ""}
         ${gate ? `<div class="pin">${gate}</div>` : ""}
         ${tabsHtml(tabs, state.tab, { label: `${ws.name}` })}
       </div>
@@ -895,22 +896,7 @@ function actionsHtml(stage, opts = {}) {
 }
 
 function buttonsHtml(list, { labels = {} } = {}) {
-  list = list.map((a) => (labels[a.name] ? { ...a, label: labels[a.name] } : a));
-  const busy = state.pending !== null;
-  // Stop is never drawn as the main action, even when it is the only one.
-  const main = list.findIndex((a) => a.name !== "stop");
-  let h = `<div class="acts">${list.map((a, i) => `<button class="btn${i === main ? " p" : ""}" type="button" data-act="${esc(a.name)}" data-act-stage="${esc(a.stage)}"${busy ? " disabled" : ""}>${esc(state.pending === a.name ? "Sending…" : a.label)}</button>`).join("")}</div>`;
-  const ask = list.find((a) => `${a.stage}\n${a.name}` === state.asking && a.needs?.length);
-  if (ask) {
-    h += `<form class="ask" data-ask="${esc(ask.name)}" data-ask-stage="${esc(ask.stage)}">${ask.needs.map((n) => {
-      const id = `need-${esc(n.name)}`;
-      const long = /words|text|long|reason|why|comment/i.test(n.kind);
-      // A need the service marks optional may be left empty, and is then not sent.
-      const req = n.optional === true ? "" : " required";
-      return `<label for="${id}">${esc(n.label)}${n.optional === true ? " <span>Optional</span>" : ""}</label>${long ? `<textarea id="${id}" name="${esc(n.name)}"${req}></textarea>` : `<input type="text" id="${id}" name="${esc(n.name)}"${req} autocomplete="off">`}`;
-    }).join("")}<div class="acts tight"><button class="btn p" type="submit">${esc(ask.label)}</button><button class="btn" type="button" data-cancel>Cancel</button></div></form>`;
-  }
-  return h;
+  return actionButtonsHtml(list, { labels, pending: state.pending, asking: state.asking });
 }
 
 function filesHtml(list, openOne = true) {
@@ -1019,7 +1005,7 @@ function drawKey() {
 /** What the New build form holds now, by field; a field the form does not show is left out. */
 function newFormValues() {
   const out = {};
-  for (const [k, id] of [["does", "n-does"], ["refuses", "n-refuses"], ["more", "n-more"], ["name", "n-name"], ["project", "n-project"], ["repository", "n-repo"], ["commit", "n-commit"], ["folder", "n-folder"]]) {
+  for (const [k, id] of [["does", "n-does"], ["refuses", "n-refuses"], ["more", "n-more"], ["name", "n-name"], ["project", "n-project"], ["repository", "n-repo"], ["commit", "n-commit"], ["folder", "n-folder"], ["path", "n-path"]]) {
     const el = $(id);
     if (el) out[k] = el.value;
   }
@@ -1029,7 +1015,7 @@ function newFormValues() {
 function drawNew() {
   drawTop();
   layout("solo");
-  // What the person brings (stages.json 1.4.0 starting_points): an idea, or existing code (0.4.6).
+  // What the person brings (stages.json starting_points): an idea, existing code (0.4.6), or an as-built record (0.4.7).
   $("main").innerHTML = newBuildHtml(state.newDraft ?? {}, { from: state.newFrom ?? "idea", pending: state.pending === "new", error: state.error });
   $("stage").innerHTML = "";
 }
@@ -1394,7 +1380,7 @@ document.addEventListener("click", async (e) => {
   const ptab = t.closest("[data-ptab]");
   if (ptab) { state.ptab = ptab.dataset.ptab; return drawProduct(); }
   // Features (0.4.3): an answer to a proposal, a cell that opens its artifact at the feature, a row that opens its history.
-  // New build: what the person brings, an idea or existing code (0.4.6). What they wrote is kept across the switch.
+  // New build: what the person brings, an idea, existing code (0.4.6) or an as-built record (0.4.7). What they wrote is kept across the switch.
   const startFrom = t.closest("[data-start-from]");
   if (startFrom) { state.newDraft = { ...(state.newDraft ?? {}), ...newFormValues() }; state.newFrom = startFrom.dataset.startFrom; state.error = ""; return drawNew(); }
   const featBtn = t.closest("[data-feat]");
