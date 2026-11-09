@@ -13,6 +13,10 @@ build. A product page lists its versions, its setup (the stages set up once
 for the product and carried forward to each version), its run plan and
 activity, and the actions run when needed, each enabled only when the service
 can run it.
+Features are settled in the chats: a reply that proposes one has Approve
+feature and Not now (or Ask <approver> to approve, for someone who may not),
+and the product page's Features tab shows each feature against the spec, the
+tests, the code, the review and the docs, with its history.
 
 It holds no lifecycle logic. It reads the stage definitions, reads your builds
 from a service that implements the ADLC, and shows the actions that service

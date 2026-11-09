@@ -614,3 +614,73 @@ ol.plan .pgate span{font-size:10.5px;text-transform:uppercase;letter-spacing:.04
   .setup .su > a{grid-column:2;justify-self:start}
   .wnwhy dl{grid-template-columns:minmax(0,1fr)}
 }
+
+/* Features (lifecycle API 0.4.3): a proposal's answer on a reply, the Requirements gate's short form,
+   the matrix of features against Spec, Tests, Code, Review and Docs, and a feature's history. */
+.fid{font-family:var(--mono);font-size:12px;font-weight:500;padding:1px 6px;border-radius:4px;background:var(--code);border:1px solid var(--line);margin-right:4px}
+.gcard.feat .fname{margin:0 0 2px}
+.gcard.feat .fname small{color:var(--muted)}
+.gcard.feat .fdoes{color:var(--fg)}
+.gcard.feat .fwas{font-size:12.5px;color:var(--muted)}
+.gcard.feat .fwas span{font-weight:600;margin-right:4px}
+.gcard.feat.later{border-style:dashed}
+.gcard .acts .btn+.btn,.gcard .acts .btn.used+.btn{margin-left:6px}
+.gcard.rgate .gl{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:8px 0 4px}
+.gcard.rgate ul{margin:0 0 6px;padding-left:18px}
+.gcard.rgate ul.fgate{list-style:none;padding:0;display:grid;gap:4px}
+.gcard.rgate ul.fgate small{color:var(--muted)}
+.fl{display:block;margin-bottom:3px}
+.fl.at{background:var(--wait-bg);border-radius:4px;padding:2px 4px}
+.fl small,.fst{color:var(--muted);font-size:11.5px}
+.ffocus{font-size:12.5px;background:var(--wait-bg);border-radius:6px;padding:4px 8px;margin:6px 0}
+.ffocus .linkbtn{margin-left:6px;font-size:12px}
+ul.fat li{font-family:var(--mono);font-size:12.5px}
+.fhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 8px}
+.fsum{margin:0;color:var(--muted);font-size:13px}
+.fsum .c-failing{color:var(--bad);font-weight:600}
+.fsum .c-stale{color:var(--wait);font-weight:600}
+.fver{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.fver select{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
+.fmx-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+table.fmx{border-collapse:collapse;width:100%;min-width:640px;font-size:13px}
+.fmx th,.fmx td{border-bottom:1px solid var(--line);padding:0;text-align:left;vertical-align:middle}
+.fmx thead th{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:8px 10px;background:var(--bg)}
+.fmx tbody tr:last-child th,.fmx tbody tr:last-child td{border-bottom:0}
+.fmx tbody th{padding:8px 10px;min-width:220px;font-weight:400}
+.fmx tbody th small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.fmx tr.sel th{background:var(--done-bg)}
+.frow{background:none;border:0;padding:0;font:inherit;color:var(--fg);cursor:pointer;text-align:left;display:inline-flex;align-items:center;gap:2px}
+.frow .fn{font-weight:600;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.frow:hover .fn{text-decoration-color:var(--accent)}
+.fb{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;margin-left:6px;border:1px solid var(--line);color:var(--muted)}
+.fb.b-new{border-color:var(--accent);color:var(--accent);background:var(--done-bg)}
+.fb.b-changed{border-color:var(--wait);color:var(--wait);background:var(--wait-bg)}
+.fb.b-prop{border-style:dashed}
+.fcell{display:flex;align-items:center;gap:6px;width:100%;padding:8px 10px;background:none;border:0;font:inherit;color:inherit;text-align:left}
+button.fcell{cursor:pointer}
+button.fcell:hover .cw{text-decoration:underline}
+.cs{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+.fc.done .cs{background:var(--accent)}
+.fc.stale .cs{background:var(--wait)}
+.fc.failing .cs{background:var(--bad)}
+.fc.missing .cs{background:transparent;border:1.5px solid var(--off)}
+td.fc.failing{background:var(--bad-bg)}
+td.fc.stale{background:var(--wait-bg)}
+td.fc.missing .cw{color:var(--muted)}
+.flegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:8px 0 0}
+.flegend .fc{display:inline-flex;align-items:center;gap:5px}
+.fhist{margin-top:14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:10px 12px}
+.fhist h4{margin:0 0 4px;font-size:14px}
+.fhist .fdoes{margin:0 0 8px;color:var(--muted)}
+ol.fhl{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.fh{display:grid;grid-template-columns:auto auto 1fr;gap:2px 10px;align-items:baseline;border-left:2px solid var(--line);padding-left:10px}
+.fh.approved{border-left-color:var(--accent)}
+.fh.not_now,.fh.asked{border-left-color:var(--wait)}
+.fh time{font-size:12px;color:var(--muted)}
+.fh .fk{font-weight:600;font-size:12.5px}
+.fh .fv{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.fh p{grid-column:1/-1;margin:0}
+.fh p small{color:var(--muted)}
+.fh a,.fh .linkbtn{grid-column:1/-1;font-size:12.5px;justify-self:start}
+.afeat{margin-top:16px}
+@media (max-width:760px){.fmx tbody th{min-width:160px}}

@@ -230,6 +230,45 @@ How the console reads these:
   `can_run` is true and it names the action; it then posts that build's action. Every other is
   disabled, with `why_not` as its title and listed under "Why they are off".
 
+Read by the console since lifecycle API 0.4.3 (additive): features.
+
+```
+statement summary adds features?: [{ id, name, does, offering, state: approved | proposed }]
+message (a stage's chat, and the boss's) adds
+  features?: [{ proposal, feature, name, does, offering, change: new | changed, was?,
+                state: open | asked | approved | not_now | replaced,
+                you_may_approve, approvers: [<words>], answered?: { decision, by, at },
+                asked?: { by, at, to: [<words>] } }]
+POST /v1/lifecycle/builds/:id/features/:feature/approve | not_now | ask   { proposal, message? }
+  -> { feature, proposal, statement?, told? }   // approve: 403 in words for someone who may not
+                                                // answer Requirements; they ask instead
+round adds by_feature?: [{ feature, passed, total }]     // a test names its feature: "[F3] ..."
+stage gate (at Requirements) adds open?: [<words>], features?: { approved, to_approve, backlog }
+GET /v1/lifecycle/builds/:id/features
+GET /v1/lifecycle/products/:name/features[?version=]
+  -> { product, build, version, versions: [{ version, build }], columns, words?,
+       features: [{ id, name, does, offering, state, backlog, badge: new | changed | unchanged,
+                    cells: { spec, tests, code, review, docs:
+                             { state: done | stale | missing | failing, words, tests?, link? } } }] }
+GET /v1/lifecycle/products/:name/features/:feature
+  -> { feature, history: [{ at, kind, words, by?, build, version, link?: { kind: message | artifact, ... } }] }
+```
+
+How the console reads these:
+
+- A reply that proposes a feature shows it with **Approve feature** and **Not now**. Someone
+  who may not approve sees **Ask <approver> to approve** instead; once asked, the approver sees
+  the same proposal with Approve feature. An answered proposal says who answered and how. The
+  buttons post to the build's feature route, and the chat is read again.
+- At Requirements, a gate that carries `features` shows only what is still open and the
+  features it starts building with; its approve button reads "Start building with these
+  features". Features approved in a chat are marked approved, not asked again.
+- The product page's **Features** tab is the matrix for the version chosen in its filter.
+  A cell opens its artifact at that feature (the statement marks it, the suite shows the tests
+  naming it); a row opens the feature's history, each entry linking to its message or artifact.
+  The same matrix, for the build, sits under the Requirements stage's Artifacts tab. A service
+  without the routes has the tab disabled.
+
 Read by the console since 0.1 (CommonAgent/adlc, standards/lifecycle-api.schema.json, TimelineBar):
 
 ```
