@@ -159,7 +159,7 @@ test("a behavior as built offers Approve feature, This is a bug (with what is wr
   assert.match(visible(featureProposalHtml(bug, msg)), /This is a bug, said Test Person .* F2 Empty passage: a bug as built, "An empty passage has no words"\. Kept as a proposed fix item by Test Person, never approved by that answer\./);
   assert.doesNotMatch(featureProposalHtml(bug, msg), /data-feat=/);
   const dropped = proposal({ state: "dropped", answered: { decision: "dropped", by: "Test Person", at: T2 } });
-  assert.match(visible(featureProposalHtml(dropped, msg)), /Dropped by Test Person .* Not kept: the statement does not carry it, and no test pins it\./);
+  assert.match(visible(featureProposalHtml(dropped, msg)), /Dropped by Test Person .* Not kept: the spec does not carry it, and no test pins it\./);
   // Someone who may not answer Requirements asks instead, as for any feature.
   assert.match(featureProposalHtml(proposal({ you_may_approve: false, approvers: ["Ana Lee (ana@example.com)"] }), msg), /data-feat="ask"[^>]*>Ask Ana Lee to approve</);
 });

@@ -55,6 +55,15 @@ that hold it. The build starts at Requirements, and the code is written fresh.
 At Code, Send back to Requirements reopens the spec with your words when the
 spec, not the suite, is what has to change.
 
+Requirements hands back the spec (lifecycle API 0.4.8): what the product must
+do and how anyone can tell that it does. Its Spec tab shows each feature with
+its requirements (each a statement with shall, its kind, and the exact words
+it fixes) and its acceptance scenarios in Gherkin, then the interfaces, with
+the ones that must be kept marked, the constraints, the systems, the settings
+and what is still open. The Features tab shows the same requirements and
+scenarios under each feature. The agent's own files are made from the spec at
+Design.
+
 ## The Board
 
 Board, at the top of the rail, shows every build as a card in the column of

@@ -84,7 +84,7 @@ export function parsePage(html) {
 // What each stage makes, from https://agenticdevelopment.ai/assets.html.
 function assetNames() {
   return {
-    requirements: "Statement of the job",
+    requirements: "Spec",
     architecture: "Architecture record and Design",
     impact: "Impact report",
     source: "Catalog answers",

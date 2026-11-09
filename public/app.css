@@ -789,3 +789,36 @@ ul.sft{margin:4px 0 6px 22px;padding:0;color:var(--muted);font-size:12.5px}
 .fixw{font-style:italic}
 .srcw{margin:4px 0 0;font-size:13px;color:var(--muted)}
 .srcw.drift{color:var(--fg)}
+/* The spec (lifecycle API 0.4.8): features with requirements and Gherkin scenarios, interfaces, constraints, systems, settings, open questions. */
+.wbody .spectab{margin:12px 18px 18px;max-width:880px}
+.spectab .vm{font-size:11.5px;color:var(--muted);margin-bottom:10px;font-family:var(--mono)}
+.spec .sprod{margin:0}
+.spec .sprod small{color:var(--muted);margin-left:6px}
+.spec .spurp{margin:4px 0 10px;color:var(--muted)}
+.sfes{display:grid;gap:8px}
+.sfe{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:10px 12px}
+.sfe.at{border-color:var(--accent)}
+.sfe h4{margin:0;font-size:13.5px}
+.sfe h4 small{font-weight:400;color:var(--muted);margin-left:4px}
+.sfe .fdoes{margin:4px 0 0;color:var(--muted);font-size:13px}
+.sgl{margin:8px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+ul.sreqs,ul.saccs,ul.sifs{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.sreq{font-size:13px;line-height:1.45}
+.sid{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-right:6px}
+.sk{font-size:11px;padding:0 6px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.sx{display:block;margin:2px 0 0 0}
+.sx code,.sif code{font-family:var(--mono);font-size:11.5px;background:var(--code);border:1px solid var(--line);border-radius:4px;padding:0 4px;overflow-wrap:anywhere}
+.sacc pre.gherkin{margin:2px 0 0;border-radius:6px;max-height:none;white-space:pre-wrap}
+.sgrp{margin:14px 0 0}
+.sgrp h4{margin:0 0 4px;font-size:13.5px}
+.sgrp h4 .ct{font-family:var(--mono);font-size:11px;font-weight:400;margin-left:4px;padding:0 5px;border-radius:99px;background:var(--code)}
+.sgrp ul{margin:0;padding-left:18px}
+.sgrp ul.sifs{padding-left:0}
+.sif small{display:block;color:var(--muted);font-size:12.5px}
+.sif.keep{border-left:3px solid var(--accent);padding-left:8px}
+.fb.s-keep{border-color:var(--accent);color:var(--accent);background:var(--done-bg)}
+.sgrp.open li{color:var(--wait)}
+details.rfspec{margin:6px 0 0;border:1px solid var(--line);border-radius:6px}
+details.rfspec>summary{font-family:var(--sans);font-size:12.5px;color:var(--muted)}
+details.rfspec>:not(summary){margin-left:10px;margin-right:10px}
+details.rfspec>ul:last-child{margin-bottom:8px}

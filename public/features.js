@@ -1,5 +1,5 @@
-// Features (lifecycle API 0.4.3) on the page. The statement of the job carries
-// a feature list; a stage's agent or the boss proposes a new or changed feature
+// Features (lifecycle API 0.4.3) on the page. The spec carries a feature list
+// (from 0.4.8 each feature with its requirements and acceptance scenarios); a stage's agent or the boss proposes a new or changed feature
 // on its reply, and the person answers each one there: Approve feature (a gate
 // decision of Requirements for that feature alone), Not now (a backlog item),
 // or, for someone who may not answer Requirements, Ask <approver> to approve.
@@ -18,6 +18,7 @@
 // so the tests read it without a browser (test/features.test.mjs).
 
 import { esc } from "./roles.js";
+import { specFeature, featureSpecHtml, featureCounts } from "./spec.js";
 
 const list = (v) => (Array.isArray(v) ? v : []);
 const str = (v) => (typeof v === "string" ? v : typeof v === "number" && Number.isFinite(v) ? String(v) : "");
@@ -27,12 +28,17 @@ const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 /** The matrix's columns, in their order, with their headings. */
 export const FEATURE_COLUMNS = [["spec", "Spec"], ["tests", "Tests"], ["code", "Code"], ["review", "Review"], ["docs", "Docs"]];
 
-/** The features a test names: the ids in square brackets its name starts with ("[F3] ..." or "[F1, F2] ..."). */
+/**
+ * The features a test names: the ids in square brackets its name starts with ("[F3] ..." or "[F1, F2] ...").
+ * From 0.4.8 a test is named by the acceptance scenario of the spec it checks ("[F3.A1] ..."), which names
+ * feature F3; a test of a kept interface ("[I4] ...") or of a constraint ("[C1] ...") names no feature.
+ */
 export function featuresOfTest(name) {
   const m = /^\s*\[([^\]]+)\]/.exec(String(name ?? ""));
   if (!m) return [];
   const ids = m[1].split(",").map((s) => s.trim());
-  return ids.every((id) => /^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(id)) ? [...new Set(ids)] : [];
+  if (!ids.every((id) => /^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(id))) return [];
+  return [...new Set(ids.filter((id) => !/^[IC][1-9]\d*$/.test(id)).map((id) => /^(F[1-9]\d*)\.[AR][1-9]\d*$/.exec(id)?.[1] ?? id))];
 }
 
 /** An approver as a button names them: "Ana Lee" from "Ana Lee (ana@example.com)", and "an approver in the team web" as it is. */
@@ -91,7 +97,7 @@ export function featureProposalHtml(p, m, { when = when0, pending = null } = {})
   const asked = isObj(p.asked) ? `<p class="hint">${esc(`${p.asked.by ?? "Someone"} asked ${approverWords(p.asked.to)} to approve it${at(p.asked)}.`)}</p>` : "";
   // 0.4.6: a behavior as built, answered bug or dropped, or waiting on someone who may answer it.
   if (p.state === "bug") return `<div class="gcard feat later">${head}${body}<div class="acts"><span class="btn used">${esc(`This is a bug${p.answered?.by ? `, said ${p.answered.by}` : ""}${at(p.answered)}`)}</span></div><p class="hint">${esc(isObj(p.fix) ? fixWords(p.fix) : "Kept as a proposed fix item, never approved by that answer.")}</p></div>`;
-  if (p.state === "dropped") return `<div class="gcard feat later">${head}${body}<div class="acts"><span class="btn used">${esc(`Dropped${p.answered?.by ? ` by ${p.answered.by}` : ""}${at(p.answered)}`)}</span></div><p class="hint">Not kept: the statement does not carry it, and no test pins it.</p></div>`;
+  if (p.state === "dropped") return `<div class="gcard feat later">${head}${body}<div class="acts"><span class="btn used">${esc(`Dropped${p.answered?.by ? ` by ${p.answered.by}` : ""}${at(p.answered)}`)}</span></div><p class="hint">Not kept: the spec does not carry it, and no test pins it.</p></div>`;
   if (ab && p.you_may_approve && ["open", "asked", "not_now"].includes(p.state)) return `<div class="gcard prop feat asbuilt">${head}${body}<div class="acts">${asBuiltButtons(btn, p.proposal, busy)}</div>${asked}<p class="hint">This is what the code does today. Approve it if it is intended, so a test pins it; say it is a bug to keep a fix item for it; or drop it.</p></div>`;
   if (p.state === "approved") return `<div class="gcard done feat">${head}${body}<div class="acts"><span class="btn used">${esc(`Approved${p.answered?.by ? ` by ${p.answered.by}` : ""}${at(p.answered)}`)}</span></div></div>`;
   if (p.state === "replaced") return `<div class="gcard feat">${head}${body}<p class="hint">A newer proposal of ${esc(p.feature)} replaced this one.</p></div>`;
@@ -99,7 +105,7 @@ export function featureProposalHtml(p, m, { when = when0, pending = null } = {})
     const later = `<p class="hint">${esc(`Not now${p.answered?.by ? `, said ${p.answered.by}` : ""}${at(p.answered)}: it stays proposed, in the backlog.`)}</p>`;
     return `<div class="gcard feat later">${head}${body}${later}<div class="acts">${p.you_may_approve ? btn("approve", "Approve feature") : btn("ask", `Ask ${approverWords(p.approvers)} to approve`)}</div></div>`;
   }
-  if (p.you_may_approve) return `<div class="gcard prop feat">${head}${body}<div class="acts">${btn("approve", "Approve feature", true)}${btn("not_now", "Not now")}</div>${asked}<p class="hint">Approving it is your Requirements decision for this feature alone. The statement of the job gets a new version with it.</p></div>`;
+  if (p.you_may_approve) return `<div class="gcard prop feat">${head}${body}<div class="acts">${btn("approve", "Approve feature", true)}${btn("not_now", "Not now")}</div>${asked}<p class="hint">Approving it is your Requirements decision for this feature alone. The spec gets a new version with it.</p></div>`;
   if (p.state === "asked") return `<div class="gcard feat">${head}${body}<div class="acts"><span class="btn used">${esc(`Waiting on ${approverWords(p.asked?.to ?? p.approvers)}`)}</span>${btn("not_now", "Not now")}</div>${asked}</div>`;
   return `<div class="gcard prop feat">${head}${body}<div class="acts">${btn("ask", `Ask ${approverWords(p.approvers)} to approve`, true)}${btn("not_now", "Not now")}</div><p class="hint">${esc(`Only ${approverWords(p.approvers)} may approve features. Asking tells them, and they see this same proposal.`)}</p></div>`;
 }
@@ -122,7 +128,7 @@ export function featureDecision(d) {
 
 /**
  * The Requirements gate when the build carries features: only what the
- * statement still leaves open, the features it starts building with (those
+ * spec still leaves open, the features it starts building with (those
  * approved in a chat marked so, not asked again), the ones left for later,
  * and the build's own actions, its approve labelled "Start building with
  * these features". ctx.actionsHtml(stage, { labels }): the gate's buttons.
@@ -215,7 +221,7 @@ export function featureHistoryHtml(h, { when = when0, stageName = (x) => x, prod
 }
 
 /** The stage an artifact is made at, for a cell whose link names no stage. */
-export const ARTIFACT_STAGE = { statement: "requirements", architecture: "architecture", suite: "test", programs: "code", findings: "review", security: "security", package: "package", build_record: "release", run_plan: "deploy", attestation: "conformance", agentdoc: "docs" };
+export const ARTIFACT_STAGE = { spec: "requirements", statement: "requirements", architecture: "architecture", suite: "test", programs: "code", findings: "review", security: "security", package: "package", build_record: "release", run_plan: "deploy", attestation: "conformance", agentdoc: "docs" };
 
 /** Where a cell opens: the build, the stage and the artifact, at the feature. */
 export function cellTarget(d) {
@@ -275,7 +281,8 @@ export function fixesHtml(fixes) {
  * Approve feature and Not now inline while it waits. With none yet, and the
  * service offering it, "List this product's features". ctx.pending: the
  * "<proposal> <decision>" being sent; ctx.allPending, ctx.listing: Approve all
- * or the listing being sent.
+ * or the listing being sent. ctx.spec: the spec's summary (0.4.8), so each
+ * feature it holds shows its requirements and acceptance scenarios.
  */
 export function requirementsFeaturesHtml(m, ctx = {}) {
   if (ctx.error && !isObj(m)) return `<p class="gw err">${esc(ctx.error)}</p>`;
@@ -286,7 +293,7 @@ export function requirementsFeaturesHtml(m, ctx = {}) {
   if (!rows.length) {
     const bf = isObj(m.backfill) ? m.backfill : null;
     if (bf?.offered) {
-      return `<div class="gcard prop rfeat-none"><h4>No features yet</h4><p>${esc(str(bf.words))}</p><div class="acts"><button class="btn p" type="button" data-feat-backfill="${esc(str(m.build))}"${busy ? " disabled" : ""}>${ctx.listing ? "Listing…" : "List this product's features"}</button></div>${ctx.listing ? `<p class="hint">The spec writer is reading the statement of the job and the suite. This can take a few minutes.</p>` : ""}</div>`;
+      return `<div class="gcard prop rfeat-none"><h4>No features yet</h4><p>${esc(str(bf.words))}</p><div class="acts"><button class="btn p" type="button" data-feat-backfill="${esc(str(m.build))}"${busy ? " disabled" : ""}>${ctx.listing ? "Listing…" : "List this product's features"}</button></div>${ctx.listing ? `<p class="hint">The spec writer is reading the spec and the suite. This can take a few minutes.</p>` : ""}</div>`;
     }
     return `<p class="gw">${esc(str(m.words) || str(bf?.words) || "No features yet.")}</p>`;
   }
@@ -315,7 +322,9 @@ export function requirementsFeaturesHtml(m, ctx = {}) {
     const tests = Array.isArray(r.tests) ? `<span class="ft">${r.tests.length ? `${r.tests.length} ${r.tests.length === 1 ? "test" : "tests"}` : "no test yet"}</span>` : "";
     const ab = asBuiltOf(p) ?? asBuiltOf(r);
     const answered = st.key === "bug" ? `<p class="hint">${esc(fixWords(r.fix))}</p>` : st.key === "dropped" ? `<p class="hint">${esc(`Dropped${str(r.dropped.by) ? ` by ${str(r.dropped.by)}` : ""}: not kept, and no test pins it.`)}</p>` : "";
-    return `<li class="rf ${esc(st.key)}"><div class="rfh"><span class="fid">${esc(r.id)}</span><b class="fn">${esc(str(r.name))}</b><span class="fb s-${esc(st.key)}">${esc(st.label)}</span>${str(r.offering) ? `<small>${esc(str(r.offering))}</small>` : ""}</div><p class="fdoes">${esc(str(r.does))}</p>${proposedWords}${was}${asBuiltHtml(ab)}${answered}<div class="rfm">${href ? `<a href="${esc(href)}">From the message</a>` : ""}${tests}${btns ? `<span class="acts">${btns}</span>` : ""}</div></li>`;
+    const sf = specFeature(ctx.spec, r.id);
+    const spec = sf && featureSpecHtml(sf) ? `<details class="rfspec"><summary>${esc(featureCounts(sf))}</summary>${featureSpecHtml(sf)}</details>` : "";
+    return `<li class="rf ${esc(st.key)}"><div class="rfh"><span class="fid">${esc(r.id)}</span><b class="fn">${esc(str(r.name))}</b><span class="fb s-${esc(st.key)}">${esc(st.label)}</span>${str(r.offering) ? `<small>${esc(str(r.offering))}</small>` : ""}</div><p class="fdoes">${esc(str(r.does))}</p>${proposedWords}${was}${asBuiltHtml(ab)}${answered}${spec}<div class="rfm">${href ? `<a href="${esc(href)}">From the message</a>` : ""}${tests}${btns ? `<span class="acts">${btns}</span>` : ""}</div></li>`;
   };
   const unmapped = list(m.unmapped).map(str).filter(Boolean);
   const loose = unmapped.length ? `<details class="unmapped"><summary>${unmapped.length} ${unmapped.length === 1 ? "test" : "tests"} not tied to a feature</summary><ul>${unmapped.map((t) => `<li>${esc(t)}</li>`).join("")}</ul><p class="hint">Left unmapped: nothing in the test's name or content made clear which feature it checks.</p></details>` : "";
