@@ -10,7 +10,8 @@
 // is the build's steps: the every-build stages it runs. The stages set up once
 // per product are the product page's Setup checklist, and the when-needed
 // actions are buttons on the product page, enabled only when the service says
-// it can run them.
+// it can run them. From 0.4.4 the Setup tab is a guided flow, one small form
+// per stage, and each when-needed action opens a confirm card before it runs.
 //
 // Everything here builds HTML from what the service answered and nothing else,
 // so the tests can read it without a browser (test/workspace.test.mjs). The
@@ -571,6 +572,8 @@ export function setupHtml(items, ctx = {}) {
   const roleName = ctx.roleName ?? ((x) => x);
   const rows = list(items).filter((x) => isObj(x) && str(x.stage));
   if (!rows.length) return `<p class="gw">This service lists no stages set up once.</p>`;
+  // A service that gives each item its form (0.4.4) gets the guided flow.
+  if (rows.some((x) => isObj(x.form))) return guidedSetupHtml(rows, ctx);
   const todo = setupToDo(rows);
   const row = (x) => {
     const mark = x.state === "chosen" ? "ok" : x.state === "not_chosen" ? "todo" : "off";
@@ -608,6 +611,209 @@ export function whenNeededHtml(items, { stageName = (x) => x, pending = null } =
 export function whenNeededAction(items, stage) {
   const x = list(items).find((i) => isObj(i) && i.stage === stage);
   return x && x.can_run === true && isObj(x.action) && str(x.action.build) && str(x.action.name) ? { build: str(x.action.build), name: str(x.action.name) } : null;
+}
+
+// ---------- the guided setup and the confirm cards (lifecycle API 0.4.4) ----------
+
+/** The holder kinds a setup card offers: the reference agent only when the role has one. */
+export const HOLDER_KINDS = [
+  { kind: "reference_agent", label: "The reference agent" },
+  { kind: "your_agent", label: "Your agent" },
+  { kind: "person", label: "A person" },
+  { kind: "outside_tool", label: "An outside tool" },
+];
+
+/**
+ * What a setup card's form starts from: the draft the person is editing, else
+ * the item's holder and settings, else the form's defaults. { kind, name, handle, values }.
+ */
+export function setupDraftOf(item, draft = null) {
+  const form = isObj(item?.form) ? item.form : { fields: [] };
+  const h = isObj(item?.holder) ? item.holder : null;
+  const ref = str(form.reference_agent);
+  const base = {
+    kind: h?.kind ?? (ref ? "reference_agent" : "person"),
+    name: h ? str(h.name) : ref,
+    handle: str(h?.handle),
+    values: Object.fromEntries(list(form.fields).filter(isObj).map((f) => [str(f.name), isObj(item?.settings) && item.settings[f.name] !== undefined ? item.settings[f.name] : f.default ?? ""])),
+  };
+  if (!isObj(draft)) return base;
+  return { ...base, ...draft, values: { ...base.values, ...(isObj(draft.values) ? draft.values : {}) } };
+}
+
+/** A field's value as the form posts it: a number field as a number, the rest as words. */
+export function fieldValue(field, raw) {
+  if (field?.kind === "number") {
+    const n = Number(String(raw ?? "").trim());
+    return Number.isFinite(n) && String(raw ?? "").trim() !== "" ? n : null;
+  }
+  return String(raw ?? "").trim();
+}
+
+/**
+ * The holder PUT /roles/{role} is sent to save one setup card: the holder
+ * chosen, with this stage's values under its id, beside the settings it keeps
+ * for any other stage. existing: the role's holder now (from GET /roles), or null.
+ * Refuses with words when something is missing.
+ */
+export function setupHolder(item, draft, existing = null) {
+  const d = setupDraftOf(item, draft);
+  const fields = list(item?.form?.fields).filter(isObj);
+  const values = {};
+  for (const f of fields) {
+    const v = fieldValue(f, d.values[f.name]);
+    if (v === null || v === "") return { error: `Fill in ${str(f.label).toLowerCase() || f.name}.` };
+    if (f.kind === "number" && ((typeof f.min === "number" && v < f.min) || (typeof f.max === "number" && v > f.max))) return { error: `${str(f.label)} is ${typeof f.min === "number" ? `at least ${f.min}` : ""}${typeof f.min === "number" && typeof f.max === "number" ? " and " : ""}${typeof f.max === "number" ? `at most ${f.max}` : ""}.` };
+    values[f.name] = v;
+  }
+  const kind = HOLDER_KINDS.some((k) => k.kind === d.kind) ? d.kind : "person";
+  const name = kind === "reference_agent" ? str(item?.form?.reference_agent) : str(d.name).trim();
+  if (!name) return { error: kind === "person" ? "Say who the person is." : kind === "outside_tool" ? "Name the tool." : "Name your agent." };
+  const holder = { kind, name };
+  if (kind === "your_agent") {
+    if (!str(d.handle).trim()) return { error: "Give your agent's handle on the mesh." };
+    holder.handle = str(d.handle).trim();
+  }
+  const kept = isObj(existing?.settings) ? existing.settings : {};
+  holder.settings = { ...kept, [str(item.stage)]: values };
+  return { holder };
+}
+
+/** One setting's input. */
+function fieldHtml(f, value, id) {
+  const label = `<label for="${esc(id)}">${esc(str(f.label) || str(f.name))}</label>`;
+  const unit = str(f.unit) ? `<span class="unit">${esc(str(f.unit))}</span>` : "";
+  if (f.kind === "choice") {
+    const opts = words(f.options).map((o) => `<option${o === String(value) ? " selected" : ""}>${esc(o)}</option>`).join("");
+    return `<div class="sf">${label}<select id="${esc(id)}" name="f.${esc(str(f.name))}">${opts}</select></div>`;
+  }
+  const num = f.kind === "number";
+  const lim = num ? `${typeof f.min === "number" ? ` min="${f.min}"` : ""}${typeof f.max === "number" ? ` max="${f.max}"` : ""}` : "";
+  return `<div class="sf${num ? " num" : ""}">${label}<span class="sfi"><input id="${esc(id)}" name="f.${esc(str(f.name))}" type="${num ? "number" : "text"}"${lim} value="${esc(String(value ?? ""))}" autocomplete="off">${unit}</span></div>`;
+}
+
+/**
+ * The guided Setup tab (0.4.4): one card per stage set up once, in order. Each
+ * shows who holds it and since when; the open one is a small form: who holds
+ * it, its settings with the service's defaults, Save, and Ask the boss. A stage
+ * nobody holds is to do, and the first one is open until the person opens
+ * another. ctx: { open, drafts, saving, error, saved, readOnly, bossOffered, roleName, stageName }.
+ */
+export function guidedSetupHtml(rows, ctx = {}) {
+  const stageName = ctx.stageName ?? ((x) => x);
+  const roleName = ctx.roleName ?? ((x) => x);
+  const todo = setupToDo(rows);
+  const usable = rows.filter((x) => x.state !== "not_used");
+  const open = ctx.readOnly ? null : (ctx.open !== undefined ? ctx.open : rows.find((x) => x.state === "not_chosen")?.stage ?? null);
+  const n = usable.length;
+  const card = (x, i) => {
+    const stage = str(x.stage);
+    const name = str(x.name) || stageName(stage);
+    const mark = x.state === "chosen" ? "ok" : x.state === "not_chosen" ? "todo" : "off";
+    const dot = mark === "ok" ? "✓" : mark === "todo" ? "!" : "–";
+    const step = mark === "off" ? "" : `<span class="step">${usable.indexOf(x) + 1} of ${n}</span>`;
+    if (mark === "off") return `<li class="su off"><span class="dot" aria-hidden="true">${dot}</span><div class="sb"><b>${esc(name)}</b> <span class="role">${esc(roleName(str(x.role)))}</span><p class="since">${esc(setupWords(x, roleName))}</p></div></li>`;
+    const h = isObj(x.holder) ? x.holder : null;
+    const who = h ? (h.kind === "reference_agent" ? `${roleName(str(x.role))}, the reference agent` : str(h.name)) : "";
+    const set = settingsWords(x.settings);
+    const summary = x.state === "chosen" ? `<p class="sh">${esc(who)}${set ? ` <small>${esc(set)}</small>` : " <small>No settings</small>"}</p>` : `<p class="sh none">Nobody chosen</p>`;
+    const head = `<span class="dot" aria-hidden="true">${dot}</span><div class="sb">${step}<b>${esc(name)}</b> <span class="role">${esc(roleName(str(x.role)))}</span>${summary}<p class="since">${esc(setupWords(x, roleName))}</p></div>`;
+    if (open !== stage) {
+      const act = ctx.readOnly ? "" : `<button class="${mark === "todo" ? "btn p" : "linkbtn"}" type="button" data-setup-open="${esc(stage)}">${mark === "todo" ? "Set it up" : "Change"}</button>`;
+      const saved = ctx.saved === stage ? `<p class="saved" role="status">Saved. It holds from the next version.</p>` : "";
+      return `<li class="su ${mark}">${head}${act}${saved}</li>`;
+    }
+    const form = x.form;
+    const d = setupDraftOf(x, ctx.drafts?.[stage]);
+    const kinds = HOLDER_KINDS.filter((k) => k.kind !== "reference_agent" || str(form.reference_agent));
+    const id = (k) => `su-${stage}-${k}`;
+    const kindSel = `<div class="sf"><label for="${id("kind")}">Who holds it</label><select id="${id("kind")}" name="kind" data-setup-kind="${esc(stage)}">${kinds.map((k) => `<option value="${k.kind}"${k.kind === d.kind ? " selected" : ""}>${esc(k.kind === "reference_agent" ? `${k.label} (${str(form.reference_agent)})` : k.label)}</option>`).join("")}</select></div>`;
+    const nameIn = d.kind === "reference_agent" ? "" : `<div class="sf"><label for="${id("name")}">${d.kind === "person" ? "Who" : d.kind === "outside_tool" ? "Which tool" : "Your agent's name"}</label><input id="${id("name")}" name="name" type="text" value="${esc(d.kind === "reference_agent" ? "" : d.name)}" autocomplete="off"></div>`;
+    const handleIn = d.kind === "your_agent" ? `<div class="sf"><label for="${id("handle")}">Handle on the mesh</label><input id="${id("handle")}" name="handle" type="text" value="${esc(d.handle)}" autocomplete="off" placeholder="name.owner@example.com"></div>` : "";
+    const fields = list(form.fields).filter(isObj).map((f) => fieldHtml(f, d.values[f.name], id(`f-${f.name}`))).join("");
+    const shares = str(form.shares) ? `<p class="hint">${esc(str(form.shares))}</p>` : "";
+    const err = ctx.error && ctx.error.stage === stage ? `<div class="err" role="alert">${esc(ctx.error.words)}</div>` : "";
+    const saving = ctx.saving === stage;
+    const ask = str(form.ask);
+    const askBtn = ask ? `<button class="btn" type="button" data-setup-ask="${esc(stage)}"${ctx.bossOffered === false ? ' disabled title="This service has no boss"' : ""}>Ask the boss</button>` : "";
+    const cancel = x.state === "chosen" || i > 0 ? `<button class="linkbtn" type="button" data-setup-open="">Close</button>` : "";
+    return `<li class="su ${mark} open">${head}<form class="suform" data-setup="${esc(stage)}"><div class="sgrid">${kindSel}${nameIn}${handleIn}${fields}</div>${shares}${err}<div class="acts"><button class="btn p" type="submit"${saving ? " disabled" : ""}>${saving ? "Saving…" : "Save"}</button>${askBtn}${cancel}</div>${ask ? `<p class="hint">Not sure? Ask the boss: “${esc(ask)}”</p>` : ""}</form></li>`;
+  };
+  const top = `${todo ? `${todo} to do: ${todo === 1 ? "a stage nobody holds" : "stages nobody holds"}.` : "Every stage set up once has a holder, or is left out."} Set up once for the product, on its first build, and carried forward to each new version until you change it.`;
+  return `<p class="gw sutop">${esc(top)}</p><ul class="setup guided">${rows.map(card).join("")}</ul>`;
+}
+
+/** Which version runs, or that the product is retired (0.4.4); nothing from a service that does not say. */
+export function runningHtml(p) {
+  if (isObj(p?.retired)) return `<p class="running off">Retired${str(p.retired.version) ? ` at ${esc(str(p.retired.version))}` : ""}. ${esc(str(p.retired.why))}</p>`;
+  if (isObj(p?.running) && str(p.running.version)) return `<p class="running"><span>Running</span> ${esc(str(p.running.words) || str(p.running.version))}</p>`;
+  return "";
+}
+
+/** The open confirm card, or the result of the action just taken. ctx.whenCard: { open, draft, pending, error, result, link }. */
+function whenCardHtml(p, ctx, stageName) {
+  const w = isObj(ctx.whenCard) ? ctx.whenCard : null;
+  if (!w) return "";
+  if (isObj(w.result)) return whenResultHtml(w.result, { stageName, link: w.link ?? null });
+  const item = list(p?.when_needed).find((x) => isObj(x) && x.stage === w.open);
+  return item ? whenConfirmHtml(item, w) : "";
+}
+
+/** What a need's input holds before the person changes it. */
+const needStart = (n, draft) => (isObj(draft) && draft[n.name] !== undefined ? String(draft[n.name]) : str(n.default));
+
+/**
+ * The confirm card for a when-needed action (0.4.4): what will happen in the
+ * stage's words and the service's steps, for Reconfigure what changes, what
+ * can't be undone, the needs to fill, who may act, and the confirm button,
+ * offered only when the person may. ctx: { draft, pending, error }.
+ */
+export function whenConfirmHtml(item, ctx = {}) {
+  if (!isObj(item) || !isObj(item.confirm) || !isObj(item.action)) return "";
+  const c = item.confirm;
+  const stage = str(item.stage);
+  const steps = words(c.steps);
+  const changes = list(c.changes).filter(isObj);
+  const cannot = words(c.cannot_undo);
+  const needs = list(item.action.needs).filter((n) => isObj(n) && str(n.name));
+  const id = (n) => `wn-${stage}-${n}`;
+  const inputs = needs.map((n) => {
+    const v = needStart(n, ctx.draft);
+    const label = `<label for="${esc(id(n.name))}">${esc(str(n.label))}${n.optional ? " <small>(optional)</small>" : ""}</label>`;
+    if (n.kind === "choice") return `<div class="sf">${label}<select id="${esc(id(n.name))}" name="${esc(n.name)}">${words(n.options).map((o) => `<option${o === v ? " selected" : ""}>${esc(o)}</option>`).join("")}</select></div>`;
+    if (n.kind === "words") return `<div class="sf wide">${label}<textarea id="${esc(id(n.name))}" name="${esc(n.name)}" rows="2">${esc(v)}</textarea></div>`;
+    return `<div class="sf">${label}<input id="${esc(id(n.name))}" name="${esc(n.name)}" type="text" value="${esc(v)}" autocomplete="off"></div>`;
+  }).join("");
+  const pending = ctx.pending === stage;
+  const may = c.you_may === true;
+  const label = str(item.action.label) || str(item.name) || stage;
+  return `<form class="gcard wconfirm${stage === "rollback" || stage === "decommission" ? " grave" : ""}" data-when-form="${esc(stage)}" aria-label="${esc(str(c.title) || label)}">
+    <h4>${esc(str(c.title) || `${label}?`)}</h4>
+    <p class="wlab">What will happen</p><p>${esc(str(c.will))}</p>${steps.length ? `<ul class="wsteps">${steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+    ${changes.length ? `<p class="wlab">What changes</p><ul class="wsteps">${changes.map((x) => `<li><b>${esc(str(x.name) || str(x.stage))}</b> ${esc(str(x.from))} → ${esc(str(x.to))}</li>`).join("")}</ul>` : ""}
+    ${cannot.length ? `<p class="wlab">What can't be undone</p><ul class="wsteps undo">${cannot.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+    ${inputs ? `<div class="sgrid">${inputs}</div>` : ""}
+    <p class="whomay"><span>Who may act</span> ${esc(str(c.who_may))}</p>
+    ${ctx.error ? `<div class="err" role="alert">${esc(ctx.error)}</div>` : ""}
+    <div class="acts">${may ? `<button class="btn p" type="submit"${pending ? " disabled" : ""}>${esc(pending ? "Running…" : `Confirm: ${label}`)}</button>` : `<button class="btn p" type="button" disabled title="${esc(str(c.who_may))}">Confirm: ${esc(label)}</button>`}<button class="btn" type="button" data-when-cancel="${esc(stage)}"${pending ? " disabled" : ""}>Cancel</button></div>
+    ${str(c.done_when) ? `<p class="dw"><span>Done when</span>${esc(str(c.done_when))}</p>` : ""}
+  </form>`;
+}
+
+/** What a when-needed action did: its words, what can't be undone, and Impact's report. links: (path) => href for a file it handed back. */
+export function whenResultHtml(result, { stageName = (x) => x, link = null } = {}) {
+  if (!isObj(result)) return "";
+  const ok = result.ok === true;
+  const cannot = words(result.cannot_undo);
+  const files = list(result.files).filter((f) => isObj(f) && str(f.path));
+  const report = str(result.report);
+  return `<div class="gcard wresult ${ok ? "done" : "bad"}" role="status">
+    <h4>${esc(`${stageName(str(result.stage))}: ${ok ? "done" : "not done"}`)}</h4><p>${esc(str(result.words))}</p>
+    ${cannot.length ? `<p class="wlab">What can't be undone</p><ul class="wsteps undo">${cannot.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>` : ""}
+    ${files.length && link ? `<p>${files.map((f) => `<a href="${esc(link(f.path))}" target="_blank" rel="noopener">${esc(f.path)}</a>`).join(" ")}</p>` : ""}
+    ${report ? `<details class="wreport" open><summary>The report</summary><pre>${esc(report)}</pre></details>` : ""}
+    <div class="acts"><button class="linkbtn" type="button" data-when-cancel="">Close</button></div>
+  </div>`;
 }
 
 // ---------- the boss (lifecycle API 0.4.1) ----------
@@ -721,11 +927,11 @@ export function productPageHtml(p, ctx = {}, tab = null) {
   const want = tab ?? (boss ? "boss" : "versions");
   const on = tabs.some((t) => t.id === want && !t.disabled) ? want : "versions";
   const body = on === "boss" ? `<div class="thread" id="thread">${bossChatHtml(boss.messages, { ...ctx, ...boss, stageName, when })}</div>`
-    : on === "setup" ? setupHtml(p.setup, { stageName, roleName: ctx.roleName, chooseHref: ctx.chooseHref })
+    : on === "setup" ? setupHtml(p.setup, { stageName, roleName: ctx.roleName, chooseHref: ctx.chooseHref, ...(isObj(ctx.setup) ? ctx.setup : {}), readOnly: !ctx.chooseHref, bossOffered: Boolean(boss) })
     : on === "features" ? featuresMatrixHtml(feats.answer, { ...feats, when, filter: true })
     : on === "plan" ? (plan || `<p class="gw">No run plan yet. Deploy makes it.</p>`)
       : on === "activity" ? (acts ? `<ul class="feed">${acts}</ul>` : `<p class="gw">Nothing yet.</p>`)
         : (vers ? `<ul class="vers">${vers}</ul>` : `<p class="gw">No builds yet.</p>`);
-  return `<section class="thread-wrap work product"><div class="whead"><div class="hd"><div><h1>${esc(str(p?.name))}</h1>${ctx.does ? `<p class="sub">${esc(ctx.does)}</p>` : ""}${ctx.extra ?? ""}${whenNeededHtml(p?.when_needed, { stageName, pending: ctx.whenPending ?? null })}</div></div>${tabsHtml(tabs, on, { attr: "ptab", label: "Product" })}</div>
+  return `<section class="thread-wrap work product"><div class="whead"><div class="hd"><div><h1>${esc(str(p?.name))}</h1>${ctx.does ? `<p class="sub">${esc(ctx.does)}</p>` : ""}${ctx.extra ?? ""}${runningHtml(p)}${whenNeededHtml(p?.when_needed, { stageName, pending: ctx.whenPending ?? null })}${whenCardHtml(p, ctx, stageName)}</div></div>${tabsHtml(tabs, on, { attr: "ptab", label: "Product" })}</div>
     <div class="wbody${on === "boss" ? " tab-chat" : ""}" id="tabbody"><div class="err" role="alert">${esc(ctx.error ?? "")}</div><div class="ptab ${on}">${body}</div></div>${on === "boss" ? bossComposerHtml(boss.composer ?? {}) : ""}</section>`;
 }
