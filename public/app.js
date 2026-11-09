@@ -1465,6 +1465,11 @@ document.addEventListener("toggle", (e) => {
 
 document.addEventListener("input", (e) => {
   if (e.target.id === "say") state.sayDraft = e.target.value;
+  // What is typed in a confirm card or a setup card is kept, so a redraw does not lose it (0.4.4).
+  const wf = e.target.closest?.("form[data-when-form]");
+  if (wf && state.whenCard?.draft && e.target.name) state.whenCard.draft[e.target.name] = e.target.value;
+  const sf = e.target.closest?.("form[data-setup]");
+  if (sf) state.setupUi.drafts[sf.dataset.setup] = setupFormDraft(sf);
 });
 
 document.addEventListener("change", (e) => {
