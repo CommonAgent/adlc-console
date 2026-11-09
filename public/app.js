@@ -12,8 +12,9 @@ import { boardHtml } from "./board.js";
 import { dashboardHtml, span } from "./dashboard.js";
 import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyticsPath } from "./analytics.js";
 import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
+import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
-import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -342,7 +343,9 @@ async function loadHistory(holder, name, id) {
 // An answer to a feature proposal: Approve feature, Not now, or Ask the approvers. The chat it sits in is
 // read again, so the proposal shows its answer, and so are the features.
 async function answerFeature(d) {
-  const go1 = featureDecision(d);
+  // This is a bug (0.4.6) carries what the person typed beside it, for the fix item.
+  const typed = d.feat === "bug" ? [...document.querySelectorAll("[data-feat-words]")].find((el) => el.dataset.featWords === d.featProposal)?.value ?? "" : "";
+  const go1 = featureDecision({ ...d, featWords: typed });
   if (!go1 || state.featPending) return;
   const onProduct = state.view === "product";
   state.featPending = `${d.featProposal} ${d.feat}`;
@@ -799,7 +802,7 @@ function draw() {
   $("main").innerHTML = `
     <section class="thread-wrap work">
       <div class="whead">
-        <div class="hd"><div><h1>${esc(ws.name)}${x ? `<span>Step ${x.number} of ${spine.length}</span>` : ""}</h1><p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p></div></div>
+        <div class="hd"><div><h1>${esc(ws.name)}${x ? `<span>${esc(stepLabel(x, spine))}</span>` : ""}</h1><p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p></div></div>
         <div class="err" role="alert">${esc(state.error)}</div>
         ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
         ${gate ? `<div class="pin">${gate}</div>` : ""}
@@ -1013,20 +1016,21 @@ function drawKey() {
   $("stage").innerHTML = "";
 }
 
+/** What the New build form holds now, by field; a field the form does not show is left out. */
+function newFormValues() {
+  const out = {};
+  for (const [k, id] of [["does", "n-does"], ["refuses", "n-refuses"], ["more", "n-more"], ["name", "n-name"], ["project", "n-project"], ["repository", "n-repo"], ["commit", "n-commit"], ["folder", "n-folder"]]) {
+    const el = $(id);
+    if (el) out[k] = el.value;
+  }
+  return out;
+}
+
 function drawNew() {
   drawTop();
-  const kept = state.newDraft ?? {};
   layout("solo");
-  $("main").innerHTML = `<div class="err" role="alert">${esc(state.error)}</div>
-    <h1>New build</h1><p class="does">Say what the agent should do, in your own words. The service takes it from there, and comes back to you at the gates that are yours.</p>
-    <form class="form" id="new-form">
-      <label for="n-does">What should it do?<textarea id="n-does" required placeholder="Say whether a sentence is a palindrome, ignoring spaces, punctuation and letter case.">${esc(kept.does ?? "")}</textarea></label>
-      <label for="n-refuses">What should it refuse to do? <span>Optional</span><textarea id="n-refuses">${esc(kept.refuses ?? "")}</textarea></label>
-      <label for="n-more">Anything else it should know <span>Optional</span><textarea id="n-more">${esc(kept.more ?? "")}</textarea></label>
-      <label for="n-name">Its name <span>Optional. Lowercase words joined by hyphens, such as palindrome-judge.</span><input type="text" id="n-name" value="${esc(kept.name ?? "")}" autocomplete="off" spellcheck="false"></label>
-      <label for="n-project">Project <span>Optional. The build follows the lifecycle chosen for this project.</span><input type="text" id="n-project" value="${esc(kept.project ?? "")}" autocomplete="off" spellcheck="false"></label>
-      <div class="acts tight"><button class="btn p" type="submit"${state.pending === "new" ? " disabled" : ""}>${state.pending === "new" ? "Starting…" : "Start the build"}</button><a class="btn" href="#/">Cancel</a></div>
-    </form>`;
+  // What the person brings (stages.json 1.4.0 starting_points): an idea, or existing code (0.4.6).
+  $("main").innerHTML = newBuildHtml(state.newDraft ?? {}, { from: state.newFrom ?? "idea", pending: state.pending === "new", error: state.error });
   $("stage").innerHTML = "";
 }
 
@@ -1390,6 +1394,9 @@ document.addEventListener("click", async (e) => {
   const ptab = t.closest("[data-ptab]");
   if (ptab) { state.ptab = ptab.dataset.ptab; return drawProduct(); }
   // Features (0.4.3): an answer to a proposal, a cell that opens its artifact at the feature, a row that opens its history.
+  // New build: what the person brings, an idea or existing code (0.4.6). What they wrote is kept across the switch.
+  const startFrom = t.closest("[data-start-from]");
+  if (startFrom) { state.newDraft = { ...(state.newDraft ?? {}), ...newFormValues() }; state.newFrom = startFrom.dataset.startFrom; state.error = ""; return drawNew(); }
   const featBtn = t.closest("[data-feat]");
   if (featBtn) return answerFeature(featBtn.dataset);
   // 0.4.5: Approve all, and List this product's features.
@@ -1572,14 +1579,12 @@ document.addEventListener("submit", async (e) => {
     return;
   }
   if (f.id === "new-form") {
-    const body = { does: $("n-does").value.trim() };
-    for (const [k, id] of [["refuses", "n-refuses"], ["more", "n-more"], ["name", "n-name"], ["project", "n-project"]]) {
-      const v = $(id).value.trim();
-      if (v) body[k] = v;
-    }
-    state.pending = "new";
     // What the person wrote stays in the form if the service refuses the start.
-    state.newDraft = { does: $("n-does").value, refuses: $("n-refuses").value, more: $("n-more").value, name: $("n-name").value, project: $("n-project").value };
+    state.newDraft = newFormValues();
+    const from = f.dataset.from ?? "idea";
+    const { body, error } = newBuildBody(state.newDraft, from);
+    if (error) { state.error = error; return drawNew(); }
+    state.pending = "new";
     try {
       const r = await api("/builds", { method: "POST", body });
       state.pending = null;

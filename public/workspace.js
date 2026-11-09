@@ -40,9 +40,26 @@ export function cadenceOf(stage, defs = new Map()) {
   return ["every_build", "setup", "when_needed"].includes(c) ? c : "every_build";
 }
 
-/** The build's steps: the every-build stages it runs, in the build's order. Setup and when-needed stages are the product's, not a build's. */
+/** Reverse engineering, stage 0 (stages.json 1.4.0): when needed, and a step of the build that ran it. */
+export const STAGE_ZERO = "reverse-engineering";
+
+/** Whether the build ran Reverse engineering: a build started from existing code, or one that ran it on drift (0.4.6). */
+export function ranStageZero(s) {
+  return isObj(s) && s.stage === STAGE_ZERO && (!["not_offered", "not_used", "not_started", "not_applicable"].includes(s.state) || Number(s.runs) > 0);
+}
+
+/** The build's steps: the every-build stages it runs, in the build's order, after Reverse engineering when the build ran it. Setup and the other when-needed stages are the product's, not a build's. */
 export function stepStages(build, defs = new Map()) {
-  return usedStages(build).filter((s) => cadenceOf(s, defs) === "every_build");
+  return usedStages(build).filter((s) => cadenceOf(s, defs) === "every_build" || ranStageZero(s));
+}
+
+/** A step's number as it is shown: Reverse engineering reads "00", the rest 1, 2, 3 and on. */
+export const stepNumber = (x) => (x?.number === 0 ? "00" : String(x?.number ?? ""));
+
+/** "Step 3 of 11", counting the every-build steps; Reverse engineering is "Step 00 of 11". */
+export function stepLabel(x, spine) {
+  const n = list(spine).filter((y) => y.number !== 0).length;
+  return `Step ${stepNumber(x)} of ${n}`;
 }
 
 /** The stage the build is at now, or null when every step it runs is done. */
@@ -105,6 +122,7 @@ export function steps(build, { defs = new Map(), roleDefs = [], when = (x) => x 
   const used = stepStages(build, defs);
   const now = currentStage(build, defs);
   let firstNext = true;
+  const zero = used.some((s) => s.stage === STAGE_ZERO) ? 1 : 0;
   return used.map((s, i) => {
     const def = defs.get(s.stage) ?? {};
     const mark = s.state === "done" ? "done" : s === now ? "now" : "next";
@@ -125,7 +143,7 @@ export function steps(build, { defs = new Map(), roleDefs = [], when = (x) => x 
     }
     // 0.4.5: how many of the product's features the stage covers, such as "4 of 5 features".
     const count = isObj(s.features) ? str(s.features.words) : "";
-    return { stage: s.stage, name: def.name ?? cap(s.stage), number: i + 1, mark, state: s.state, line, ...(count ? { count } : {}) };
+    return { stage: s.stage, name: def.name ?? cap(s.stage), number: s.stage === STAGE_ZERO ? 0 : i + 1 - zero, mark, state: s.state, line, ...(count ? { count } : {}) };
   });
 }
 
@@ -135,7 +153,7 @@ export function stepHeader(build, spine) {
   if (at < 0) return { text: str(build?.summary) || `Done · ${spine.length} ${spine.length === 1 ? "step" : "steps"}`, tone: "ok" };
   const s = spine[at];
   const state = { waiting_on_you: "waiting on you", working: "working", stopped: "stopped", refused: "refused", not_bound: "nobody holds it" }[s.state] ?? "next";
-  return { text: `Step ${at + 1} of ${spine.length} · ${state}`, tone: s.state === "waiting_on_you" || s.state === "not_bound" ? "wait" : s.state === "refused" || s.state === "stopped" ? "bad" : "" };
+  return { text: `${stepLabel(s, spine)} · ${state}`, tone: s.state === "waiting_on_you" || s.state === "not_bound" ? "wait" : s.state === "refused" || s.state === "stopped" ? "bad" : "" };
 }
 
 /** The product at the top of the menu, then its build's stages: selecting one opens it. */
@@ -143,9 +161,9 @@ export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, pro
   const head = stepHeader(build, spine);
   const items = spine.map((x) => {
     const on = x.stage === sel;
-    const dot = x.mark === "done" ? "✓" : String(x.number);
+    const dot = x.mark === "done" ? "✓" : stepNumber(x);
     const count = x.count ? `<em class="fct" title="Features at ${esc(x.name)}">${esc(x.count)}</em>` : "";
-    return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${x.number}. ${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(x.name)}${count}</span><small>${esc(x.line)}</small></a>`;
+    return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${stepNumber(x)}. ${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(x.name)}${count}</span><small>${esc(x.line)}</small></a>`;
   }).join("");
   return `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its versions, run plan and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b><small class="${head.tone}">${esc(head.text)}</small></a><div class="spine">${items}</div>`;
 }
@@ -446,9 +464,43 @@ export function artifactBodyHtml(a, { stageName = (x) => x, feature = null } = {
       ]);
     case "run_plan":
       return runPlanHtml(s, { stageName });
+    case "as_built":
+      return asBuiltHtml(s);
     default:
       return str(s.words) ? `<p>${esc(str(s.words))}</p>` : "";
   }
+}
+
+/** The as-built record's parts, in the order the lifecycle API gives them (0.4.6). */
+export const AS_BUILT_PARTS = ["behaviors", "architecture", "interfaces", "dependencies", "tests_and_gaps"];
+const PART_NAME = { behaviors: "Behaviors", architecture: "Architecture as built", interfaces: "Interfaces", dependencies: "Dependencies", tests_and_gaps: "Existing tests and gaps" };
+const short7 = (c) => (/^[0-9a-f]{12,}$/i.test(c) ? c.slice(0, 7) : c);
+
+/** The source line of an as-built record: what it describes, at which commit, whether the code was run, and why it was made. */
+export function asBuiltSource(s) {
+  const src = isObj(s?.source) ? s.source : {};
+  const repo = str(src.repository);
+  const commit = str(src.commit);
+  const read = src.ran === true ? "read and run" : "read only, not run";
+  const why = s?.trigger === "drift"
+    ? `On drift: only what changed since ${str(s.since) ? short7(str(s.since)) : "the last record"}.`
+    : "On adoption: the codebase as it was taken on.";
+  return `${repo || "The codebase"}${commit ? ` at ${short7(commit)}` : ""}, ${read}. ${why}`;
+}
+
+/** The as-built record (kind as_built, 0.4.6): its source, then the five parts in order, each with its count, words and items. */
+export function asBuiltHtml(s) {
+  const parts = list(s?.parts).filter(isObj);
+  const byPart = new Map(parts.map((p) => [p.part, p]));
+  const order = [...AS_BUILT_PARTS.filter((id) => byPart.has(id)), ...parts.map((p) => p.part).filter((id) => !AS_BUILT_PARTS.includes(id))];
+  const body = order.map((id) => {
+    const p = byPart.get(id);
+    const items = words(p.items);
+    const name = str(p.name) || PART_NAME[id] || cap(String(id).replace(/_/g, " "));
+    const count = Number.isInteger(p.count) ? ` <span class="ct">${p.count}</span>` : "";
+    return `<section class="abp" data-part="${esc(id)}"><h4>${esc(name)}${count}</h4>${str(p.words) ? `<p>${esc(str(p.words))}</p>` : ""}${items.length ? `<ul>${items.map((x) => `<li${/^gap\b/i.test(x) ? ' class="gap"' : ""}>${esc(x)}</li>`).join("")}</ul>` : ""}</section>`;
+  }).join("");
+  return `<p class="absrc">${esc(asBuiltSource(s))}</p>${body}`;
 }
 
 /** A run plan: who runs each stage once the agent is installed, and what it reads. */
@@ -599,7 +651,7 @@ export function setupHtml(items, ctx = {}) {
  * can run one, and then it takes the build's own action (data-when-act); every
  * other is disabled, with the service's words for why. No list, no buttons.
  */
-export function whenNeededHtml(items, { stageName = (x) => x, pending = null } = {}) {
+export function whenNeededHtml(items, { stageName = (x) => x, pending = null, source = null } = {}) {
   const rows = list(items).filter((x) => isObj(x) && str(x.stage));
   if (!rows.length) return "";
   const can = (x) => x.can_run === true && isObj(x.action) && str(x.action.build) && str(x.action.name);
@@ -609,7 +661,13 @@ export function whenNeededHtml(items, { stageName = (x) => x, pending = null } =
     : `<button class="btn" type="button" disabled title="${esc(str(x.why_not))}" aria-describedby="wn-${esc(str(x.stage))}">${esc(name(x))}</button>`)).join("");
   const off = rows.filter((x) => !can(x));
   const why = off.length ? `<details class="wnwhy"><summary>Why ${off.length === rows.length ? "they are" : off.length === 1 ? "one is" : "some are"} off</summary><dl>${off.map((x) => `<dt>${esc(name(x))}</dt><dd id="wn-${esc(str(x.stage))}">${esc(str(x.why_not) || "The service does not say.")}</dd>`).join("")}</dl></details>` : "";
-  return `<div class="wneed" role="group" aria-label="When needed"><span class="wl">When needed</span>${btns}</div>${why}`;
+  return `<div class="wneed" role="group" aria-label="When needed"><span class="wl">When needed</span>${btns}</div>${sourceHtml(source)}${why}`;
+}
+
+/** The product's codebase (0.4.6): the last commit any build knew, and whether the code changed since, beside Reverse engineering. */
+export function sourceHtml(src) {
+  if (!isObj(src) || !str(src.words)) return "";
+  return `<p class="srcw${src.drift === true ? " drift" : ""}" role="note"><b>Reverse engineering:</b> ${esc(str(src.words))}</p>`;
 }
 
 /** The when-needed action a button takes: { build, name }, or null when the service does not say it can run it now. */
@@ -937,6 +995,6 @@ export function productPageHtml(p, ctx = {}, tab = null) {
     : on === "plan" ? (plan || `<p class="gw">No run plan yet. Deploy makes it.</p>`)
       : on === "activity" ? (acts ? `<ul class="feed">${acts}</ul>` : `<p class="gw">Nothing yet.</p>`)
         : (vers ? `<ul class="vers">${vers}</ul>` : `<p class="gw">No builds yet.</p>`);
-  return `<section class="thread-wrap work product"><div class="whead"><div class="hd"><div><h1>${esc(str(p?.name))}</h1>${ctx.does ? `<p class="sub">${esc(ctx.does)}</p>` : ""}${ctx.extra ?? ""}${runningHtml(p)}${whenNeededHtml(p?.when_needed, { stageName, pending: ctx.whenPending ?? null })}${whenCardHtml(p, ctx, stageName)}</div></div>${tabsHtml(tabs, on, { attr: "ptab", label: "Product" })}</div>
+  return `<section class="thread-wrap work product"><div class="whead"><div class="hd"><div><h1>${esc(str(p?.name))}</h1>${ctx.does ? `<p class="sub">${esc(ctx.does)}</p>` : ""}${ctx.extra ?? ""}${runningHtml(p)}${whenNeededHtml(p?.when_needed, { stageName, pending: ctx.whenPending ?? null, source: p?.source ?? null })}${whenCardHtml(p, ctx, stageName)}</div></div>${tabsHtml(tabs, on, { attr: "ptab", label: "Product" })}</div>
     <div class="wbody${on === "boss" ? " tab-chat" : ""}" id="tabbody"><div class="err" role="alert">${esc(ctx.error ?? "")}</div><div class="ptab ${on}">${body}</div></div>${on === "boss" ? bossComposerHtml(boss.composer ?? {}) : ""}</section>`;
 }

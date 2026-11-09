@@ -188,7 +188,9 @@ function addedFormHtml(stages, roles, ctx) {
 function rowHtml(s, i, ctx, roles) {
   const used = s.used !== false;
   const own = isAdded(s);
-  const number = ctx.number?.(s.stage) || i + 1;
+  // Reverse engineering is stage 0 (stages.json 1.4.0), so a number of 0 is a number, read as "00".
+  const given = ctx.number?.(s.stage);
+  const number = Number.isInteger(given) ? given : i + 1;
   const ids = Array.isArray(s.roles) ? s.roles : [];
   const roleWords = ctx.roleWords?.(s.stage) || ids.map((id) => roles.get(id)?.name ?? id).join(" · ");
   const fixed = s.can_leave_out === false;

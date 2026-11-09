@@ -8,6 +8,12 @@
 // the spec, the tests, the code, the review and the docs; a cell opens that
 // artifact at that feature, and a row opens the feature's history.
 //
+// From 0.4.6 a feature or proposal may be a behavior of the as-built record
+// (as_built): what existing code does today, found by Reverse engineering. It
+// is answered with Approve feature (the behavior is intended), This is a bug
+// (a fix item is kept, linked to the behavior, and nothing approves it
+// silently) or Drop (it is not kept).
+//
 // Everything here builds HTML from what the service answered and nothing else,
 // so the tests read it without a browser (test/features.test.mjs).
 
@@ -41,6 +47,31 @@ export function approverWords(approvers) {
 
 const when0 = (x) => x;
 
+/** The as-built mark of a proposal or a feature (0.4.6), or null. */
+export const asBuiltOf = (x) => (isObj(x?.as_built) && str(x.as_built.behavior) ? x.as_built : null);
+
+const CHANGE_WORD = { new: "new since the last record", changed: "changed since the last record", removed: "no longer in the code" };
+
+/** "As built" with the behavior's id, what changed on drift, and each line of evidence it stands on. */
+export function asBuiltHtml(ab) {
+  if (!ab) return "";
+  const ev = list(ab.evidence).map(str).filter(Boolean);
+  const change = CHANGE_WORD[ab.change] ? ` · ${CHANGE_WORD[ab.change]}` : "";
+  const what = `Behavior ${str(ab.behavior)}${str(ab.commit) ? ` at ${str(ab.commit).slice(0, 7)}` : ""}${change}`;
+  return `<div class="asb"><p class="asbh"><span class="fb b-asb">As built</span> <small>${esc(what)}</small></p>${ev.length ? `<ul class="asbe">${ev.map((e) => `<li><code>${esc(e)}</code></li>`).join("")}</ul>` : ""}</div>`;
+}
+
+/** What a fix item says: the behavior it fixes, the person's words, and that nothing approved it. */
+export function fixWords(x) {
+  if (!isObj(x)) return "";
+  return `${str(x.feature)} ${str(x.name)}: a bug as built${str(x.words) ? `, "${str(x.words).trim().replace(/[.!?]+$/, "")}"` : ""}. Kept as a proposed fix item${str(x.by) ? ` by ${str(x.by)}` : ""}, never approved by that answer.`;
+}
+
+/** The three answers to a behavior as built, for someone who may approve: Approve feature, This is a bug (with what is wrong) and Drop. */
+function asBuiltButtons(btn, proposal, busy, sm = "") {
+  return `${btn("approve", "Approve feature", true)}<span class="bugw"><input type="text"${sm ? ' class="sm"' : ""} data-feat-words="${esc(proposal)}" placeholder="What is wrong (optional)" aria-label="What is wrong with it, for the fix item (optional)" autocomplete="off"${busy ? " disabled" : ""}>${btn("bug", "This is a bug")}</span>${btn("drop", "Drop")}`;
+}
+
 /**
  * One feature proposal on a reply, with its answer: Approve feature and Not now
  * for someone who may approve; Ask <approver> to approve and Not now for
@@ -53,12 +84,17 @@ export function featureProposalHtml(p, m, { when = when0, pending = null } = {})
   const data = (decision) => `data-feat="${esc(decision)}" data-feat-id="${esc(p.feature)}" data-feat-proposal="${esc(p.proposal)}" data-feat-build="${esc(str(m?.build))}" data-feat-message="${esc(str(m?.id))}"`;
   const busy = pending !== null;
   const btn = (decision, label, main = false) => `<button class="btn${main ? " p" : ""}" type="button" ${data(decision)}${busy ? " disabled" : ""}>${esc(pending === `${p.proposal} ${decision}` ? "Sending…" : label)}</button>`;
-  const head = `<h4><span class="fid">${esc(p.feature)}</span> ${p.change === "changed" ? "Changed feature" : "New feature"}</h4>`;
-  const body = `<p class="fname"><b>${esc(str(p.name))}</b>${str(p.offering) ? ` <small>in ${esc(str(p.offering))}</small>` : ""}</p><p class="fdoes">${esc(str(p.does))}</p>${isObj(p.was) ? `<p class="fwas"><span>Was</span> ${esc(str(p.was.name))}: ${esc(str(p.was.does))}</p>` : ""}`;
+  const ab = asBuiltOf(p);
+  const head = `<h4><span class="fid">${esc(p.feature)}</span> ${ab ? "Behavior as built" : p.change === "changed" ? "Changed feature" : "New feature"}</h4>`;
+  const body = `<p class="fname"><b>${esc(str(p.name))}</b>${str(p.offering) ? ` <small>in ${esc(str(p.offering))}</small>` : ""}</p><p class="fdoes">${esc(str(p.does))}</p>${isObj(p.was) ? `<p class="fwas"><span>Was</span> ${esc(str(p.was.name))}: ${esc(str(p.was.does))}</p>` : ""}${asBuiltHtml(ab)}`;
   const at = (x) => (x?.at && when(x.at) ? ` · ${when(x.at)}` : "");
+  const asked = isObj(p.asked) ? `<p class="hint">${esc(`${p.asked.by ?? "Someone"} asked ${approverWords(p.asked.to)} to approve it${at(p.asked)}.`)}</p>` : "";
+  // 0.4.6: a behavior as built, answered bug or dropped, or waiting on someone who may answer it.
+  if (p.state === "bug") return `<div class="gcard feat later">${head}${body}<div class="acts"><span class="btn used">${esc(`This is a bug${p.answered?.by ? `, said ${p.answered.by}` : ""}${at(p.answered)}`)}</span></div><p class="hint">${esc(isObj(p.fix) ? fixWords(p.fix) : "Kept as a proposed fix item, never approved by that answer.")}</p></div>`;
+  if (p.state === "dropped") return `<div class="gcard feat later">${head}${body}<div class="acts"><span class="btn used">${esc(`Dropped${p.answered?.by ? ` by ${p.answered.by}` : ""}${at(p.answered)}`)}</span></div><p class="hint">Not kept: the statement does not carry it, and no test pins it.</p></div>`;
+  if (ab && p.you_may_approve && ["open", "asked", "not_now"].includes(p.state)) return `<div class="gcard prop feat asbuilt">${head}${body}<div class="acts">${asBuiltButtons(btn, p.proposal, busy)}</div>${asked}<p class="hint">This is what the code does today. Approve it if it is intended, so a test pins it; say it is a bug to keep a fix item for it; or drop it.</p></div>`;
   if (p.state === "approved") return `<div class="gcard done feat">${head}${body}<div class="acts"><span class="btn used">${esc(`Approved${p.answered?.by ? ` by ${p.answered.by}` : ""}${at(p.answered)}`)}</span></div></div>`;
   if (p.state === "replaced") return `<div class="gcard feat">${head}${body}<p class="hint">A newer proposal of ${esc(p.feature)} replaced this one.</p></div>`;
-  const asked = isObj(p.asked) ? `<p class="hint">${esc(`${p.asked.by ?? "Someone"} asked ${approverWords(p.asked.to)} to approve it${at(p.asked)}.`)}</p>` : "";
   if (p.state === "not_now") {
     const later = `<p class="hint">${esc(`Not now${p.answered?.by ? `, said ${p.answered.by}` : ""}${at(p.answered)}: it stays proposed, in the backlog.`)}</p>`;
     return `<div class="gcard feat later">${head}${body}${later}<div class="acts">${p.you_may_approve ? btn("approve", "Approve feature") : btn("ask", `Ask ${approverWords(p.approvers)} to approve`)}</div></div>`;
@@ -75,10 +111,12 @@ export function featureProposalsHtml(m, ctx = {}) {
 
 /** What the person answers a feature with: the route's path and body, from a button's data. */
 export function featureDecision(d) {
-  if (!isObj(d) || !["approve", "not_now", "ask"].includes(d.feat) || !str(d.featId) || !str(d.featProposal) || !str(d.featBuild)) return null;
+  if (!isObj(d) || !["approve", "not_now", "ask", "bug", "drop"].includes(d.feat) || !str(d.featId) || !str(d.featProposal) || !str(d.featBuild)) return null;
+  // 0.4.6: This is a bug carries what is wrong, when the person said it, for the fix item.
+  const said = d.feat === "bug" ? str(d.featWords).trim() : "";
   return {
     path: `/builds/${encodeURIComponent(d.featBuild)}/features/${encodeURIComponent(d.featId)}/${d.feat}`,
-    body: { proposal: d.featProposal, ...(str(d.featMessage) ? { message: d.featMessage } : {}) },
+    body: { proposal: d.featProposal, ...(str(d.featMessage) ? { message: d.featMessage } : {}), ...(said ? { words: said } : {}) },
   };
 }
 
@@ -139,17 +177,17 @@ export function featuresMatrixHtml(m, ctx = {}) {
   };
   const tr = (r) => {
     const badge = BADGE_WORD[r.badge] ? `<span class="fb b-${esc(r.badge)}">${BADGE_WORD[r.badge]}</span>` : "";
-    const state = r.state === "proposed" ? `<span class="fb b-prop">${r.backlog ? "Not now" : "Proposed"}</span>` : "";
+    const state = r.state !== "proposed" ? "" : isObj(r.fix) ? `<span class="fb b-bug">A bug</span>` : isObj(r.dropped) ? `<span class="fb b-drop">Dropped</span>` : `<span class="fb b-prop">${r.backlog ? "Not now" : asBuiltOf(r) ? "As built" : "Proposed"}</span>`;
     const on = r.id === ctx.selected;
     return `<tr class="${on ? "sel" : ""}"><th scope="row"><button type="button" class="frow" data-feat-row="${esc(r.id)}" aria-expanded="${on}" title="${esc(str(r.does))}"><span class="fid">${esc(r.id)}</span><span class="fn">${esc(str(r.name))}</span></button>${badge}${state}${str(r.offering) ? `<small>${esc(str(r.offering))}</small>` : ""}</th>${FEATURE_COLUMNS.map(([k]) => cell(r, k)).join("")}</tr>`;
   };
   const table = `<div class="fmx-scroll"><table class="fmx"><thead><tr><th scope="col">Feature</th>${FEATURE_COLUMNS.map(([, h]) => `<th scope="col">${h}</th>`).join("")}</tr></thead><tbody>${rows.map(tr).join("")}</tbody></table></div>`;
   const legend = `<p class="flegend">${Object.entries(CELL_WORD).map(([k, w]) => `<span class="fc ${k}"><span class="cs" aria-hidden="true"></span>${w}</span>`).join("")}</p>`;
   const hist = ctx.selected ? featureHistoryHtml(ctx.history, { when: ctx.when ?? when0, stageName: ctx.stageName, product: str(m.product), error: ctx.historyError }) : "";
-  return `${head}${table}${legend}${hist}`;
+  return `${head}${table}${legend}${fixesHtml(m.fixes)}${hist}`;
 }
 
-const KIND_WORD = { proposed: "Proposed", approved: "Approved", not_now: "Not now", asked: "Asked", spec: "Spec", tests: "Tests", code: "Code", review: "Review", docs: "Docs" };
+const KIND_WORD = { proposed: "Proposed", approved: "Approved", not_now: "Not now", asked: "Asked", bug: "A bug", dropped: "Dropped", spec: "Spec", tests: "Tests", code: "Code", review: "Review", docs: "Docs" };
 
 /** Where a history entry's link goes: the chat it was said in, or the artifact at the feature. */
 export function historyHref(e, product) {
@@ -193,6 +231,10 @@ export function cellTarget(d) {
 export function featureStateOf(r) {
   if (!isObj(r)) return { key: "proposed", label: "Proposed" };
   const waiting = isObj(r.pending) && ["open", "asked"].includes(r.pending.state);
+  // 0.4.6: a behavior as built, said to be a bug, dropped, or waiting for an answer.
+  if (isObj(r.fix) && r.state !== "approved") return { key: "bug", label: "A bug: fix item kept" };
+  if (isObj(r.dropped) && r.state !== "approved") return { key: "dropped", label: "Dropped" };
+  if (asBuiltOf(r) && waiting && r.state !== "approved") return { key: "as_built", label: "As built" };
   if (r.state !== "approved" && r.backlog) return { key: "not_now", label: "Not now" };
   if (r.state === "approved" && waiting && r.pending.change === "changed") return { key: "changed", label: "Change proposed" };
   if (r.state === "approved" && r.badge === "changed") return { key: "changed", label: "Changed in this version" };
@@ -217,6 +259,14 @@ export function approveAllRequest(d) {
   const proposals = d.featAll.split(" ").filter(Boolean);
   if (!proposals.length) return null;
   return { path: `/builds/${encodeURIComponent(d.featBuild)}/features/approve_all`, body: { proposals, ...(str(d.featMessage) ? { message: d.featMessage } : {}) } };
+}
+
+/** The fix items the product keeps (0.4.6): behaviors as built the person said are bugs, each still only proposed. */
+export function fixesHtml(fixes) {
+  const xs = list(fixes).filter((x) => isObj(x) && str(x.feature));
+  if (!xs.length) return "";
+  const li = (x) => `<li><span class="fid">${esc(str(x.feature))}</span> <b>${esc(str(x.name))}</b>: ${esc(str(x.does))}${str(x.words) ? ` <span class="fixw">${esc(`"${str(x.words)}"`)}</span>` : ""} <small>${esc(`behavior ${str(x.behavior)}${str(x.by) ? `, by ${str(x.by)}` : ""}`)}</small></li>`;
+  return `<div class="fixes"><p class="gl">Fix items, proposed</p><ul>${xs.map(li).join("")}</ul><p class="hint">Each waits to be taken up through Requirements, like any other change. Nothing approves a fix item silently.</p></div>`;
 }
 
 /**
@@ -245,7 +295,7 @@ export function requirementsFeaturesHtml(m, ctx = {}) {
   const froms = [...new Set(rows.filter((r) => ids.includes(str(r.pending?.proposal))).map((r) => str(r.from?.message)).filter(Boolean))];
   const msg = froms.length === 1 ? froms[0] : "";
   const all = ids.length > 1 ? `<button class="btn p" type="button" data-feat-all="${esc(ids.join(" "))}" data-feat-build="${esc(str(m.build))}"${msg ? ` data-feat-message="${esc(msg)}"` : ""}${busy ? " disabled" : ""}>${ctx.allPending ? "Approving…" : `Approve all ${ids.length}`}</button>` : "";
-  const sum = [`${rows.length} ${rows.length === 1 ? "feature" : "features"} in ${esc(str(m.version))}`, n("approved") + n("changed") ? `${n("approved") + n("changed")} approved` : "", n("proposed") ? `${n("proposed")} proposed` : "", n("changed") ? `${n("changed")} changed` : "", n("not_now") ? `${n("not_now")} not now` : ""].filter(Boolean).join(" · ");
+  const sum = [`${rows.length} ${rows.length === 1 ? "feature" : "features"} in ${esc(str(m.version))}`, n("approved") + n("changed") ? `${n("approved") + n("changed")} approved` : "", n("proposed") ? `${n("proposed")} proposed` : "", n("changed") ? `${n("changed")} changed` : "", n("not_now") ? `${n("not_now")} not now` : "", n("as_built") ? `${n("as_built")} as built, to answer` : "", n("bug") ? `${n("bug")} ${n("bug") === 1 ? "bug" : "bugs"}` : "", n("dropped") ? `${n("dropped")} dropped` : ""].filter(Boolean).join(" · ");
   const item = (r) => {
     const st = featureStateOf(r);
     const p = isObj(r.pending) ? r.pending : null;
@@ -255,18 +305,22 @@ export function requirementsFeaturesHtml(m, ctx = {}) {
       const build = str(r.from?.build) || str(m.build);
       const data = (decision) => `data-feat="${esc(decision)}" data-feat-id="${esc(r.id)}" data-feat-proposal="${esc(str(p.proposal))}" data-feat-build="${esc(build)}" data-feat-message="${esc(str(r.from?.message))}"`;
       const btn = (decision, label, main = false) => `<button class="btn sm${main ? " p" : ""}" type="button" ${data(decision)}${busy ? " disabled" : ""}>${esc(ctx.pending === `${p.proposal} ${decision}` ? "Sending…" : label)}</button>`;
-      if (p.you_may_approve) btns = `${btn("approve", "Approve feature", true)}${p.state === "not_now" ? "" : btn("not_now", "Not now")}`;
+      if (p.you_may_approve && asBuiltOf(p)) btns = asBuiltButtons(btn, str(p.proposal), busy, "sm");
+      else if (p.you_may_approve) btns = `${btn("approve", "Approve feature", true)}${p.state === "not_now" ? "" : btn("not_now", "Not now")}`;
       else if (p.state === "asked") btns = `<span class="btn sm used">${esc(`Waiting on ${approverWords(p.asked?.to ?? p.approvers)}`)}</span>`;
       else btns = `${btn("ask", `Ask ${approverWords(p.approvers)} to approve`, true)}${p.state === "not_now" ? "" : btn("not_now", "Not now")}`;
     }
     const was = p?.change === "changed" && isObj(p.was) ? `<p class="fwas"><span>Was</span> ${esc(str(p.was.name))}: ${esc(str(p.was.does))}</p>` : "";
     const proposedWords = p && r.state === "approved" && p.change === "changed" && p.state !== "approved" ? `<p class="fnew"><span>Proposed</span> ${esc(str(p.name))}: ${esc(str(p.does))}</p>` : "";
     const tests = Array.isArray(r.tests) ? `<span class="ft">${r.tests.length ? `${r.tests.length} ${r.tests.length === 1 ? "test" : "tests"}` : "no test yet"}</span>` : "";
-    return `<li class="rf ${esc(st.key)}"><div class="rfh"><span class="fid">${esc(r.id)}</span><b class="fn">${esc(str(r.name))}</b><span class="fb s-${esc(st.key)}">${esc(st.label)}</span>${str(r.offering) ? `<small>${esc(str(r.offering))}</small>` : ""}</div><p class="fdoes">${esc(str(r.does))}</p>${proposedWords}${was}<div class="rfm">${href ? `<a href="${esc(href)}">From the message</a>` : ""}${tests}${btns ? `<span class="acts">${btns}</span>` : ""}</div></li>`;
+    const ab = asBuiltOf(p) ?? asBuiltOf(r);
+    const answered = st.key === "bug" ? `<p class="hint">${esc(fixWords(r.fix))}</p>` : st.key === "dropped" ? `<p class="hint">${esc(`Dropped${str(r.dropped.by) ? ` by ${str(r.dropped.by)}` : ""}: not kept, and no test pins it.`)}</p>` : "";
+    return `<li class="rf ${esc(st.key)}"><div class="rfh"><span class="fid">${esc(r.id)}</span><b class="fn">${esc(str(r.name))}</b><span class="fb s-${esc(st.key)}">${esc(st.label)}</span>${str(r.offering) ? `<small>${esc(str(r.offering))}</small>` : ""}</div><p class="fdoes">${esc(str(r.does))}</p>${proposedWords}${was}${asBuiltHtml(ab)}${answered}<div class="rfm">${href ? `<a href="${esc(href)}">From the message</a>` : ""}${tests}${btns ? `<span class="acts">${btns}</span>` : ""}</div></li>`;
   };
   const unmapped = list(m.unmapped).map(str).filter(Boolean);
   const loose = unmapped.length ? `<details class="unmapped"><summary>${unmapped.length} ${unmapped.length === 1 ? "test" : "tests"} not tied to a feature</summary><ul>${unmapped.map((t) => `<li>${esc(t)}</li>`).join("")}</ul><p class="hint">Left unmapped: nothing in the test's name or content made clear which feature it checks.</p></details>` : "";
-  return `<div class="rfeat"><div class="fhead"><p class="fsum">${sum}</p>${all}</div><ul class="rfl">${rows.map(item).join("")}</ul>${loose}</div>`;
+  const intro = rows.some((r) => featureStateOf(r).key === "as_built") ? `<p class="hint asbi">The behaviors marked As built are what the existing code does today, each with its evidence. Approve the ones that are intended, so the characterization tests pin them; say which are bugs, kept as fix items for later; and drop the rest.</p>` : "";
+  return `<div class="rfeat"><div class="fhead"><p class="fsum">${sum}</p>${all}</div>${intro}<ul class="rfl">${rows.map(item).join("")}</ul>${fixesHtml(m.fixes)}${loose}</div>`;
 }
 
 const SLICE_TITLE = { requirements: "Features", test: "Tests per feature", code: "Passing per feature", review: "Findings per feature", docs: "Documented features" };

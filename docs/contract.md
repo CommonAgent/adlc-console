@@ -337,6 +337,44 @@ How the console reads these:
 - The product page's Features tab stays the matrix, the overview. The matrix no longer sits under
   the Requirements stage's Artifacts tab.
 
+Read by the console since lifecycle API 0.4.6 (additive): starting from existing code
+(stages.json 1.4.0, Reverse engineering, stage 0).
+
+```
+POST /v1/lifecycle/builds   { does, name, starting_point: "existing-code",
+                              source: { repository, commit? } | { folder, commit? }, project? }
+build adds source?: { starting_point?, trigger?, repository, commit, at?, words? }
+artifact kind as_built, summary:
+  { source: { repository, commit, ran, words? }, trigger: adoption | drift, since?,
+    parts: [{ part: behaviors | architecture | interfaces | dependencies | tests_and_gaps,
+              name, count, words, items: [<words>], file? }] }          // five, in that order
+FeatureProposal and a matrix row add as_built?: { behavior, evidence: [<words>], commit?, change? },
+  fix?: { id, feature, behavior, name, does, words?, state: proposed, by, at, build? };
+  a row adds dropped?: { by, at }; a proposal's state adds bug | dropped
+POST /v1/lifecycle/builds/:id/features/:feature/bug    { proposal, message?, words? }  -> { feature, proposal, fix }
+POST /v1/lifecycle/builds/:id/features/:feature/drop   { proposal, message? }          -> { feature, proposal }
+GET /v1/lifecycle/builds/:id/features adds fixes?: [FixItem]
+GET /v1/lifecycle/products/:name adds source?: { repository, commit, build, version, current, drift, words }
+```
+
+How the console reads these:
+
+- Reverse engineering reads "00" wherever a stage's number is shown. It is a step of a build that
+  ran it, before Requirements, so the spine shows it as step 00; otherwise it is the product's
+  when-needed action, like Impact or Rollback.
+- New build offers **Start from an idea** and **Start from existing code**. The second asks what
+  the product is called and a repository (with an optional commit) or a folder on the service's
+  computer, and posts the start request above with `does` written for the person.
+- The `as_built` reader shows the source line (repository, short commit, read or also run,
+  adoption or drift and what it is described against), then each of the five parts with its
+  count, words and items; a gap reads as one.
+- A proposal or a Features tab row marked as built shows "As built" with its evidence and three
+  answers: **Approve feature**, **This is a bug** (with an optional "What is wrong", sent as
+  `words`) and **Drop**. One answered bug says a fix item was kept and never approved; one dropped
+  says it is not kept. The matrix's `fixes` are listed under the Features tab and the matrix.
+- The product's `source.words` stand beside the when-needed buttons, so a person sees why the
+  Reverse engineering action is on (drift) or off.
+
 Read by the console since 0.1 (CommonAgent/adlc, standards/lifecycle-api.schema.json, TimelineBar):
 
 ```

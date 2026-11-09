@@ -61,7 +61,7 @@ test("the demo's products list their setup stages and when-needed actions, held 
   assert.equal(one(p.setup, "monitor").form.fields[0].name, "every_minutes");
   assert.equal(one(p.setup, "eval").state, "not_chosen");
   assert.equal(one(p.setup, "source").state, "not_used");
-  assert.deepEqual(p.when_needed.map((x) => x.can_run), [false, false, false, false, false]);
+  assert.deepEqual(p.when_needed.map((x) => x.can_run), [false, false, false, false, false, false]);
   assert.equal(one(p.when_needed, "rollback").why_not, "Nothing of this product is running yet, so there is nothing to roll back.");
   assert.equal(one(p.when_needed, "impact").why_not, "This product's lifecycle leaves Impact out.");
 });

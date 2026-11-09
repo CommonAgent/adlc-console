@@ -15,12 +15,13 @@ const IDS = DOC.stages.map((s) => s.id);
 const get = (d, path, q = "") => d.handle("GET", path, new URLSearchParams(q), {});
 const post = (d, path, body = {}) => d.handle("POST", path, new URLSearchParams(), body);
 
-test("stages.json holds the 24 stages, with the plan's fields", () => {
-  assert.equal(DOC.stages.length, 24);
+test("stages.json holds the 24 stages and Reverse engineering, numbered 0, with the plan's fields", () => {
+  assert.equal(DOC.stages.length, 25);
+  assert.deepEqual([DOC.stages[0].id, DOC.stages[0].number, DOC.stages[0].cadence], ["reverse-engineering", 0, "when_needed"]);
   assert.match(DOC.source, /agenticdevelopment\.ai|CommonAgent\/adlc/);
   const phases = ["define", "make", "ship", "prove", "use", "run", "change"];
   DOC.stages.forEach((s, i) => {
-    assert.equal(s.number, i + 1);
+    assert.equal(s.number, i);
     assert.ok(phases.includes(s.phase), s.id);
     for (const k of ["id", "name", "role", "given", "hands_back", "done_when"]) assert.equal(typeof s[k], "string", `${s.id}.${k}`);
     assert.ok(s.reference_holder === null || typeof s.reference_holder === "string");
@@ -109,15 +110,16 @@ test("a new build starts at Requirements with the contract's shape", async () =>
   const r = await post(d, "/v1/lifecycle/builds", { does: "Count the words in a passage." });
   assert.equal(r.status, 201);
   assert.deepEqual(checkBuild(r.body, IDS), []);
-  assert.equal(r.body.build.stages[0].state, "working");
+  assert.equal(r.body.build.stages.find((s) => s.stage === "requirements").state, "working");
+  assert.equal(r.body.build.stages[0].stage, "reverse-engineering");
   assert.equal((await post(d, "/v1/lifecycle/builds", {})).status, 400);
 });
 
 test("the checks notice a build that breaks the contract", () => {
   const b = palindromeJudge();
   b.stages[0].state = "finished";
-  b.stages[5].rounds.reverse();
-  b.stages[1].handed_back.files.push({ path: "x", size: "1 KB", link: "" });
+  b.stages[6].rounds.reverse();
+  b.stages[2].handed_back.files.push({ path: "x", size: "1 KB", link: "" });
   delete b.actions[0].needs;
   const problems = checkBuild({ build: b }, IDS);
   assert.ok(problems.some((p) => p.includes("state is one of")));
@@ -179,10 +181,11 @@ const del = (d, path, q = "") => d.handle("DELETE", path, new URLSearchParams(q)
 const ROLE_IDS = DOC.roles.map((r) => r.id);
 const roleOf = (body, id) => body.roles.find((r) => r.role === id);
 
-test("stages.json 1.3.0 lists the roles, each stage's role ids and cadence, and the evidence formats", () => {
-  assert.equal(DOC.version, "1.3.0");
+test("stages.json 1.4.0 lists the roles, each stage's role ids and cadence, the evidence formats and the starting points", () => {
+  assert.equal(DOC.version, "1.4.0");
+  assert.equal(DOC.starting_points.find((p) => p.id === "existing-code").enters, "reverse-engineering");
   for (const s of DOC.stages) assert.ok(["every_build", "setup", "when_needed"].includes(s.cadence), `${s.id}: cadence`);
-  assert.equal(DOC.roles.length, 19);
+  assert.equal(DOC.roles.length, 20);
   for (const r of DOC.roles) {
     assert.equal(r.contract, `https://agentroles.ai/${r.id}.html`);
     assert.equal(r.offering, `role-${r.id}`);
@@ -296,8 +299,11 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.4.5, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards and features at every stage", () => {
-  assert.equal(SCHEMA.version, "0.4.5");
+test("the vendored schema is lifecycle API 0.4.6, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage and starting from existing code", () => {
+  assert.equal(SCHEMA.version, "0.4.6");
+  for (const op of ["POST /builds/{id}/features/{feature}/bug", "POST /builds/{id}/features/{feature}/drop"]) assert.ok(SCHEMA.operations.some((o) => `${o.method} ${o.path}` === op), op);
+  for (const d of ["AsBuiltSummary", "AsBuiltPart", "AsBuilt", "FixItem", "StartSource", "BuildSource", "ProductSource"]) assert.ok(SCHEMA.$defs[d], d);
+  assert.ok(SCHEMA.$defs.Artifact.properties.kind.enum.includes("as_built"));
   for (const op of ["POST /builds/{id}/features/backfill", "POST /builds/{id}/features/approve_all"]) assert.ok(SCHEMA.operations.some((o) => `${o.method} ${o.path}` === op), op);
   for (const d of ["FeatureSlice", "FeatureCount"]) assert.ok(SCHEMA.$defs[d], d);
   for (const op of ["GET /builds/{id}/features", "POST /builds/{id}/features/{feature}/approve", "GET /products/{name}/features", "GET /products/{name}/features/{feature}"]) assert.ok(SCHEMA.operations.some((o) => `${o.method} ${o.path}` === op), op);

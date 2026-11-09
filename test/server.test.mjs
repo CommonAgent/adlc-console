@@ -228,7 +228,7 @@ test("the page is served with a strict policy, and nothing outside it", async ()
       assert.equal(x.status, 404, path);
     }
     const stages = await hit(s.url, { path: "/local/stages", headers: { host: s.host } });
-    assert.equal(stages.json.stages.length, 24);
+    assert.equal(stages.json.stages.length, 25);
   } finally { await s.done(); }
 });
 
@@ -355,7 +355,7 @@ test("the demo answers the stages routes through the proxy", async () => {
   try {
     const r = await hit(url, { path: "/api/v1/lifecycle/stages", headers: { host } });
     assert.equal(r.status, 200);
-    assert.equal(r.json.stages.length, 24);
+    assert.equal(r.json.stages.length, 25);
     assert.equal(r.json.stages.filter((x) => !x.used).length, 4);
     const put = await hit(url, { method: "PUT", path: "/api/v1/lifecycle/stages/docs?project=web", headers: h, body: { used: false } });
     assert.equal(put.status, 200);
