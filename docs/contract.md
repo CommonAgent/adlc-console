@@ -269,6 +269,40 @@ How the console reads these:
   The same matrix, for the build, sits under the Requirements stage's Artifacts tab. A service
   without the routes has the tab disabled.
 
+Read by the console since lifecycle API 0.4.4 (additive): the guided setup and the when-needed actions.
+
+```
+GET /v1/lifecycle/products/:name adds
+  setup[].form?: { ask?, reference_agent?: <agent> | null, shares?,
+                   fields: [{ name, label, kind: number | text | choice, default?, unit?, options?, min?, max? }] }
+  when_needed[].action.needs?: [Need]                   // a choice need has options and a default
+  when_needed[].confirm?: { title, will, done_when?, steps?, who_may, you_may, from_version?, to_version?,
+                            cannot_undo: [words], changes?: [{ stage, name?, from, to }] }   // only when can_run
+  when_needed[].last?: { at, by?, ok, words, version?, build?, files? }
+  running?: { build, version, words? } | null
+  retired?: { at, by?, version, why?, words? }
+POST /v1/lifecycle/builds/:id/actions/<when_needed stage>   (needs as words) answers { build, result?:
+  { stage, ok, words, cannot_undo?, files?, report? } }; 403, 400 and 409 with the words
+```
+
+How the console reads these:
+
+- With forms, the Setup tab is a guided flow: one card per setup stage, numbered, the first one
+  to do open. An open card is a small form: who holds it (the reference agent only when the form
+  names one, your agent with its handle, a person, an outside tool) and its fields, filled from
+  the saved settings, then the defaults. Save reads `GET /roles` for the role's holder now and
+  sends `PUT /roles/:role` (for the item's project) with the holder chosen, whose settings keep
+  this stage's values under the stage's id beside the others. "Ask the boss" opens the Boss tab
+  with the form's `ask` in the composer. Read only, the cards are not opened. Without forms, the
+  tab is the 0.4.2 checklist.
+- A when-needed button with a `confirm` card opens the card under the buttons: the title, what
+  will happen and the steps, what changes, what can't be undone, the needs, who may act and
+  when it is done. Confirm posts the action with the needs; it is disabled with `who_may` when
+  `you_may` is false. The answer's `result` replaces the card (Impact's report shown in full); a
+  refusal stays on the card in the service's words. Without a card, the button posts at once,
+  as in 0.4.2.
+- `running` and `retired` are a line under the product's name.
+
 Read by the console since 0.1 (CommonAgent/adlc, standards/lifecycle-api.schema.json, TimelineBar):
 
 ```

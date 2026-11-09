@@ -13,7 +13,7 @@ import { dashboardHtml, span } from "./dashboard.js";
 import { analyticsHtml, analyticsOffered, analyticsQuery, analyticsHash, analyticsPath } from "./analytics.js";
 import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { featuresMatrixHtml, featureDecision, cellTarget } from "./features.js";
-import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction } from "./workspace.js";
+import { steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -46,6 +46,10 @@ const state = {
   // The when-needed action being taken from the product page (0.4.2), and a role the Setup tab sent the
   // Lifecycle page to choose a holder for: { role, at }.
   whenPending: null, lcWant: null,
+  // The guided setup (0.4.4): the card open (undefined: the first to do), each card's draft, the card
+  // being saved, its error in words, and the card just saved. The when-needed confirm card or the
+  // result of the action just taken: { open, draft, pending, error, result }.
+  setupUi: { open: undefined, drafts: {}, saving: null, error: null, saved: null }, whenCard: null,
   // Features (0.4.3): whether the service keeps them (null until asked), the product's matrix for the
   // version chosen, the feature whose history is open and that history, the build's own matrix for its
   // Requirements stage, the answer being sent, and the feature a reader is opened at.
@@ -259,7 +263,7 @@ async function openProduct(name) {
   const latest = latestBuildOf(name);
   if (latest && !(await openBuild(latest))) return;
   state.stageSel = null;
-  if (state.product?.name !== name) state.product = null;
+  if (state.product?.name !== name) { state.product = null; state.setupUi = { open: undefined, drafts: {}, saving: null, error: null, saved: null }; state.whenCard = null; }
   drawRail(); drawProduct();
   let p = null;
   try { p = await api(`/products/${encodeURIComponent(name)}`); state.error = ""; } catch (e) {
@@ -392,7 +396,93 @@ async function bossAct(msgId) {
   state.boss.pending = null;
   drawProduct();
 }
+// ---------- the guided setup and the when-needed confirm cards (0.4.4) ----------
+
+const reloadProduct = async (name) => {
+  try { const p = await api(`/products/${encodeURIComponent(name)}`); if (Array.isArray(p?.builds)) state.product = p; } catch (e) { if (e.needKey) throw e; }
+};
+const setupItem = (stage) => (state.product?.setup ?? []).find((x) => x?.stage === stage) ?? null;
+
+/** What a setup card's inputs hold now: { kind, name, handle, values }. */
+function setupFormDraft(f) {
+  const values = {};
+  for (const x of f.querySelectorAll("[name^='f.']")) values[x.name.slice(2)] = x.value;
+  const v = (n) => f.querySelector(`[name=${n}]`)?.value;
+  return { kind: v("kind"), ...(v("name") !== undefined ? { name: v("name") } : {}), ...(v("handle") !== undefined ? { handle: v("handle") } : {}), values };
+}
+
+/** Saves one setup card with the roles route: the holder, with this stage's settings beside the role's others. */
+async function saveSetup(stage, f) {
+  const item = setupItem(stage);
+  const ui = state.setupUi;
+  if (!item || ui.saving) return;
+  ui.drafts[stage] = setupFormDraft(f);
+  const q = item.project ? `?project=${encodeURIComponent(item.project)}` : "";
+  ui.saving = stage; ui.error = null; drawProduct();
+  try {
+    const roles = await api(`/roles${q}`);
+    const existing = (roles?.roles ?? []).find((r) => r?.role === item.role)?.binding?.holder ?? null;
+    const made = setupHolder(item, ui.drafts[stage], existing);
+    if (made.error) throw new Problem(made.error, 400);
+    await api(`/roles/${encodeURIComponent(item.role)}${q}`, { method: "PUT", body: { holder: made.holder }, own403: true });
+    delete ui.drafts[stage];
+    ui.saved = stage;
+    await reloadProduct(state.product.name);
+    // The next card to do opens; none, and the cards close.
+    ui.open = (state.product?.setup ?? []).find((x) => x?.state === "not_chosen")?.stage ?? null;
+  } catch (e) {
+    if (e.needKey) { ui.saving = null; return problem(e); }
+    ui.error = { stage, words: e.message };
+  }
+  ui.saving = null;
+  drawProduct();
+}
+
+/** "Ask the boss" on a setup card: the boss's tab, with the card's question ready to send. */
+function askBossAbout(stage) {
+  const item = setupItem(stage);
+  if (!item?.form?.ask || !state.product) return;
+  state.boss.draft = item.form.ask;
+  state.ptab = "boss";
+  go(`${productHash(state.product.name)}/boss`);
+  requestAnimationFrame(() => { const i = $("boss-say"); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } });
+}
+
+/** Takes the action a confirm card names, with its needs, on the build it names. */
+async function runWhen(stage, f) {
+  const item = (state.product?.when_needed ?? []).find((x) => x?.stage === stage);
+  const a = whenNeededAction(state.product?.when_needed, stage);
+  const w = state.whenCard;
+  if (!item || !a || !w || w.pending) return;
+  const needs = {};
+  for (const n of item.action?.needs ?? []) {
+    const v = String(f.querySelector(`[name="${n.name}"]`)?.value ?? "").trim();
+    w.draft[n.name] = v;
+    if (v || !n.optional) needs[n.name] = v;
+  }
+  const name = state.product.name;
+  w.pending = stage; w.error = ""; drawProduct();
+  try {
+    const r = await api(buildPath(a.build, `/actions/${encodeURIComponent(a.name)}`), { method: "POST", body: needs, own403: true });
+    if (state.build?.id === a.build && r?.build) state.build = r.build;
+    state.whenCard = { result: r?.result ?? { stage, ok: true, words: "Done." } };
+    await refreshBuilds();
+    await reloadProduct(name);
+  } catch (e) {
+    w.pending = null;
+    if (e.needKey) return problem(e);
+    w.error = e.message;
+    // A refusal is kept on the record, so the activity shows it.
+    await reloadProduct(name);
+    return drawProduct();
+  }
+  drawProduct();
+}
+
 async function whenAct(stage) {
+  // A service that gives a confirm card (0.4.4): the card first, and nothing runs until the person confirms.
+  const item = (state.product?.when_needed ?? []).find((x) => x?.stage === stage);
+  if (item?.confirm && item.can_run === true) { state.whenCard = { open: stage, draft: {}, pending: null, error: "" }; return drawProduct(); }
   const a = whenNeededAction(state.product?.when_needed, stage);
   if (!a || state.whenPending) return;
   const name = state.product.name;
@@ -707,6 +797,8 @@ function drawProduct() {
       roleName: (id) => state.roleDefs.find((r) => r.id === id)?.name ?? id,
       chooseHref: state.status?.read_only ? null : (role, stage, project) => `${lifecycleHash(project ?? "")}${project ? "&" : "?"}edit=${encodeURIComponent(role)}&at=${encodeURIComponent(stage)}`,
       whenPending: state.whenPending,
+      setup: state.setupUi,
+      whenCard: state.whenCard,
       features: { offered: state.feat.has === true && state.feat.name === state.product.name, answer: state.feat.answer, error: state.feat.error, selected: state.feat.sel, history: state.feat.history, historyError: state.feat.historyError, stageName: (id) => def(id).name },
     }, state.ptab)
     : `<div class="err" role="alert">${esc(state.error)}</div><p class="does">Loading…</p>`;
@@ -1299,6 +1391,17 @@ document.addEventListener("click", async (e) => {
   if (bossAction) return bossAct(bossAction.dataset.bossAct);
   const whenBtn = t.closest("[data-when-act]");
   if (whenBtn) return whenAct(whenBtn.dataset.whenAct);
+  if (t.closest("[data-when-cancel]")) { state.whenCard = null; return drawProduct(); }
+  // The guided setup (0.4.4): open a card, or ask the boss about it.
+  const suOpen = t.closest("[data-setup-open]");
+  if (suOpen) {
+    const f = t.closest("form[data-setup]");
+    if (f) state.setupUi.drafts[f.dataset.setup] = setupFormDraft(f);
+    state.setupUi.open = suOpen.dataset.setupOpen || null; state.setupUi.error = null; state.setupUi.saved = null;
+    return drawProduct();
+  }
+  const suAsk = t.closest("[data-setup-ask]");
+  if (suAsk) return askBossAbout(suAsk.dataset.setupAsk);
   if (t.closest("#new") || t.closest("#new2")) return go("#/new");
   const edit = t.closest("[data-edit-role]");
   if (edit) {
@@ -1366,6 +1469,14 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   if (e.target.id === "twhere" && state.build) store.set(`against:${state.build.id}`, e.target.value);
+  // A setup card's holder kind: the card asks for a name, and a handle for your agent.
+  const suKind = e.target.closest?.("[data-setup-kind]");
+  if (suKind) {
+    const f = suKind.closest("form[data-setup]");
+    state.setupUi.drafts[f.dataset.setup] = setupFormDraft(f);
+    drawProduct();
+    return $(suKind.id)?.focus();
+  }
   // The Features tab's version filter (0.4.3).
   if (e.target.matches?.("[data-feat-version]") && state.product) {
     state.feat.version = e.target.value; state.feat.sel = null; state.feat.history = null;
@@ -1449,6 +1560,8 @@ document.addEventListener("submit", async (e) => {
   if (f.id === "clone-form") return runLocalCheck($("clone").value);
   if (f.id === "say-form") return say($("say").value);
   if (f.id === "boss-form") return bossSay($("boss-say").value);
+  if (f.dataset.setup) return saveSetup(f.dataset.setup, f);
+  if (f.dataset.whenForm) return runWhen(f.dataset.whenForm, f);
   if (f.dataset.ask) {
     const needs = {};
     for (const x of f.querySelectorAll("[name]")) if (x.value.trim() || x.required) needs[x.name] = x.value;

@@ -57,7 +57,8 @@ test("the demo's products list their setup stages and when-needed actions, held 
     assert.deepEqual(p.when_needed.map((x) => x.stage), DOC.stages.filter((s) => s.cadence === "when_needed").map((s) => s.id), name);
   }
   const p = (await get(d, "/v1/lifecycle/products/palindrome-judge")).body;
-  assert.deepEqual(one(p.setup, "monitor"), { stage: "monitor", name: "Monitor", role: "watcher", project: null, state: "chosen", holder: { kind: "your_agent", name: "Datadog watcher", handle: "datadog-watcher.ops@example.com" }, settings: { every_minutes: 5, alert_after_failures: 3 }, since: "0.1.0", words: "Chosen at 0.1.0" });
+  assert.deepEqual((({ form, ...x }) => x)(one(p.setup, "monitor")), { stage: "monitor", name: "Monitor", role: "watcher", project: null, state: "chosen", holder: { kind: "your_agent", name: "Datadog watcher", handle: "datadog-watcher.ops@example.com" }, settings: { every_minutes: 5, alert_after_failures: 3 }, since: "0.1.0", words: "Chosen at 0.1.0" });
+  assert.equal(one(p.setup, "monitor").form.fields[0].name, "every_minutes");
   assert.equal(one(p.setup, "eval").state, "not_chosen");
   assert.equal(one(p.setup, "source").state, "not_used");
   assert.deepEqual(p.when_needed.map((x) => x.can_run), [false, false, false, false, false]);
@@ -144,7 +145,9 @@ test("the when-needed actions: a button enabled only where the service can run i
   const d = createDemoService();
   let p = (await get(d, "/v1/lifecycle/products/tally-words")).body;
   assert.deepEqual(checkProduct(p, "tally-words"), []);
-  assert.deepEqual(one(p.when_needed, "decommission"), { stage: "decommission", name: "Decommission", can_run: true, action: { build: "b_tally_words", name: "decommission", label: "Decommission" } });
+  const dc = one(p.when_needed, "decommission");
+  assert.deepEqual([dc.can_run, dc.action.build, dc.action.name, dc.action.label], [true, "b_tally_words", "decommission", "Decommission"]);
+  assert.equal(dc.confirm.title, "Decommission tally-words?");
   assert.equal(one(p.when_needed, "rollback").why_not, "There is no earlier installed version to roll back to.");
   assert.match(productPageHtml(p, {}, "versions"), /data-when-act="decommission">Decommission<\/button>/);
   const a = whenNeededAction(p.when_needed, "decommission");

@@ -684,3 +684,41 @@ ol.fhl{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .fh a,.fh .linkbtn{grid-column:1/-1;font-size:12.5px;justify-self:start}
 .afeat{margin-top:16px}
 @media (max-width:760px){.fmx tbody th{min-width:160px}}
+
+/* The guided setup and the when-needed confirm cards (lifecycle API 0.4.4) */
+.product .running{margin:6px 0 0;font-size:13px}
+.product .running span{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-right:6px}
+.product .running.off{color:var(--bad)}
+.setup.guided{max-width:860px}
+.setup.guided .su.open{grid-template-columns:22px minmax(0,1fr);border-color:var(--accent);background:var(--panel)}
+.setup.guided .su.open.todo{border-color:var(--wait)}
+.setup.guided .step{display:block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.setup.guided .saved{grid-column:2/-1;margin:4px 0 0;font-size:12.5px;color:var(--accent)}
+.suform{grid-column:2/-1;margin-top:8px;padding-top:10px;border-top:1px solid var(--line)}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 14px}
+.sf{display:flex;flex-direction:column;gap:4px;min-width:0}
+.sf.wide{grid-column:1/-1}
+.sf label{font-size:12px;color:var(--muted)}
+.sf small{font-size:11.5px}
+.sfi{display:flex;align-items:center;gap:6px}
+.sfi .unit{font-size:12.5px;color:var(--muted);white-space:nowrap}
+input[type=number]{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
+.sf.num input{max-width:110px}
+.suform .acts,.wconfirm .acts,.wresult .acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.suform .hint{margin:8px 0 0;font-size:12.5px;color:var(--muted)}
+.suform .err,.wconfirm .err{margin-top:8px}
+.wconfirm{margin-top:10px;background:var(--panel);border-color:var(--accent)}
+.wconfirm.grave{border-color:var(--wait)}
+.wconfirm .wlab,.wresult .wlab{margin:10px 0 2px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.wsteps{margin:0;padding-left:18px;line-height:1.45}
+.wsteps li{margin:2px 0}
+.wsteps.undo li::marker{color:var(--wait)}
+.wconfirm .sgrid{margin-top:10px}
+.wconfirm textarea{min-height:52px}
+.wconfirm .whomay{font-size:13px;margin-top:10px}
+.wconfirm .whomay span{font-weight:600;margin-right:4px}
+.wconfirm .dw{margin-top:8px}
+.wresult{margin-top:10px}
+.wresult.bad{border-color:var(--bad);background:var(--bad-bg)}
+.wreport{margin-top:8px}
+.wreport pre{max-height:320px;overflow:auto;white-space:pre-wrap;font-family:var(--mono);font-size:12px;background:var(--code);padding:8px;border-radius:6px;margin:6px 0 0}
