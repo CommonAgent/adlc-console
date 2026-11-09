@@ -118,11 +118,12 @@ test("the Features tab shows, under each feature the spec holds, its requirement
   assert.equal(featureSpecHtml(null), "");
 });
 
-test("a test named by an acceptance scenario names its feature; a kept interface's test names none; [F1] still works", () => {
+test("a test named by an acceptance scenario names its feature; a kept interface's or a constraint's test names none; [F1] still works", () => {
   assert.deepEqual(featuresOfTest("[F1.A1] forty stories"), ["F1"]);
   assert.deepEqual(featuresOfTest("[F1.A1, F2.A3] both"), ["F1", "F2"]);
   assert.deepEqual(featuresOfTest("[F3.R2] a requirement"), ["F3"]);
   assert.deepEqual(featuresOfTest("[I4] read-news keeps its flags"), []);
+  assert.deepEqual(featuresOfTest("[C1] finishes within 60 seconds"), []);
   assert.deepEqual(featuresOfTest("[F1] count words"), ["F1"]);
   // A suite opened at a feature shows the tests of its scenarios.
   const suite = { id: "suite", stage: "test", name: "The suite", by: "test writer", kind: "suite", state: "made", version: "v1", summary: { count: 4, tests: ["counts words", "[F1.A1] forty stories", "[F1.A2] none", "[I1] read-news keeps its flags"] } };
