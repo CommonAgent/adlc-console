@@ -782,6 +782,7 @@ ul.sft{margin:4px 0 6px 22px;padding:0;color:var(--muted);font-size:12.5px}
 .fb.b-asb,.fb.s-as_built{background:var(--code)}
 .asbe{margin:2px 0 0;padding-left:18px;font-size:12.5px}
 .bugw{display:inline-flex;gap:4px;align-items:center}
+.bugw .btn,[data-feat="drop"]{white-space:nowrap}
 .bugw input{font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);min-width:12em}
 .fixes{margin:14px 0 0}
 .fixes ul{margin:4px 0;padding-left:18px}
