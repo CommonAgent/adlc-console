@@ -181,9 +181,10 @@ const del = (d, path, q = "") => d.handle("DELETE", path, new URLSearchParams(q)
 const ROLE_IDS = DOC.roles.map((r) => r.id);
 const roleOf = (body, id) => body.roles.find((r) => r.role === id);
 
-test("stages.json 1.4.0 lists the roles, each stage's role ids and cadence, the evidence formats and the starting points", () => {
-  assert.equal(DOC.version, "1.4.0");
+test("stages.json 1.5.0 lists the roles, each stage's role ids and cadence, the evidence formats and the starting points", () => {
+  assert.equal(DOC.version, "1.5.0");
   assert.equal(DOC.starting_points.find((p) => p.id === "existing-code").enters, "reverse-engineering");
+  assert.equal(DOC.starting_points.find((p) => p.id === "as-built-record").enters, "requirements");
   for (const s of DOC.stages) assert.ok(["every_build", "setup", "when_needed"].includes(s.cadence), `${s.id}: cadence`);
   assert.equal(DOC.roles.length, 20);
   for (const r of DOC.roles) {
@@ -299,8 +300,11 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.4.6, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage and starting from existing code", () => {
-  assert.equal(SCHEMA.version, "0.4.6");
+test("the vendored schema is lifecycle API 0.4.7, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage, starting from existing code or an as-built record, and back_to_requirements", () => {
+  assert.equal(SCHEMA.version, "0.4.7");
+  assert.match(SCHEMA.$defs.Action.properties.name.description, /back_to_requirements/);
+  assert.match(SCHEMA.$defs.StartRequest.properties.starting_point.description, /as-built-record/);
+  for (const [d, k] of [["StartSource", "path"], ["BuildSource", "record"], ["AsBuiltSummary", "brought"]]) assert.ok(SCHEMA.$defs[d].properties[k], `${d}.${k}`);
   for (const op of ["POST /builds/{id}/features/{feature}/bug", "POST /builds/{id}/features/{feature}/drop"]) assert.ok(SCHEMA.operations.some((o) => `${o.method} ${o.path}` === op), op);
   for (const d of ["AsBuiltSummary", "AsBuiltPart", "AsBuilt", "FixItem", "StartSource", "BuildSource", "ProductSource"]) assert.ok(SCHEMA.$defs[d], d);
   assert.ok(SCHEMA.$defs.Artifact.properties.kind.enum.includes("as_built"));

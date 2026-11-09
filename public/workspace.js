@@ -231,7 +231,34 @@ function doneWhenWords(text) {
   return [head.replace(/:$/, ""), items.join("; ")].filter(Boolean).join(": ");
 }
 
-const ACTION_DONE = { approve: "Approved", accept: "Accepted", changes: "Changes asked for", back_to_test: "Sent back to Test", send_back: "Sent back", stop: "Stopped", resume: "Resumed", archive: "Archived" };
+/**
+ * The build's live actions as buttons, one per action and nothing else, and,
+ * for the one being asked (asking: "<stage>\n<name>"), the form for its needs:
+ * a paragraph box for words, a line for anything else. Any action the service
+ * offers draws this way, back_to_requirements with its words (0.4.7) among
+ * them. pending: the action being sent, or null. labels: words to draw in
+ * place of an action's own label.
+ */
+export function actionButtonsHtml(list, { labels = {}, pending = null, asking = null } = {}) {
+  list = list.map((a) => (labels[a.name] ? { ...a, label: labels[a.name] } : a));
+  const busy = pending !== null;
+  // Stop is never drawn as the main action, even when it is the only one.
+  const main = list.findIndex((a) => a.name !== "stop");
+  let h = `<div class="acts">${list.map((a, i) => `<button class="btn${i === main ? " p" : ""}" type="button" data-act="${esc(a.name)}" data-act-stage="${esc(a.stage)}"${busy ? " disabled" : ""}>${esc(pending === a.name ? "Sending…" : a.label)}</button>`).join("")}</div>`;
+  const ask = list.find((a) => `${a.stage}\n${a.name}` === asking && a.needs?.length);
+  if (ask) {
+    h += `<form class="ask" data-ask="${esc(ask.name)}" data-ask-stage="${esc(ask.stage)}">${ask.needs.map((n) => {
+      const id = `need-${esc(n.name)}`;
+      const long = /words|text|long|reason|why|comment/i.test(n.kind);
+      // A need the service marks optional may be left empty, and is then not sent.
+      const req = n.optional === true ? "" : " required";
+      return `<label for="${id}">${esc(n.label)}${n.optional === true ? " <span>Optional</span>" : ""}</label>${long ? `<textarea id="${id}" name="${esc(n.name)}"${req}></textarea>` : `<input type="text" id="${id}" name="${esc(n.name)}"${req} autocomplete="off">`}`;
+    }).join("")}<div class="acts tight"><button class="btn p" type="submit">${esc(ask.label)}</button><button class="btn" type="button" data-cancel>Cancel</button></div></form>`;
+  }
+  return h;
+}
+
+const ACTION_DONE = { approve: "Approved", accept: "Accepted", changes: "Changes asked for", back_to_test: "Sent back to Test", back_to_requirements: "Sent back to Requirements", send_back: "Sent back", stop: "Stopped", resume: "Resumed", archive: "Archived" };
 /** An answered gate's words: "Approved by you · 2:21 PM". */
 export function answeredWords(answered, build, when = (x) => x) {
   const a = isObj(answered) ? answered : {};
@@ -476,13 +503,16 @@ export const AS_BUILT_PARTS = ["behaviors", "architecture", "interfaces", "depen
 const PART_NAME = { behaviors: "Behaviors", architecture: "Architecture as built", interfaces: "Interfaces", dependencies: "Dependencies", tests_and_gaps: "Existing tests and gaps" };
 const short7 = (c) => (/^[0-9a-f]{12,}$/i.test(c) ? c.slice(0, 7) : c);
 
-/** The source line of an as-built record: what it describes, at which commit, whether the code was run, and why it was made. */
+/** The source line of an as-built record: what it describes, at which commit, whether the code was run, and why it was made, or where it was brought from (0.4.7). */
 export function asBuiltSource(s) {
   const src = isObj(s?.source) ? s.source : {};
   const repo = str(src.repository);
   const commit = str(src.commit);
   const read = src.ran === true ? "read and run" : "read only, not run";
-  const why = s?.trigger === "drift"
+  const brought = isObj(s?.brought) ? s.brought : null;
+  const why = brought
+    ? str(brought.words) || `Brought from ${str(brought.from) || "elsewhere"}; the code it describes is not taken on.`
+    : s?.trigger === "drift"
     ? `On drift: only what changed since ${str(s.since) ? short7(str(s.since)) : "the last record"}.`
     : "On adoption: the codebase as it was taken on.";
   return `${repo || "The codebase"}${commit ? ` at ${short7(commit)}` : ""}, ${read}. ${why}`;
@@ -662,6 +692,13 @@ export function whenNeededHtml(items, { stageName = (x) => x, pending = null, so
   const off = rows.filter((x) => !can(x));
   const why = off.length ? `<details class="wnwhy"><summary>Why ${off.length === rows.length ? "they are" : off.length === 1 ? "one is" : "some are"} off</summary><dl>${off.map((x) => `<dt>${esc(name(x))}</dt><dd id="wn-${esc(str(x.stage))}">${esc(str(x.why_not) || "The service does not say.")}</dd>`).join("")}</dl></details>` : "";
   return `<div class="wneed" role="group" aria-label="When needed"><span class="wl">When needed</span>${btns}</div>${sourceHtml(source)}${why}`;
+}
+
+/** How a build started (0.4.6, 0.4.7): from existing code, or from an as-built record of code kept elsewhere, in the service's words; empty for a build that knew no codebase. */
+export function buildSourceHtml(src) {
+  if (!isObj(src) || !str(src.words)) return "";
+  const from = { "existing-code": "Started from existing code", "as-built-record": "Started from an as-built record" }[str(src.starting_point)] ?? "Started from";
+  return `<p class="srcw" role="note"><b>${esc(from)}:</b> ${esc(str(src.words))}</p>`;
 }
 
 /** The product's codebase (0.4.6): the last commit any build knew, and whether the code changed since, beside Reverse engineering. */
@@ -882,7 +919,7 @@ export function whenResultHtml(result, { stageName = (x) => x, link = null } = {
 // ---------- the boss (lifecycle API 0.4.1) ----------
 
 // A proposed action's name in words before its build offers it (once it does, the build's own label).
-const ACTION_LABEL = { changes: "Ask for changes", back_to_test: "Send back to Test", resume: "Run it again", stop: "Stop" };
+const ACTION_LABEL = { changes: "Ask for changes", back_to_test: "Send back to Test", back_to_requirements: "Send back to Requirements", resume: "Run it again", stop: "Stop" };
 
 /** Where a routed message went: the stage's chat on its build. */
 export const stageChatHref = (build, stage) => `#/b/${encodeURIComponent(build)}/${encodeURIComponent(stage)}/chat`;

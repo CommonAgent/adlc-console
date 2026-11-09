@@ -75,7 +75,7 @@ test("Reverse engineering reads 00: in the spine of a build that ran it, on the 
 // ---------- New build: Start from existing code ----------
 
 test("New build offers Start from existing code: a repository and commit, or a folder, and what the product is called", () => {
-  assert.deepEqual(STARTS.map((s) => s.label), ["Start from an idea", "Start from existing code"]);
+  assert.deepEqual(STARTS.map((s) => s.label), ["Start from an idea", "Start from existing code", "Start from an as-built record"]);
   const idea = newBuildHtml({}, { from: "idea" });
   assert.match(idea, /data-start-from="existing-code"[^>]*>Start from existing code</);
   assert.match(idea, /id="n-does"/);

@@ -337,6 +337,29 @@ How the console reads these:
 - The product page's Features tab stays the matrix, the overview. The matrix no longer sits under
   the Requirements stage's Artifacts tab.
 
+Read by the console since lifecycle API 0.4.7 (additive): starting from an as-built record of
+code kept elsewhere (stages.json 1.5.0), and the action back_to_requirements.
+
+```
+POST /v1/lifecycle/builds   { does, name, starting_point: "as-built-record",
+                              source: { folder } | { repository, commit?, path? }, project? }
+build source adds record?: { folder } | { repository, commit?, path? }
+as_built summary adds brought?: { from, words }
+action back_to_requirements at code, needs [{ name, label, kind: "words" }]
+```
+
+How the console reads these:
+
+- New build offers a third choice, **Start from an as-built record**. It asks what the product is
+  called and the record's folder on the service's computer, or a repository with an optional
+  commit and path, and posts the start request above with `does` written for the person.
+- The `as_built` reader's source line says where a brought record came from, in place of
+  "On adoption". The build's `source.words` show on Reverse engineering, after "Started from
+  existing code" or "Started from an as-built record".
+- `back_to_requirements` draws through the generic action buttons, as every action does: its
+  words need opens a paragraph box, and a chat reply that proposes it confirms with its words.
+  An answered gate reads "Sent back to Requirements".
+
 Read by the console since lifecycle API 0.4.6 (additive): starting from existing code
 (stages.json 1.4.0, Reverse engineering, stage 0).
 
