@@ -124,7 +124,10 @@ export const canTalkTo = (holder) => isObj(holder) && !["person", "outside_tool"
 
 /** The build's steps for the spine: each every-build stage it runs, numbered, marked done, now or next, with a short line. */
 export function steps(build, { defs = new Map(), roleDefs = [], when = (x) => x } = {}) {
-  const used = stepStages(build, defs);
+  // A version whose features run in runs of their own (0.4.10): the stages the runs hold are the
+  // features' steps, not the version's, so they leave the version's list and the rest count on.
+  const held = runStageIds(build);
+  const used = stepStages(build, defs).filter((s) => !held.has(s.stage));
   const now = currentStage(build, defs);
   let firstNext = true;
   const zero = used.some((s) => s.stage === STAGE_ZERO) ? 1 : 0;
@@ -155,6 +158,9 @@ export function steps(build, { defs = new Map(), roleDefs = [], when = (x) => x 
 /** The line under the product's name: "Step 4 of 11 · waiting on you", or where the build ended. */
 export function stepHeader(build, spine) {
   const at = spine.findIndex((x) => x.mark === "now");
+  // The version is at its features' stages: the service's words for how far they are, waiting when any run waits on you.
+  const open = featureRuns(build).filter((r) => r.ended !== true);
+  if (at < 0 && open.length) return { text: str(build?.summary) || `Making ${open.length} ${open.length === 1 ? "feature" : "features"}`, tone: open.some((r) => r.at?.state === "waiting_on_you") ? "wait" : "" };
   if (at < 0) return { text: str(build?.summary) || `Done · ${spine.length} ${spine.length === 1 ? "step" : "steps"}`, tone: "ok" };
   const s = spine[at];
   const state = { waiting_on_you: "waiting on you", working: "working", stopped: "stopped", refused: "refused", not_bound: "nobody holds it" }[s.state] ?? "next";
@@ -162,13 +168,49 @@ export function stepHeader(build, spine) {
 }
 
 /** The product at the top of the menu, then its build's stages: selecting one opens it. */
-export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, productHref = "#", onProduct = false } = {}) {
-  const items = spine.map((x) => {
+export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, productHref = "#", onProduct = false, runSel = null, runHref = null, runsHref = "#", stageName = (x) => x } = {}) {
+  const item = (x) => {
     const on = x.stage === sel;
     const dot = x.mark === "done" ? "✓" : stepNumber(x);
     return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${stepNumber(x)}. ${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(x.name)}</span></a>`;
-  }).join("");
-  return `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its versions, run plan and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b></a><div class="spine">${items}</div>`;
+  };
+  const product = `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its versions, run plan and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b></a>`;
+  const runs = featureRuns(build);
+  if (!runs.length || !runHref) return `${product}<div class="spine">${spine.map(item).join("")}</div>`;
+  // The version's features between its steps (0.4.10): the steps before the runs' stages, then a line per
+  // feature where the runs' stages were, the open one showing its own stages, then the steps after.
+  const held = runStageIds(build);
+  const order = list(build.stages).map((s) => str(s?.stage));
+  const first = order.findIndex((id) => held.has(id));
+  const before = spine.filter((x) => order.indexOf(x.stage) < first);
+  const after = spine.filter((x) => !before.includes(x));
+  const done = runs.filter((r) => r.ended === true).length;
+  const onAll = Boolean(sel) && held.has(sel) && !runSel;
+  const head = `<a class="rg${onAll ? " sel" : ""}" href="${esc(runsHref)}"${onAll ? ' aria-current="page"' : ""} title="Every feature of this version at once">Features <small>${done} of ${runs.length} done</small></a>`;
+  const items = runs.map((fr) => featureItemHtml(fr, { on: fr.id === runSel, sel, runHref, stageName })).join("");
+  return `${product}<div class="spine">${before.map(item).join("")}<div class="rfeat">${head}${items}</div>${after.map(item).join("")}</div>`;
+}
+
+/** Where a feature run is, in words: the service's summary, else its stage and state. */
+export function runLine(fr, stageName = (x) => x) {
+  return productLine({ latest: { at: fr?.at, version: null } }, { stageName });
+}
+
+/** One feature in the rail: its id in the dot, its name, where it is; opened, its own stages under it. */
+function featureItemHtml(fr, { on, sel, runHref, stageName }) {
+  const at = isObj(fr.at) ? fr.at : {};
+  const l = runLine(fr, stageName);
+  const mark = fr.ended === true || at.state === "done" ? "done" : at.state === "not_started" ? "next" : "now";
+  const tone = at.state === "working" ? " work" : ["refused", "stopped"].includes(at.state) ? " bad" : "";
+  const name = str(fr.name) || str(fr.id);
+  const id = [fr.feature, fr.id].map(str).find((x) => x && name.startsWith(`${x} `));
+  const dot = mark === "done" ? "✓" : id && id.length <= 3 ? id : "•";
+  const subs = on ? list(fr.stages).filter((s) => isObj(s) && str(s.stage)).map((s) => {
+    const sm = s.state === "done" ? "done" : s.stage === str(at.stage) && fr.ended !== true ? "now" : "next";
+    const son = s.stage === sel;
+    return `<a class="rs sub ${sm}${son ? " sel" : ""}" href="${esc(runHref(s.stage, fr.id))}"${son ? ' aria-current="page"' : ""}><span class="dot" aria-hidden="true">${sm === "done" ? "✓" : ""}</span><span class="rn">${esc(stageName(s.stage))}</span></a>`;
+  }).join("") : "";
+  return `<a class="rs run ${mark}${tone}${on ? " sel" : ""}" href="${esc(runHref(str(at.stage), fr.id))}"${on ? ' aria-current="true"' : ""} aria-label="${esc(`${name}: ${l.text}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(id ? name.slice(id.length + 1) : name)}</span><small class="${l.wait ? "w" : ""}">${esc(l.text)}</small></a>${subs}`;
 }
 
 /** What another product waits on, from the products answer's latest build: "Waiting on you at Code". */

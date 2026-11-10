@@ -358,6 +358,13 @@ body adds run?: <feature_runs[].id>                         // sent whenever the
 
 How the console reads these:
 
+- The **left menu** is the version's work: its steps before the runs' stages (Requirements, and
+  whatever else it runs before Test), then **Features**, a line per feature run where the runs'
+  stages were, then its steps after (Package and on). Each feature shows where it is, in the
+  service's words, and opens its run at that stage; the open one shows its own Test and Code under
+  it. The Features heading opens every run at once, the version's own page at those stages (below).
+  The runs' stages are the features' steps, not the version's: the version's steps count on
+  without them, and while any run is open the product's line is the version's `summary`.
 - The **Board** gives each feature run a card of its own beside its version's, in the column of
   the run's own stage: the feature's name, the version, where it is and who it waits on. A run
   that ended goes to Done. While any of its runs is open, the version's card shows the service's
