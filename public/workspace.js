@@ -231,7 +231,9 @@ export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, pro
   if (allDone) ship = `<h3 class="rg">Ship</h3><a class="rs doc done ship" href="${esc(href(after.at(-1).stage))}" aria-label="${esc(`Shipped: ${joined}`)}"><span class="dot" aria-hidden="true">✓</span><span class="rn">${esc((str(build.summary) || "Shipped").replace(` · ${productOf(build)} ${str(build.version)}`, ""))}</span><small>${esc(joined)}</small></a>`;
   else if (reached) ship = `<h3 class="rg">Ship</h3>${after.map(plain).join("")}`;
   else if (after.length) ship = `<h3 class="rg">Ship <small>after the features</small></h3><a class="rs next ship" href="${esc(href(after[0].stage))}" aria-label="${esc(`Ship, after the features: ${names.join(", ")}`)}"><span class="dot" aria-hidden="true"></span><span class="rn">${esc(joined)}</span></a>`;
-  return `${product}<div class="spine grouped">${spec}<div class="rfeat">${feats}</div>${ship}</div>`;
+  // The menu is the features alone: the version's documents are tabs in the canvas (docTabsBarHtml).
+  void spec; void ship;
+  return `${product}<div class="spine grouped"><div class="rfeat">${feats}</div></div>`;
 }
 
 /**
@@ -412,7 +414,7 @@ export function featurePageHtml(f, build, ctx = {}) {
   // Work: what it was given (the spec at this feature, the design) and what it made (its tests, the code).
   const givenWords = (id, d) => (d.kind === "architecture" ? "How the agent is put together." : id === "architecture" ? "The agent's own files: descriptor, runtime requirements, skills." : "What this feature does, and what it refuses.");
   const given = ["requirements", "architecture"].map((id) => [id, documentOf(build, id)]).filter(([, d]) => d)
-    .map(([id, d]) => `<a class="gi" href="${esc(href(id, d.tab))}"><b>${esc(id === "requirements" && f.id ? `${d.name}, feature ${f.id}` : d.name)}</b><small>${esc(givenWords(id, d))}</small></a>`);
+    .map(([id, d]) => `<a class="gi" href="${esc(ctx.docHref ? ctx.docHref(id) : href(id, d.tab))}"><b>${esc(id === "requirements" && f.id ? `${d.name}, feature ${f.id}` : d.name)}</b><small>${esc(givenWords(id, d))}</small></a>`);
   const tests = (f.tests ?? (Array.isArray(f.cells?.tests?.tests) ? f.cells.tests.tests : [])).map(str).filter(Boolean);
   const code = documentOf(build, "code");
   const made = [
@@ -421,8 +423,106 @@ export function featurePageHtml(f, build, ctx = {}) {
   ].filter(Boolean);
   const work = `<div class="fwork"><section class="given" aria-label="Given"><h5>Given</h5>${given.length ? given.join("") : `<p class="gw">Nothing written down yet.</p>`}</section><section class="made" aria-label="Made"><h5>Made</h5>${made.length ? made.join("") : `<p class="gw">Nothing made yet.</p>`}</section></div>`;
   const chatAt = at?.stage ?? [...region].at(-1) ?? "requirements";
-  const tabs = `<div class="tabs" role="tablist" aria-label="Feature"><button type="button" role="tab" class="tab on" aria-selected="true">Work${made.length ? ` <span>${made.length}</span>` : ""}</button><a class="tab" href="${esc(href(chatAt, "chat"))}">Chat</a>${ctx.canTry ? `<a class="tab" href="${esc(href(chatAt, "try"))}">Try it</a>` : ""}</div>`;
+  const tabs = `<p class="flinks"><a href="${esc(href(chatAt, "chat"))}">Chat about it</a>${ctx.canTry ? `<a href="${esc(href(chatAt, "try"))}">Try it</a>` : ""}</p>`;
   return `<section class="thread-wrap work"><div class="whead"><div class="hd"><div><h1>${esc(f.name)}${f.id ? `<span>${esc(f.id)}</span>` : ""}</h1>${f.does ? `<p class="sub">${esc(f.does)}</p>` : ""}${strip}</div></div><div class="err" role="alert">${esc(ctx.error ?? "")}</div>${card ? `<div class="pin">${card}</div>` : ""}${tabs}</div><div class="wbody tab-work" id="tabbody">${work}</div></section>`;
+}
+
+// ---------- the version's documents as tabs ----------
+
+/** The canvas's document tabs: each a group of stages, in stages.json's order, shown when it holds an artifact, evidence or a gate. */
+export const DOC_TAB_DEFS = [
+  { id: "spec", label: "Spec", stages: ["reverse-engineering", "requirements"] },
+  { id: "design", label: "Design", stages: ["architecture", "impact", "source"] },
+  { id: "review", label: "Review", stages: ["review"] },
+  { id: "security", label: "Security", stages: ["security"] },
+  { id: "package", label: "Package", stages: ["package", "release"] },
+  { id: "deploy", label: "Deploy", stages: ["deploy", "conformance", "acceptance"] },
+  { id: "docs", label: "Docs", stages: ["docs", "publish"] },
+  { id: "operate", label: "Operate", stages: ["monitor", "eval", "incident", "cost", "update", "reconfigure", "rollback", "retract", "decommission"] },
+];
+
+/** The document tab a stage's artifacts sit in, or null for a stage the features hold (Test, Code). */
+export const docTabOf = (stage) => DOC_TAB_DEFS.find((t) => t.stages.includes(str(stage)))?.id ?? null;
+
+const ICONS = {
+  doc: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>',
+  layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
+  shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  scan: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>',
+  box: '<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>',
+  seal: '<circle cx="12" cy="9" r="5"/><path d="M9 13l-2 8 5-3 5 3-2-8"/>',
+  map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+};
+const ICON_OF_KIND = { spec: "doc", statement: "doc", as_built: "doc", agentdoc: "doc", architecture: "layers", findings: "list", security: "shield", package: "box", build_record: "seal", attestation: "seal", run_plan: "map" };
+const iconSvg = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] ?? ICONS.doc}</svg>`;
+
+/**
+ * The version's document tabs: each with its artifacts (what the build made,
+ * or will make next or later, at the tab's stages, in their order) and the
+ * evidence outside tools sent there, and the stage whose gate is open, if
+ * any. Only tabs that hold something are given.
+ */
+export function docTabs(build) {
+  const arts = list(build?.artifacts).filter((a) => isObj(a) && str(a.id) && ["made", "next", "later", "not_made"].includes(str(a.state)));
+  const stages = new Map(list(build?.stages).filter(isObj).map((s) => [str(s.stage), s]));
+  const live = list(build?.actions).filter((a) => isObj(a) && !str(a.run));
+  return DOC_TAB_DEFS.map((t) => {
+    const items = t.stages.flatMap((stage) => [
+      ...arts.filter((a) => a.stage === stage).map((a) => ({ kind: "artifact", stage, artifact: a, name: str(a.name), icon: ICON_OF_KIND[str(a.kind)] ?? "doc", later: ["next", "later"].includes(str(a.state)) })),
+      ...list(stages.get(stage)?.evidence).filter(isObj).map((e, i) => ({ kind: "evidence", stage, evidence: e, name: str(e.name) || str(e.format) || `Evidence ${i + 1}`, icon: "scan", later: false })),
+    ]);
+    const gate = t.stages.find((stage) => live.some((a) => a.stage === stage && a.name !== "stop") && stages.get(stage)?.state === "waiting_on_you") ?? null;
+    return { ...t, items, gate };
+  }).filter((t) => t.items.length || t.gate);
+}
+
+/** The canvas's tab bar: the feature first, then the version's document tabs. ctx: { feature: { label, id, href }, active, tabHref(id) }. */
+export function docTabsBarHtml(build, ctx = {}) {
+  const tabs = docTabs(build);
+  const f = ctx.feature;
+  const first = f ? `<a class="ct${ctx.active === "feature" ? " on" : ""}" href="${esc(f.href)}"${ctx.active === "feature" ? ' aria-current="page"' : ""}>${esc(f.label)}${f.id ? `<i>${esc(f.id)}</i>` : ""}</a><span class="ctsep" aria-hidden="true"></span>` : "";
+  const rest = tabs.map((t) => `<a class="ct${ctx.active === t.id ? " on" : ""}${t.gate ? " w" : ""}" href="${esc(ctx.tabHref ? ctx.tabHref(t.id) : `#${t.id}`)}"${ctx.active === t.id ? ' aria-current="page"' : ""}>${esc(t.label)}${t.items.length > 1 ? `<small>${t.items.length}</small>` : ""}</a>`).join("");
+  return `<nav class="ctabs" aria-label="This version">${first}${rest}</nav>`;
+}
+
+/**
+ * One document tab: the gate when one of its stages waits on you, a switcher
+ * of its artifacts (an icon and the name each) when it holds more than one,
+ * then the chosen one in full: its name, a line saying where it stands, who
+ * made it, Ask for a change (the stage's chat), what it says and its files.
+ * ctx: { item, stageName, when, itemHref(n), chatHref(stage), gateHtml(stage),
+ * filesHtml(files, openOne), history(artifact) }.
+ */
+export function docTabHtml(build, tabId, ctx = {}) {
+  const stageName = ctx.stageName ?? ((x) => x);
+  const when = ctx.when ?? ((x) => x);
+  const t = docTabs(build).find((x) => x.id === tabId);
+  if (!t) return `<div class="docbody"><p class="gw">This version has nothing here.</p></div>`;
+  const gate = t.gate && ctx.gateHtml ? ctx.gateHtml(t.gate) : "";
+  const n = Math.max(0, Math.min(Number(ctx.item) || 0, t.items.length - 1));
+  const sw = t.items.length > 1 ? `<div class="dsw" role="tablist" aria-label="${esc(t.label)}">${t.items.map((x, i) => `<a class="${i === n ? "on" : ""}${x.later ? " later" : ""}" role="tab" aria-selected="${i === n}" href="${esc(ctx.itemHref ? ctx.itemHref(i) : `#${i}`)}">${iconSvg(x.icon)}<b>${esc(x.name)}</b></a>`).join("")}</div>` : "";
+  const it = t.items[n];
+  let content = "";
+  if (it?.kind === "artifact") {
+    const a = it.artifact;
+    const s = isObj(a.summary) ? a.summary : {};
+    const said = str(s.verdict) || (a.state === "made" ? "Made" : a.state === "next" ? "Made next" : a.state === "later" ? "Made later" : str(s.words) || "Not made");
+    const meta = [stageName(it.stage), str(a.by), str(a.version), a.at && when(a.at) ? when(a.at) : ""].filter(Boolean).join(" · ");
+    const files = list(a.files);
+    const hist = ctx.history ? list(ctx.history(a)) : [];
+    content = `<h1>${esc(it.name)}</h1>${said === "Made" ? "" : `<p class="dsub${t.gate === it.stage ? " w" : ""}">${esc(said)}</p>`}<div class="vm">${esc(meta)}</div>`
+      + (a.state === "made" ? `<p class="dact"><a class="btn" href="${esc(ctx.chatHref ? ctx.chatHref(it.stage) : "#")}">Ask for a change</a></p>${artifactBodyHtml(a, { stageName })}` : `<p class="gw">${esc(str(s.words) || `${stageName(it.stage)} makes it ${a.state === "next" ? "next" : "later"}.`)}</p>`)
+      + (files.length && ctx.filesHtml ? `<section class="vfiles" aria-label="Full text"><h4 class="ft">Full text <span>${files.length === 1 ? "1 file" : `${files.length} files`}, as written</span></h4>${ctx.filesHtml(files, true)}</section>` : "")
+      + (hist.length ? `<section class="dhist"><h4 class="ft">Versions</h4><ul>${hist.map((h) => `<li><a href="${esc(str(h.href) || "#")}"><b>${esc(str(h.version))}</b>${h.at && when(h.at) ? `<span>${esc(when(h.at))}</span>` : ""}${h.current ? "<i>stands now</i>" : ""}</a></li>`).join("")}</ul></section>` : "");
+  } else if (it?.kind === "evidence") {
+    const e = it.evidence;
+    const meta = [stageName(it.stage), str(e.format), e.at && when(e.at) ? when(e.at) : ""].filter(Boolean).join(" · ");
+    content = `<h1>${esc(it.name)}</h1><p class="dsub">${esc(str(e.summary))}</p><div class="vm">${esc(meta)}</div>${isObj(e.file) && ctx.filesHtml ? ctx.filesHtml([e.file], true) : ""}`;
+  } else {
+    content = `<p class="gw">Nothing made here yet.</p>`;
+  }
+  return `<div class="docbody">${gate ? `<div class="pin">${gate}</div>` : ""}${sw}${content}</div>`;
 }
 
 /** Where a feature run is, in words: the service's summary, else its stage and state. */

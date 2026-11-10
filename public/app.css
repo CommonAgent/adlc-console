@@ -921,6 +921,35 @@ details.rfspec>ul:last-child{margin-bottom:8px}
 .pc b span{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--muted);margin-left:6px}
 .pc small{font-size:12.5px;color:var(--muted)}
 .pc small.w{color:var(--wait);font-weight:600}
+/* The canvas's tab bar: the feature, then the version's documents; inside a document tab, a switcher of its artifacts. */
+.ctabs{display:flex;gap:2px;padding:8px 14px 0;border-bottom:1px solid var(--line);overflow-x:auto}
+.ctabs .ct{padding:8px 12px 10px;border-bottom:2px solid transparent;font-weight:600;color:var(--muted);white-space:nowrap;text-decoration:none}
+.ctabs .ct:hover{color:var(--fg)}
+.ctabs .ct.on{color:var(--fg);border-color:var(--accent)}
+.ctabs .ct i{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:500;margin-left:6px}
+.ctabs .ct small{font-weight:500;font-size:11px;color:var(--muted);margin-left:5px;background:var(--code);border-radius:99px;padding:0 6px}
+.ctabs .ct.w small,.ctabs .ct.w{color:var(--wait)}
+.ctabs .ctsep{width:1px;background:var(--line);margin:8px 6px 10px;flex:none}
+.docbody{padding:18px 22px 22px;min-width:0}
+.docbody dl{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 16px;margin:14px 0}
+.docbody dt{color:var(--muted);font-size:13px}
+.docbody dd{margin:0;min-width:0}
+@media (max-width:700px){.docbody dl{grid-template-columns:1fr;gap:2px}.docbody dd{margin-bottom:8px}}
+.flinks{display:flex;gap:16px;margin:0 22px 12px;font-size:13px}
+.flinks a{color:var(--accent)}
+.docbody h1{margin:0;font-size:22px}
+.docbody .dsub{margin:2px 0 4px;font-size:13.5px}
+.docbody .dsub.w{color:var(--wait);font-weight:600}
+.docbody .dact{margin:10px 0 14px}
+.docbody .dact .btn{text-decoration:none}
+.dsw{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}
+.dsw a{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border:1px solid var(--line);border-radius:99px;background:var(--panel);color:var(--fg);text-decoration:none}
+.dsw a svg{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;color:var(--muted)}
+.dsw a b{font-size:13px}
+.dsw a.on{border-color:var(--accent);background:var(--done-bg)}
+.dsw a.on svg{color:var(--accent)}
+.dsw a.later{border-style:dashed}
+.dsw a.later b{color:var(--muted);font-weight:500}
 /* The product's Documents tab (0.4.11): three groups on the left, the chosen document read in full on the right. */
 .docs{display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:0 18px;padding:14px 18px}
 @media (max-width:900px){.docs{grid-template-columns:1fr}}

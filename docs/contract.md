@@ -367,18 +367,8 @@ How the console reads these:
   features' stages), one card (the version's gate when it is the only feature; a note pointing at
   the Features page when one OK covers several; Approve feature for one listed after the build),
   and its Work. Opening a version with no stage named opens the feature it is at, or its first.
-- The **left menu** is the version's work, in three groups and with no step numbers: **Spec**, its
-  steps before the runs' stages (Requirements, and whatever else it runs before Test); **Features**,
-  a line per feature run with the service's words for where it is, each opening its run at that
-  stage; and **Ship**, its steps after (Package and on), one line "after the features" until one
-  of them is reached or chosen. The Features heading opens every run at once, the version's own
-  page at those stages (below). The runs' stages are the features' steps, not the version's, and
-  while any run is open the product's line is the version's `summary`. The menu lists no other
-  products: it is this product's work, and the Board and Dashboard hold them all.
-- In the Spec group, a step is named for the document it made (a `statement` artifact reads
-  "Spec", an `architecture` one "Design"), with how it ended under it, and opens that document:
-  the Spec tab at Requirements, the Artifacts tab elsewhere. A step that made nothing keeps its
-  stage name.
+- The **left menu** is the version line and its features, nothing else: no stage names, no documents, no other products. A version whose features run on their own lists each run where it is; any other lists its features as above.
+- The version's documents are **tabs across the top of the canvas**, after the selected feature's tab: Spec, Design, Review, Security, Package, Deploy, Docs and Operate, each a group of stages (Spec: Reverse engineering and Requirements; Package: Package and Release; Deploy: Deploy, Conformance and Acceptance; and so on), shown only when it holds an artifact, evidence or an open gate, with a count when it holds more than one. A tab (`#/b/<id>/d/<tab>[/<n>]`) opens with the gate of a stage of it that waits on you, then a switcher of its artifacts (an icon and the name each; evidence from outside tools after the stage's own artifacts; ones not made yet dashed), then the chosen one in full: its name, a line saying where it stands, who made it, Ask for a change (the stage's chat), what it says, its files and its versions. A version waiting at a document's stage opens at that tab.
 - A **feature's page** is headed by the feature's name, over a strip of its own stages (Test → Code,
   each done, now or next, the page's marked; the stage it is at names who holds it). Its gate is
   the run's own, in three lines: the check's verdict with the pull request beside it, the check's

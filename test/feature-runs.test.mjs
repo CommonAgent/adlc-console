@@ -223,7 +223,7 @@ test("the console's checks notice a feature run that breaks the contract", async
   assert.ok(checkContractList(list).some((x) => x.includes("at has a stage id and a known state")));
 });
 
-test("the rail of a version with features: Spec, Features and Ship, none numbered; a feature opens its run, the open one shows its stages; Ship is one line until reached", async () => {
+test("the rail of a version with features is the features alone: each run where it is, no Spec, no Ship, no stage names", async () => {
   const d = createDemoService();
   const b = (await get(d, WS)).body.build;
   const spine = steps(b, { defs });
@@ -234,18 +234,15 @@ test("the rail of a version with features: Spec, Features and Ship, none numbere
   const opts = { href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#/b/b_word_stats/code", stageName };
   const html = spineHtml(b, spine, { sel: "code", runSel: "F2", ...opts });
   const text = visible(html);
-  assert.equal(text, "word-stats 0.1.0 Spec all documents ✓ Requirements approved 2026-11-02T15:05:00Z Features 1 of 3 done ✓ Count words You OK'd the code on pull request #7 F2 Count lines Waiting on you at Code F3 Longest word Working at Code: waiting for a push to pull request #9 Ship after the features Package, Release, Deploy, Conformance and Acceptance");
+  assert.equal(text, "word-stats 0.1.0 Features 1 of 3 done ✓ Count words You OK'd the code on pull request #7 F2 Count lines Waiting on you at Code F3 Longest word Working at Code: waiting for a push to pull request #9");
   assert.ok(!/<span class="dot" aria-hidden="true">\d/.test(html), "no step numbers");
   // Each feature opens its run where it is; its stages are the feature page's, not the menu's.
   assert.match(html, /<a class="rs run done" href="#\/b\/b_word_stats\/code\/run\/F1"/);
   assert.match(html, /<a class="rs run now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="page"/);
   assert.match(html, /<a class="rs run now work" href="#\/b\/b_word_stats\/code\/run\/F3"/);
-  // Ship, folded, opens at its first stage; chosen, it unfolds.
-  assert.match(html, /<a class="rs next ship" href="#\/b\/b_word_stats\/package"/);
-  const open = spineHtml(b, spine, { sel: "deploy", ...opts });
-  assert.ok(!/class="rs next ship"/.test(open));
-  assert.match(open, /<h3 class="rg">Ship<\/h3><a class="rs next" href="#\/b\/b_word_stats\/package"/);
-  assert.match(open, /<a class="rs next sel" href="#\/b\/b_word_stats\/deploy" aria-current="page"/);
+  // No Spec or Ship in the menu: the version's documents are tabs in the canvas.
+  assert.ok(!/>Spec<|>Ship<|class="rs doc/.test(html), "the menu is the features alone");
+  assert.ok(!/class="rs doc|>Ship</.test(spineHtml(b, spine, { sel: "deploy", ...opts })));
   // The Features heading opens every feature at once, and is the page when the version's own Code is.
   assert.match(spineHtml(b, spine, { sel: "code", runSel: null, ...opts }), /<a class="rg sel" href="#\/b\/b_word_stats\/code" aria-current="page"/);
   // Without a way to open a run, the rail is the version's numbered steps alone, as before.
@@ -286,7 +283,7 @@ test("the menu names a step before the features for the document it made, and op
   assert.deepEqual(documentOf(b, "requirements"), { id: "a-spec", name: "Spec", kind: "statement", version: "0.1.0", tab: "spec" });
   assert.equal(documentOf(b, "package"), null);
   const html = spineHtml(b, steps(b, { defs }), { sel: "code", runSel: "F2", href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#", stageName });
-  assert.match(html, /<a class="rg" href="#\/documents"[^>]*>Spec <small>all documents<\/small><\/a><a class="rs doc done" href="#\/b\/b_word_stats\/requirements\/spec"[^>]*><span class="dot" aria-hidden="true">✓<\/span><span class="rn">Spec<\/span><small>approved 2026-11-02T15:05:00Z<\/small><\/a>/);
+  assert.ok(!/class="rs doc/.test(html), "the spec is a tab of the canvas, not a line of the menu");
   // The Work tab: given, the spec at this feature; made, the run's file, open.
   const fr = b.feature_runs.find((r) => r.id === "F2");
   const ws = stageWorkspace(runBuild(b, "F2"), "code", null, { defs });

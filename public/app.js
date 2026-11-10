@@ -15,7 +15,7 @@ import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
 import { specOf, specTabHtml } from "./spec.js";
-import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel, runWorkHtml, featureRegion, versionFeatures, featurePageHtml, currentStage } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel, runWorkHtml, featureRegion, versionFeatures, featurePageHtml, currentStage, docTabs, docTabOf, docTabsBarHtml, docTabHtml } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -150,6 +150,7 @@ function parseHash() {
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
   // #/b/<id>/<stage>/run/<run>[/<tab>] opens one feature run at that stage (0.4.10).
+  if (parts[0] === "b" && parts[1] && parts[2] === "d") return { view: "build", id: parts[1], doc: parts[3] ?? "", item: Number(parts[4] ?? 0) || 0, sel: null, run: null, tab: null };
   if (parts[0] === "b" && parts[1] && parts[2] === "f") return { view: "build", id: parts[1], feature: parts[3] ?? "", sel: null, run: null, tab: null };
   if (parts[0] === "b" && parts[1]) {
     const run = parts[3] === "run" ? parts[4] || null : null;
@@ -161,6 +162,7 @@ function parseHash() {
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 const hashFor = (id, sel) => `#/b/${encodeURIComponent(id)}${sel ? `/${encodeURIComponent(sel)}` : ""}`;
+const docHash = (id, tab, n = 0) => `${hashFor(id)}/d/${encodeURIComponent(tab)}${n ? `/${n}` : ""}`;
 const featureHash = (id, feature) => `${hashFor(id)}/f/${encodeURIComponent(feature)}`;
 const runHash = (id, sel, run) => `${hashFor(id, sel)}${run ? `/run/${encodeURIComponent(run)}` : ""}`;
 const productHash = (name) => `#/p/${encodeURIComponent(name)}`;
@@ -228,8 +230,13 @@ async function route() {
   if (state.boss.has === null) { try { await loadBoss(productOf(state.build)); } catch (e) { if (e.needKey) return problem(e); } }
   // The rail is the version's features and the product's documents, for every version.
   try { await loadVersionData(); } catch (e) { if (e.needKey) return problem(e); }
+  if (h.doc !== undefined) {
+    state.docSel = h.doc; state.docItem = h.item; state.featSel = null; state.stageSel = null; state.runSel = null; state.error = "";
+    return draw();
+  }
+  state.docSel = null;
   if (h.feature !== undefined) {
-    state.featSel = h.feature; state.stageSel = null; state.runSel = null; state.error = "";
+    state.featSel = h.feature; state.lastFeat = h.feature; state.stageSel = null; state.runSel = null; state.error = "";
     return draw();
   }
   state.featSel = null;
@@ -246,6 +253,8 @@ async function route() {
       const fs = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName: (id) => def(id).name });
       const f = fs.find((x) => x.id && x.mark === "now") ?? fs.find((x) => x.id);
       if (f) return go(featureHash(b.id, f.id));
+    } else if (at && docTabOf(at) && !stepStages(b, defs()).every((s) => s.state === "done")) {
+      return go(docHash(b.id, docTabOf(at)));
     } else if (!at || !featureRuns(b).length) {
       // A finished version opens at its first feature.
       const fs = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName: (id) => def(id).name });
@@ -844,6 +853,7 @@ function draw() {
   if (!state.build) return;
   if (state.view === "product") return drawProduct();
   if (state.view !== "build") return;
+  if (state.docSel !== null && state.docSel !== undefined) return drawDoc();
   if (state.featSel !== null && state.featSel !== undefined) return drawFeature();
   const b = state.build;
   const ws = currentWs();
@@ -900,7 +910,7 @@ function draw() {
   const focusName = state.featFocus ? (state.bfeat.answer?.features ?? state.feat.answer?.features ?? []).find((x) => x.id === state.featFocus)?.name ?? "" : "";
   // Each stage's features (0.4.5) in its Artifacts tab, one short line per feature; Requirements has its own Features tab.
   const slice = ws.stage !== "requirements" && ws.features ? ws.features : null;
-  if (fr && state.tab === "work") body = runWorkHtml(fr, ws, b, { href: (s, t) => `${hashFor(b.id, s)}/${t}`, filesHtml: (list, openOne = true) => filesHtml(list, openOne), stageName: (id) => def(id).name });
+  if (fr && state.tab === "work") body = runWorkHtml(fr, ws, b, { href: (s, t) => (docTabOf(s) ? docHash(b.id, docTabOf(s)) : `${hashFor(b.id, s)}/${t}`), filesHtml: (list, openOne = true) => filesHtml(list, openOne), stageName: (id) => def(id).name });
   else if (state.tab === "features" && reqFeat) body = requirementsFeaturesHtml(state.bfeat.answer, { pending: state.featPending, allPending: state.featAllPending, listing: state.featListing, spec: spec?.summary ?? null });
   else if (state.tab === "spec" && spec) body = specTabHtml(spec, { when });
   else if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list, openOne = false) => filesHtml(list, openOne), feature: state.featFocus, featureName: focusName, featuresTitle: "Features at this stage", featuresHtml: slice ? () => stageFeaturesHtml(slice) : null });
@@ -926,6 +936,8 @@ function draw() {
       <div class="wbody tab-${esc(state.tab)}" id="tabbody" role="tabpanel">${body}</div>
       ${state.tab === "chat" ? (talk ? composerHtml(agent, { draft: state.sayDraft, pending: state.sayPending, error: state.sayError }) : chat && ws.holder ? `<div class="compose quiet"><p class="hint">${esc(`${agent || "A person"} holds this stage. There is no agent here to talk to.`)}</p></div>` : "") : ""}
     </section>`;
+  if (run) state.lastRun = state.runSel;
+  withTabBar(run ? "feature" : null);
   $("stage").innerHTML = "";
   // The bars placed through the CSSOM: the page's policy takes no style attribute.
   for (const i of document.querySelectorAll(".timeline .track i")) { i.style.left = `${i.dataset.l}%`; i.style.width = `${i.dataset.w}%`; }
@@ -963,13 +975,63 @@ function drawFeature() {
   $("main").innerHTML = featurePageHtml(f, b, {
     features: feats, defs: defs(), stageName, holder, error: state.error,
     stageHref: (s, t) => `${hashFor(b.id, s)}/${t}`,
+    docHref: (s) => (docTabOf(s) ? docHash(b.id, docTabOf(s)) : `${hashFor(b.id, s)}/artifacts`),
     featuresHref: atRegion ? hashFor(b.id, atRegion.stage) : hashFor(b.id),
     gateHtml: ws ? () => runGateHtml({}, ws, b, stageCtx(ws)) : null,
     pending: state.featPending,
     canTry: state.status?.can_try !== false && (Boolean(prStage()) || installed()),
   });
+  withTabBar("feature");
   $("stage").innerHTML = "";
   if (b.stages.some((y) => y.state === "working")) schedule();
+}
+
+// The canvas's tab bar, put at the top of the page's header: the feature, then the version's documents.
+function tabBarFeature() {
+  const b = state.build;
+  const stageName = (id) => def(id).name;
+  const runs = featureRuns(b);
+  if (runs.length) {
+    const r = runs.find((x) => x.id === state.runSel) ?? runs.find((x) => x.id === state.lastRun) ?? runs.find((x) => x.at?.state === "waiting_on_you") ?? runs[0];
+    const name = String(r.name || r.id);
+    const id = [r.feature, r.id].map((x) => String(x ?? "")).find((x) => x && name.startsWith(`${x} `)) ?? "";
+    return { label: id ? name.slice(id.length + 1) : name, id, href: runHash(b.id, String(r.at?.stage || "code"), r.id) };
+  }
+  const fs = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName });
+  const f = fs.find((x) => x.id && x.id === (state.featSel ?? state.lastFeat)) ?? fs.find((x) => x.id) ?? fs[0];
+  if (!f) return null;
+  return { label: f.name, id: f.id, href: f.id ? featureHash(b.id, f.id) : hashFor(b.id, openingStage(b, defs())) };
+}
+function withTabBar(active) {
+  const head = document.querySelector("#main .whead");
+  if (!head || !state.build) return;
+  head.insertAdjacentHTML("afterbegin", docTabsBarHtml(state.build, { feature: tabBarFeature(), active, tabHref: (t) => docHash(state.build.id, t) }));
+}
+
+// A document tab: the version's documents, each tab one or more stages' artifacts and evidence.
+function drawDoc() {
+  const b = state.build;
+  const stageName = (id) => def(id).name;
+  layout("thread");
+  $("app").classList.add("noarts");
+  const tab = docTabs(b).find((t) => t.id === state.docSel);
+  const docs = state.docs?.name === productOf(b) ? state.docs.answer : null;
+  const history = (a) => {
+    const d = (docs?.documents ?? []).find((x) => x.stage === a.stage && x.current?.artifact?.id === a.id);
+    return d ? (d.history ?? []).map((h) => ({ version: h.version, at: h.at, href: hashFor(h.build), current: h.build === d.current.build })) : [];
+  };
+  const body = docTabHtml(b, state.docSel, {
+    item: state.docItem, stageName, when,
+    itemHref: (n) => docHash(b.id, state.docSel, n),
+    chatHref: (s) => `${hashFor(b.id, s)}/chat`,
+    gateHtml: (s) => { const ws = stageWorkspace(b, s, null, { defs: defs() }); return gateCardHtml(ws, b, stageCtx(ws)); },
+    filesHtml: (files, openOne = true) => filesHtml(files, openOne),
+    history,
+  });
+  $("main").innerHTML = `<section class="thread-wrap work"><div class="whead"><div class="err" role="alert">${esc(state.error)}</div></div><div class="wbody" id="tabbody">${tab ? body : `<div class="docbody"><p class="gw">This version has no ${esc(state.docSel)} document.</p></div>`}</div></section>`;
+  withTabBar(state.docSel);
+  $("stage").innerHTML = "";
+  for (const det of document.querySelectorAll("#tabbody details[open][data-file]")) loadFile(det);
 }
 
 // The product page: tabs for its versions, run plan and activity.

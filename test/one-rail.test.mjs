@@ -28,7 +28,7 @@ test("a version made in one chain gets the same rail: its spec's features, each 
   assert.deepEqual(fs.map((f) => [f.id, f.name, f.line, f.mark, f.wait]), [["F1", "Judge a sentence", "Waiting on you at Code", "now", true]]);
   const html = spineHtml(b, steps(b, { defs }), { ...opts(b), features: fs, featSel: "F1", line: { text: "Waiting on you at Code", wait: true } });
   const text = visible(html);
-  assert.equal(text, "palindrome-judge 0.1.0 Waiting on you at Code Spec all documents ✓ Spec approved 2026-10-31T15:04:00Z ✓ Design v1 Features 0 of 1 built F1 Judge a sentence Waiting on you at Code Ship after the features Package, Release, Deploy, Conformance and Acceptance");
+  assert.equal(text, "palindrome-judge 0.1.0 Waiting on you at Code Features 0 of 1 built F1 Judge a sentence Waiting on you at Code");
   for (const stage of ["Requirements", "Test", "Review", "Security review"]) assert.ok(!new RegExp(`class="rn">${stage}<`).test(html), `${stage} is not a line of the menu`);
   assert.match(html, /<a class="rs run now sel" href="#\/b\/b_palindrome_judge\/f\/F1" aria-current="page"/);
 });
@@ -64,4 +64,32 @@ test("a feature's page shows the version's gate when it is the only feature, and
   const many = featurePageHtml(two[0], b, { features: two, defs, stageName, gateHtml: () => gate, featuresHref: "#features" });
   assert.ok(!many.includes(gate));
   assert.match(many, /One OK covers every feature of this version\.<\/p><div class="acts"><a class="btn p" href="#features">Open the Features page<\/a>/);
+});
+
+test("the version's documents are tabs: one per group of stages that holds something, each listing its artifacts and evidence, the gate on the tab that waits", async () => {
+  const { docTabs, docTabsBarHtml, docTabHtml, docTabOf } = await import("../public/workspace.js");
+  const b = await getBuild("b_palindrome_judge");
+  const tabs = docTabs(b);
+  assert.deepEqual(tabs.map((t) => [t.id, t.items.map((x) => x.name)]), tabs.map((t) => [t.id, t.items.map((x) => x.name)]));
+  assert.ok(tabs.some((t) => t.id === "spec") && tabs.some((t) => t.id === "design"), JSON.stringify(tabs.map((t) => t.id)));
+  assert.equal(docTabOf("architecture"), "design");
+  assert.equal(docTabOf("release"), "package");
+  assert.equal(docTabOf("code"), null);
+  const design = tabs.find((t) => t.id === "design");
+  assert.ok(design.items.length >= 2, "Architecture and Design made two artifacts");
+  // Evidence an outside tool sent is an item of its stage's tab.
+  const withEvidence = { ...b, stages: b.stages.map((s) => (s.stage === "security" ? { ...s, evidence: [{ format: "cyclonedx", name: "SBOM", at: "2026-10-31T15:41:00Z", summary: "0 packages outside Node" }] } : s)) };
+  const sec = docTabs(withEvidence).find((t) => t.id === "security");
+  assert.deepEqual(sec.items.map((x) => [x.kind, x.name]).at(-1), ["evidence", "SBOM"]);
+  // The bar: the feature first, then the tabs, a tab with several artifacts showing how many.
+  const bar = docTabsBarHtml(b, { feature: { label: "Judge a sentence", id: "F1", href: "#f1" }, active: "design", tabHref: (t) => `#d/${t}` });
+  assert.match(bar, /<a class="ct" href="#f1">Judge a sentence<i>F1<\/i><\/a><span class="ctsep"/);
+  assert.match(bar, new RegExp(`<a class="ct on" href="#d/design" aria-current="page">Design<small>${design.items.length}</small></a>`));
+  // A tab: a switcher of icons and names, the chosen artifact in full, its status under its name, Ask for a change.
+  const html = docTabHtml(b, "design", { item: 0, stageName, itemHref: (n) => `#d/design/${n}`, chatHref: (s) => `#chat/${s}` });
+  assert.match(html, /<div class="dsw" role="tablist" aria-label="Design"><a class="on" role="tab" aria-selected="true" href="#d\/design\/0"><svg/);
+  assert.ok(!/<a [^>]*role="tab"[^>]*>[^]*?<small>/.test(html.split('<div class="dsw"')[1].split("</div>")[0]), "no status words inside a switcher button");
+  assert.match(html, /<p class="dact"><a class="btn" href="#chat\/architecture">Ask for a change<\/a><\/p>/);
+  const shown = docTabHtml(withEvidence, "security", { item: sec.items.length - 1, stageName });
+  assert.match(shown, /<h1>SBOM<\/h1><p class="dsub">0 packages outside Node<\/p>/);
 });
