@@ -12,6 +12,9 @@
 // actions are buttons on the product page, enabled only when the service says
 // it can run them. From 0.4.4 the Setup tab is a guided flow, one small form
 // per stage, and each when-needed action opens a confirm card before it runs.
+// From 0.4.10 a version may make each feature in a run of its own: its Test
+// and Code pages show a row per run in place of the gate, and a run opened is
+// read as a build of its own (runBuild).
 //
 // Everything here builds HTML from what the service answered and nothing else,
 // so the tests can read it without a browser (test/workspace.test.mjs). The
@@ -21,6 +24,7 @@
 import { esc, safeUrl } from "./roles.js";
 import { featureProposalsHtml, requirementsGateHtml, featuresMatrixHtml, focusHtml, featuresOfTest } from "./features.js";
 import { specHtml } from "./spec.js";
+import { runNameHtml } from "./board.js";
 
 // The stages a build's lifecycle does not use, or the service does not run: not on the spine.
 const OFF = new Set(["not_used", "not_offered", "not_applicable"]);
@@ -230,6 +234,9 @@ function doneWhenWords(text) {
   return [head.replace(/:$/, ""), items.join("; ")].filter(Boolean).join(": ");
 }
 
+/** How the page tells one action from another: its name, and the feature run it is for (0.4.10) when it names one. */
+export const actionKey = (a) => (str(a?.run) ? `${str(a.name)}\n${a.run}` : str(a?.name));
+
 /**
  * The build's live actions as buttons, one per action and nothing else, and,
  * for the one being asked (asking: "<stage>\n<name>"), the form for its needs:
@@ -243,10 +250,12 @@ export function actionButtonsHtml(list, { labels = {}, pending = null, asking = 
   const busy = pending !== null;
   // Stop is never drawn as the main action, even when it is the only one.
   const main = list.findIndex((a) => a.name !== "stop");
-  let h = `<div class="acts">${list.map((a, i) => `<button class="btn${i === main ? " p" : ""}" type="button" data-act="${esc(a.name)}" data-act-stage="${esc(a.stage)}"${busy ? " disabled" : ""}>${esc(pending === a.name ? "Sending…" : a.label)}</button>`).join("")}</div>`;
-  const ask = list.find((a) => `${a.stage}\n${a.name}` === asking && a.needs?.length);
+  // An action of a feature run (0.4.10) names its run, sent back with it.
+  const run = (a) => (str(a.run) ? ` data-act-run="${esc(a.run)}"` : "");
+  let h = `<div class="acts">${list.map((a, i) => `<button class="btn${i === main ? " p" : ""}" type="button" data-act="${esc(a.name)}" data-act-stage="${esc(a.stage)}"${run(a)}${busy ? " disabled" : ""}>${esc(pending === actionKey(a) ? "Sending…" : a.label)}</button>`).join("")}</div>`;
+  const ask = list.find((a) => `${a.stage}\n${actionKey(a)}` === asking && a.needs?.length);
   if (ask) {
-    h += `<form class="ask" data-ask="${esc(ask.name)}" data-ask-stage="${esc(ask.stage)}">${ask.needs.map((n) => {
+    h += `<form class="ask" data-ask="${esc(ask.name)}" data-ask-stage="${esc(ask.stage)}"${str(ask.run) ? ` data-ask-run="${esc(ask.run)}"` : ""}>${ask.needs.map((n) => {
       const id = `need-${esc(n.name)}`;
       const long = /words|text|long|reason|why|comment/i.test(n.kind);
       // A need the service marks optional may be left empty, and is then not sent.
@@ -294,6 +303,69 @@ export function gateCardHtml(ws, build, ctx = {}) {
   const may = !acts && (ws.whoWords || who) ? `<p class="whomay" role="note">${esc(ws.whoWords || `${cap(who)} may answer this gate.`)}</p>` : "";
   const title = check?.title ? `${cap(prShort(ws.where.url))}: ${check.title}` : acts ? "Waiting on you" : "Waiting at this gate";
   return `<div class="gcard${acts ? " gate" : ""}" id="gate"><h4>${esc(title)}</h4>${check?.words ? `<p>${esc(check.words)}</p>` : ""}${chips}${dw}${url ? `<p><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open ${esc(prShort(url))}</a></p>` : ""}${acts}${may}${acts && url && ctx.checkHtml ? `<details class="clonecheck"${ctx.cloneOpen ? " open" : ""}><summary>Run its check in your clone</summary>${ctx.checkHtml()}</details>` : ""}</div>`;
+}
+
+// ---------- feature runs (lifecycle API 0.4.10) ----------
+
+/** A version's feature runs, in the order they started; none for a build made in one run, or from a service before 0.4.10. */
+export function featureRuns(build) {
+  return list(build?.feature_runs).filter((r) => isObj(r) && str(r.id));
+}
+
+/** The stages a version's feature runs hold (Test and Code): their pages show a row for each run. */
+export function runStageIds(build) {
+  return new Set(featureRuns(build).flatMap((r) => list(r.stages).map((s) => str(s?.stage)).filter(Boolean)));
+}
+
+/**
+ * One feature run as the stage page reads a build: the version, with the run's
+ * own stages, actions, log and timeline in place of its own, and no artifacts,
+ * so each stage shows what the run handed back. Each file is asked for at
+ * runs/<run id>/<its path> (get), and still shown at its own path.
+ */
+export function runBuild(build, runId) {
+  const fr = featureRuns(build).find((r) => r.id === runId);
+  if (!fr) return null;
+  const files = (s) => ({ ...s, handed_back: { words: words(s.handed_back?.words), files: list(s.handed_back?.files).filter(isObj).map((f) => ({ ...f, get: `runs/${fr.id}/${str(f.path)}` })) } });
+  const own = new Map(list(fr.stages).filter((s) => isObj(s) && str(s.stage)).map((s) => [s.stage, files(s)]));
+  return { ...build, stages: list(build?.stages).map((s) => own.get(s?.stage) ?? s), actions: list(fr.actions), log: list(fr.log), timeline: list(fr.timeline), artifacts: [], run: fr };
+}
+
+/** An action's label in its run's row: "OK the code: F2" reads "OK the code" there. */
+export function runLabel(a, fr) {
+  const label = str(a?.label);
+  const tail = [fr?.feature, fr?.id].map(str).find((x) => x && label.endsWith(`: ${x}`));
+  return tail ? label.slice(0, -(tail.length + 2)) : label;
+}
+
+const RUN_TONE = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", stopped: "bad" };
+const RUN_WORD = { done: "Done", waiting_on_you: "Waiting on you", working: "Working", refused: "Refused", stopped: "Stopped", not_started: "Not started" };
+
+/**
+ * The feature runs at a Test or Code page, one row each: the feature, the
+ * stage it is at and its state, its pull request, and its actions; then the
+ * version's own actions at the stage. A row opens that run (href), and the open
+ * one says what its pull request's check said. ctx: { sel, href(run), stageName,
+ * actionsHtml(run, labels) (the version's own: run null), checkHtml, cloneOpen }.
+ */
+export function featureRunsHtml(build, stage, ctx = {}) {
+  const stageName = ctx.stageName ?? ((x) => x);
+  const acts = ctx.actionsHtml ?? (() => "");
+  const rows = featureRuns(build).map((fr) => {
+    const at = isObj(fr.at) ? fr.at : {};
+    const on = fr.id === ctx.sel;
+    const pr = isObj(fr.pull_request) ? fr.pull_request : null;
+    const url = pr ? safeUrl(pr.url) : null;
+    const labels = Object.fromEntries(list(fr.actions).map((a) => [a.name, runLabel(a, fr)]));
+    const own = fr.ended === true ? "" : acts(fr.id, labels);
+    const check = on && isObj(pr?.check) && str(pr.check.title) ? `<p class="rrw"><b>${esc(pr.check.title)}.</b> ${esc(str(pr.check.words))}</p>${own && url && ctx.checkHtml ? `<details class="clonecheck"${ctx.cloneOpen ? " open" : ""}><summary>Run its check in your clone</summary>${ctx.checkHtml()}</details>` : ""}` : "";
+    const st = str(at.state);
+    return `<li class="rrow${on ? " sel" : ""}"><a class="rrn" href="${esc(ctx.href ? ctx.href(on ? null : fr.id) : "#")}"${on ? ' aria-current="true"' : ""} title="${esc(str(at.summary))}">${runNameHtml(fr)}</a>`
+      + `<span class="rrs"><span class="pill ${RUN_TONE[st] ?? ""}">${esc(RUN_WORD[st] ?? cap(st.replace(/_/g, " ")))}</span> ${esc(stageName(str(at.stage)))}</span>`
+      + `<span class="rrp">${url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(prShort(url))}</a>` : ""}</span>`
+      + `<div class="rra">${own}</div>${check}</li>`;
+  }).join("");
+  return `<div class="gcard runs" id="gate"><ul class="rruns" aria-label="${esc(`Features at ${stageName(stage)}`)}">${rows}</ul>${acts(null, {})}</div>`;
 }
 
 // ---------- the chat ----------

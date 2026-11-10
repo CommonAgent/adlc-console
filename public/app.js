@@ -15,7 +15,7 @@ import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
 import { specOf, specTabHtml } from "./spec.js";
-import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, hasSkills, skillsOf, skillsTabHtml } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -42,7 +42,8 @@ const state = {
   // The open build's selected stage: the service's workspace for it (null when it has no such route),
   // its chat with the stage's agent (null without the route), the artifact open on the right, the
   // composer's draft, the proposals confirmed, and whether Try it is open on the right.
-  roleDefs: [], stageSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, skill: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: null, chatScroll: null, drawnKey: null,
+  // The feature run open on its Test or Code page (lifecycle API 0.4.10), or null for the version's own.
+  roleDefs: [], stageSel: null, runSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, skill: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: null, chatScroll: null, drawnKey: null,
   // The products (GET /products, null without the route) and the open product page.
   products: null, product: null,
   // The when-needed action being taken from the product page (0.4.2), and a role the Setup tab sent the
@@ -147,12 +148,18 @@ function parseHash() {
   // The Roles page is now part of the Lifecycle page; an old link still lands there.
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
-  if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "skills", "try", "features", "spec"].includes(parts[3]) ? parts[3] : null };
+  // #/b/<id>/<stage>/run/<run>[/<tab>] opens one feature run at that stage (0.4.10).
+  if (parts[0] === "b" && parts[1]) {
+    const run = parts[3] === "run" ? parts[4] || null : null;
+    const tab = run ? parts[5] : parts[3];
+    return { view: "build", id: parts[1], sel: parts[2] || null, run, tab: ["chat", "artifacts", "skills", "try", "features", "spec"].includes(tab) ? tab : null };
+  }
   if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "features", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 const hashFor = (id, sel) => `#/b/${encodeURIComponent(id)}${sel ? `/${encodeURIComponent(sel)}` : ""}`;
+const runHash = (id, sel, run) => `${hashFor(id, sel)}${run ? `/run/${encodeURIComponent(run)}` : ""}`;
 const productHash = (name) => `#/p/${encodeURIComponent(name)}`;
 
 async function route() {
@@ -220,6 +227,9 @@ async function route() {
     // 0.4.5: Requirements opens at its Features tab, the first one, when the service has features; other stages never have it.
     if (!h.tab) { if (stage === "requirements" && hasReqFeatures()) state.tab = "features"; else if (state.tab === "features" || state.tab === "spec") state.tab = "chat"; }
   }
+  // A feature run opened at its stage (0.4.10); any other link is the version's own view.
+  const run = h.run && runStageIds(state.build).has(stage) && featureRuns(state.build).some((r) => r.id === h.run) ? h.run : null;
+  if (run !== state.runSel) { state.runSel = run; state.art = null; state.featFocus = null; state.asking = null; if (!h.tab && state.tab === "skills") state.tab = "chat"; }
   // A Features cell opened this stage: its artifact, at its feature.
   if (state.openAt && state.openAt.build === state.build.id && state.openAt.stage === stage) {
     state.art = state.openAt.artifact; state.featFocus = state.openAt.feature; state.tab = "artifacts";
@@ -232,7 +242,7 @@ async function route() {
 async function openBuild(id) {
   if (state.build && state.build.id === id) return true;
   state.tries = []; state.lastTry = null; state.asking = null; state.wrongFor = null; if (state.tab === "try") state.tab = "chat";
-  state.stageSel = null; state.wsAnswer = null; state.chat = null; state.hasChat = false; state.art = null; state.skill = null; state.confirmed = new Set();
+  state.stageSel = null; state.runSel = null; state.wsAnswer = null; state.chat = null; state.hasChat = false; state.art = null; state.skill = null; state.confirmed = new Set();
   try { state.build = (await api(buildPath(id))).build; } catch (e) { problem(e); return false; }
   return true;
 }
@@ -729,12 +739,15 @@ function layout(kind) {
 }
 
 const artifactsOf = (b) => (Array.isArray(b?.artifacts) ? b.artifacts.filter((a) => a && typeof a.id === "string") : []);
-const currentWs = () => stageWorkspace(state.build, state.stageSel, state.wsAnswer, { defs: defs() });
+// The feature run open at the selected stage (0.4.10): the stage page reads it as a build of its own, made
+// from the build answer, since the service's stage workspace and chat are the version's.
+const openRun = () => (state.runSel && state.build && runStageIds(state.build).has(state.stageSel) ? runBuild(state.build, state.runSel) : null);
+const currentWs = () => { const r = openRun(); return r ? stageWorkspace(r, state.stageSel, null, { defs: defs() }) : stageWorkspace(state.build, state.stageSel, state.wsAnswer, { defs: defs() }); };
 
 // What the stage's gate card and chat need from the page: times, names, the gate buttons, the clone check.
 function stageCtx(ws) {
-  const b = state.build;
-  const kind = stageOf(ws.stage)?.holder?.kind;
+  const b = openRun() ?? state.build;
+  const kind = ws.holder?.kind;
   return {
     build: b, when, me: typeof state.me?.account?.name === "string" ? state.me.account.name : null,
     artifacts: new Map([...artifactsOf(b), ...ws.outputs, ...ws.given].map((a) => [a.id, a])), selected: state.art,
@@ -753,7 +766,7 @@ function setScroll(top) {
 }
 // Remembers where the chat was, so coming back to it lands in the same place.
 function leaveTab() {
-  if (state.tab === "chat" && state.view === "build" && state.build) state.chatScroll = { key: `${state.build.id}/${state.stageSel}`, top: getScroll() };
+  if (state.tab === "chat" && state.view === "build" && state.build) state.chatScroll = { key: `${state.build.id}/${state.stageSel}/${state.runSel ?? ""}`, top: getScroll() };
 }
 
 function draw() {
@@ -781,9 +794,15 @@ function draw() {
   if (state.tab === "skills" && !skills) state.tab = "chat";
   const agent = holderName(ws.holder, s, def(ws.stage), state.roleDefs);
   const who = holderHtml(ws.holder);
-  const talk = state.hasChat && canTalkTo(ws.holder);
-  const msgs = state.hasChat && Array.isArray(state.chat) ? state.chat : fallbackChat(b, ws.stage, { defs: defs(), roleDefs: state.roleDefs });
-  const gate = gateCardHtml(ws, b, ctx);
+  // A feature run open (0.4.10): its own record, read only; the stage's chat with its agent is the version's.
+  const run = openRun();
+  const chat = state.hasChat && !run;
+  const talk = chat && canTalkTo(ws.holder);
+  const msgs = chat && Array.isArray(state.chat) ? state.chat : fallbackChat(run ?? b, ws.stage, { defs: defs(), roleDefs: state.roleDefs });
+  // At Test and Code of a version whose features are made in runs of their own, a row for each run takes the gate's place.
+  const gate = runStageIds(b).has(ws.stage)
+    ? featureRunsHtml(b, ws.stage, { sel: state.runSel, href: (r) => runHash(b.id, ws.stage, r), stageName: (id) => def(id).name, actionsHtml: (r, labels) => actionsHtml(ws.stage, { run: r, labels }), checkHtml: localCheckHtml, cloneOpen: state.cloneOpen })
+    : gateCardHtml(ws, b, ctx);
   const st = stateOf({ state: ws.state });
   const tabs = [
     ...(reqFeat ? [{ id: "features", label: "Features", count: Array.isArray(state.bfeat.answer.features) ? state.bfeat.answer.features.length : undefined }] : []),
@@ -803,9 +822,9 @@ function draw() {
   else if (state.tab === "skills" && skills) body = skillsTabHtml(ws.holder, state.skill);
   else if (state.tab === "try") body = `<div class="stage trypane" id="trybody"></div>`;
   else body = `<div class="thread" id="thread">${chatHtml(msgs, { ...ctx, empty: talk ? `Nothing has been said here yet. Ask ${agent} about what it read or made.` : "Nothing has been said here yet." })}
-      ${ws.evidence.length ? `<div class="evid">${evidenceHtml(ws.evidence, { when, fileHtml: (f) => filesHtml([f], false) })}</div>` : ""}</div>${timeline()}`;
-  // Where the tab body was, kept across a redraw of the same stage and tab.
-  const key = `${b.id}/${ws.stage}/${state.tab}`;
+      ${ws.evidence.length ? `<div class="evid">${evidenceHtml(ws.evidence, { when, fileHtml: (f) => filesHtml([f], false) })}</div>` : ""}</div>${timeline(run ?? b)}`;
+  // Where the tab body was, kept across a redraw of the same stage, run and tab.
+  const key = `${b.id}/${ws.stage}/${state.runSel ?? ""}/${state.tab}`;
   const keep = key === state.drawnKey ? getScroll() : null;
   layout("thread");
   $("app").classList.add("noarts");
@@ -820,7 +839,7 @@ function draw() {
         ${tabsHtml(tabs, state.tab, { label: `${ws.name}` })}
       </div>
       <div class="wbody tab-${esc(state.tab)}" id="tabbody" role="tabpanel">${body}</div>
-      ${state.tab === "chat" ? (talk ? composerHtml(agent, { draft: state.sayDraft, pending: state.sayPending, error: state.sayError }) : state.hasChat && ws.holder ? `<div class="compose quiet"><p class="hint">${esc(`${agent || "A person"} holds this stage. There is no agent here to talk to.`)}</p></div>` : "") : ""}
+      ${state.tab === "chat" ? (talk ? composerHtml(agent, { draft: state.sayDraft, pending: state.sayPending, error: state.sayError }) : chat && ws.holder ? `<div class="compose quiet"><p class="hint">${esc(`${agent || "A person"} holds this stage. There is no agent here to talk to.`)}</p></div>` : "") : ""}
     </section>`;
   $("stage").innerHTML = "";
   // The bars placed through the CSSOM: the page's policy takes no style attribute.
@@ -829,12 +848,12 @@ function draw() {
   if (state.tab === "try") drawTry();
   if (keep !== null) setScroll(keep);
   else if (state.tab === "chat") {
-    const saved = state.chatScroll?.key === `${b.id}/${ws.stage}` ? state.chatScroll.top : null;
+    const saved = state.chatScroll?.key === `${b.id}/${ws.stage}/${state.runSel ?? ""}` ? state.chatScroll.top : null;
     // A stage's chat opens at its newest message; coming back to it lands where it was.
     if (saved !== null) setScroll(saved); else if (!phone()) setScroll(1e9);
   } else if (!phone()) setScroll(0);
   state.drawnKey = key;
-  if (b.stages.some((y) => y.state === "working")) schedule();
+  if (b.stages.some((y) => y.state === "working") || featureRuns(b).some((r) => r.at?.state === "working")) schedule();
 }
 
 // The product page: tabs for its versions, run plan and activity.
@@ -872,9 +891,10 @@ function drawProduct() {
 const KIND = { agent: "an agent working", person: "waiting on a person", external: "waiting on something outside the run" };
 
 /** The build's run, one row per step per round, ordered by start, with how
- *  long each took (build.timeline, added to the contract in 0.1). */
-function timeline() {
-  const bars = Array.isArray(state.build.timeline) ? state.build.timeline : [];
+ *  long each took (build.timeline, added to the contract in 0.1). A bar of a
+ *  feature run (0.4.10) names the run; an open run shows its own bars. */
+function timeline(b = state.build) {
+  const bars = Array.isArray(b.timeline) ? b.timeline : [];
   if (!bars.length) return "";
   const t0 = Math.min(...bars.map((x) => Date.parse(x.start)));
   const t1 = Math.max(...bars.map((x) => (x.end ? Date.parse(x.end) : Date.now())));
@@ -885,19 +905,20 @@ function timeline() {
     const left = ((a - t0) / whole) * 100;
     const width = Math.max(0.6, ((e - a) / whole) * 100);
     const took = x.duration_ms === null || x.duration_ms === undefined ? "still open, " + span(e - a) + " so far" : span(x.duration_ms);
-    return '<li class="' + esc(x.kind) + '"><div class="bl"><b>' + esc(x.phase) + (x.round > 1 ? " · round " + x.round : "") + "</b><span>" + esc(took) + "</span></div>"
+    return '<li class="' + esc(x.kind) + '"><div class="bl"><b>' + (x.run && !b.run ? esc(x.run) + " · " : "") + esc(x.phase) + (x.round > 1 ? " · round " + x.round : "") + "</b><span>" + esc(took) + "</span></div>"
       + '<div class="track" aria-hidden="true"><i data-l="' + left.toFixed(2) + '" data-w="' + width.toFixed(2) + '"></i></div>'
       + '<div class="bk">' + esc(KIND[x.kind] ?? x.kind) + (x.holder ? " · " + esc(x.holder) : "") + " · " + esc(x.status) + "</div></li>";
   }).join("");
   return '<details class="timeline"' + (state.timelineOpen ? " open" : "") + '><summary>How long each step took <span>' + esc(span(whole)) + '</span></summary><p class="does">' + esc(span(whole)) + " from the first step to the last. Steps that ran at the same time overlap.</p><ol class=\"bars\">" + rows + "</ol></details>";
 }
 
-function actionsFor(stage) {
-  return (state.build.actions ?? []).filter((a) => a.stage === stage);
+// A feature run's actions (0.4.10) name it; run null is the version's own, which is every action of a build made in one run.
+function actionsFor(stage, run = null) {
+  return (state.build.actions ?? []).filter((a) => a.stage === stage && (a.run ?? null) === run);
 }
 
 function actionsHtml(stage, opts = {}) {
-  const list = actionsFor(stage);
+  const list = actionsFor(stage, opts.run ?? null);
   // A gate this key may not answer: the service leaves its buttons out and says who may.
   const whoMay = whoMayHtml(stageOf(stage));
   if (whoMay) return `${whoMay}${list.length ? buttonsHtml(list, opts) : ""}`;
@@ -909,12 +930,13 @@ function buttonsHtml(list, { labels = {} } = {}) {
   return actionButtonsHtml(list, { labels, pending: state.pending, asking: state.asking });
 }
 
+// A feature run's file (0.4.10) is asked for at runs/<run id>/<its path> (get), and shown at its own path.
 function filesHtml(list, openOne = true) {
   return `<div class="files">${list.map((f, i) => {
-    const key = `${state.build.id}\n${f.path}`;
+    const key = `${state.build.id}\n${f.get ?? f.path}`;
     const got = state.files.get(key);
     const open = openOne && list.length === 1 && i === 0;
-    return `<details data-file="${esc(f.path)}"${open ? " open" : ""}><summary><b>${esc(f.path)}</b><span>${esc(size(f.size))}</span></summary><pre>${got === undefined ? "Loading…" : esc(got)}</pre></details>`;
+    return `<details data-file="${esc(f.get ?? f.path)}"${open ? " open" : ""}><summary><b>${esc(f.path)}</b><span>${esc(size(f.size))}</span></summary><pre>${got === undefined ? "Loading…" : esc(got)}</pre></details>`;
   }).join("")}</div>`;
 }
 
@@ -1045,8 +1067,8 @@ function drawBoard() {
   layout("solo");
   $("main").innerHTML = boardHtml(state.builds, state.stages, PHASES, { mine: state.boardMine, error: state.error });
   $("stage").innerHTML = "";
-  // While any build is working, it refreshes the way a build page does.
-  if (state.builds.some((b) => b.at?.state === "working" && !b.archived)) schedule();
+  // While any build or feature run is working, it refreshes the way a build page does.
+  if (state.builds.some((b) => !b.archived && (b.at?.state === "working" || (b.feature_runs ?? []).some((c) => c?.at?.state === "working")))) schedule();
 }
 
 // The Dashboard: median time per stage, send-backs per stage, and what is
@@ -1165,11 +1187,12 @@ async function loadFile(det) {
   if (pre) pre.textContent = body;
 }
 
-async function act(name, needs = {}) {
-  state.pending = name; draw();
+async function act(name, needs = {}, run = null) {
+  state.pending = run ? `${name}\n${run}` : name; draw();
   try {
     // A 403 with words here is the service turning down this person at this gate, not a bad key.
-    const r = await api(buildPath(state.build.id, `/actions/${encodeURIComponent(name)}`), { method: "POST", body: needs, own403: true });
+    // A feature run's action (0.4.10) sends back the run it names.
+    const r = await api(buildPath(state.build.id, `/actions/${encodeURIComponent(name)}`), { method: "POST", body: run ? { ...needs, run } : needs, own403: true });
     if (r?.build) state.build = r.build;
     else state.build = (await api(buildPath(state.build.id))).build;
     state.asking = null; state.error = "";
@@ -1501,11 +1524,11 @@ document.addEventListener("click", async (e) => {
   }
   const a = t.closest("[data-act]");
   if (a) {
-    const action = actionsFor(a.dataset.actStage).find((x) => x.name === a.dataset.act);
+    const action = actionsFor(a.dataset.actStage, a.dataset.actRun || null).find((x) => x.name === a.dataset.act);
     if (!action) return;
     if (action.needs?.length) { state.asking = `${action.stage}
-${action.name}`; draw(); $("main").querySelector(".ask textarea, .ask input")?.focus(); return; }
-    return act(action.name);
+${actionKey(action)}`; draw(); $("main").querySelector(".ask textarea, .ask input")?.focus(); return; }
+    return act(action.name, {}, action.run ?? null);
   }
   if (t.closest("[data-cancel]")) { const tr = state.tab === "try" && t.closest("#trybody"); state.asking = null; state.wrongFor = null; return tr ? drawTry() : draw(); }
   const keep = t.closest("[data-keep]");
@@ -1627,7 +1650,7 @@ document.addEventListener("submit", async (e) => {
   if (f.dataset.ask) {
     const needs = {};
     for (const x of f.querySelectorAll("[name]")) if (x.value.trim() || x.required) needs[x.name] = x.value;
-    return act(f.dataset.ask, needs);
+    return act(f.dataset.ask, needs, f.dataset.askRun || null);
   }
 });
 
