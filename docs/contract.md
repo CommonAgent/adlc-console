@@ -361,11 +361,11 @@ How the console reads these:
 - The **left menu** is the version's work, in three groups and with no step numbers: **Spec**, its
   steps before the runs' stages (Requirements, and whatever else it runs before Test); **Features**,
   a line per feature run with the service's words for where it is, each opening its run at that
-  stage, the open one showing its own Test and Code under it; and **Ship**, its steps after
-  (Package and on), one line "after the features" until one of them is reached or chosen. The
-  Features heading opens every run at once, the version's own page at those stages (below). The
-  runs' stages are the features' steps, not the version's, and while any run is open the product's
-  line is the version's `summary`.
+  stage; and **Ship**, its steps after (Package and on), one line "after the features" until one
+  of them is reached or chosen. The Features heading opens every run at once, the version's own
+  page at those stages (below). The runs' stages are the features' steps, not the version's, and
+  while any run is open the product's line is the version's `summary`. The menu lists no other
+  products: it is this product's work, and the Board and Dashboard hold them all.
 - A **feature's page** is headed by the feature's name, over a strip of its own stages (Test → Code,
   each done, now or next, the page's marked). Its gate is the run's own: its pull request's check
   and its own actions alone, labeled without the run's id; a feature that ended shows where it

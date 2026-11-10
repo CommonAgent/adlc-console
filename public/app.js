@@ -15,7 +15,7 @@ import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
 import { specOf, specTabHtml } from "./spec.js";
-import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -670,23 +670,7 @@ function buildMenuHtml() {
   const spine = stepsNow();
   const mine = productOf(b);
   const stageName = (id) => def(id).name;
-  let others = "";
-  let archived = 0;
-  if (Array.isArray(state.products)) {
-    others = state.products.filter((p) => p?.name && p.name !== mine).map((p) => {
-      const l = productLine(p, { stageName });
-      const id = p.latest?.build;
-      return `<a class="ob" href="${esc(id ? hashFor(id) : productHash(p.name))}"><b>${esc(p.name)}</b><small class="${l.wait ? "w" : ""}">${esc(l.text)}</small></a>`;
-    }).join("");
-  } else {
-    // No products route: each other build in the list stands for its product.
-    const rest = state.builds.filter((x) => (x.product || x.name) !== mine);
-    archived = rest.filter((x) => x.archived).length;
-    others = rest.filter((x) => state.showArchived || !x.archived).map((x) => {
-      const l = railLine(x);
-      return `<a class="ob${x.archived ? " ar" : ""}" href="${hashFor(x.id)}" title="${esc(x.does)}"><b>${esc(x.name)}</b><small class="${l.wait ? "w" : ""}${l.paused ? " p" : ""}">${x.archived ? "Archived · " : ""}${esc(l.text)}</small></a>`;
-    }).join("");
-  }
+  // The other products are not listed here: the menu is this product's work. The Board and Dashboard hold them all.
   const page = (href, name) => `<a href="${esc(href)}">${esc(name)}</a>`;
   const pages = [
     page("#/board", "Board"), page("#/dashboard", "Dashboard"),
@@ -701,8 +685,6 @@ function buildMenuHtml() {
   const held = runStageIds(b);
   const allAt = [openingStage(b, defs()), ...held].find((s) => s && held.has(s));
   return `${ask}${spineHtml(b, spine, { sel: state.view === "build" ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" && !onBoss, runSel: state.view === "build" ? state.runSel : null, runHref: (s, r) => runHash(b.id, s, r), runsHref: allAt ? hashFor(b.id, allAt) : hashFor(b.id), stageName })}
-    ${others || archived ? `<h2>Other products</h2>${others}` : ""}
-    ${archived ? `<button class="linkbtn archt" id="archt" type="button" aria-pressed="${state.showArchived}">${state.showArchived ? "Hide archived" : `Show archived (${archived})`}</button>` : ""}
     ${state.status?.read_only ? "" : `<button class="newb" id="new2" type="button">New build</button>`}
     <h2>Factory</h2><div class="pages">${pages}</div>`;
 }

@@ -235,8 +235,8 @@ export function runLine(fr, stageName = (x) => x) {
   return productLine({ latest: { at: fr?.at, version: null } }, { stageName });
 }
 
-/** One feature in the rail: its id in the dot, its name, where it is; opened, its own stages under it. */
-function featureItemHtml(fr, { on, sel, runHref, stageName }) {
+/** One feature in the rail: its id in the dot, its name, where it is. Its stages are the feature page's strip, not the menu's. */
+function featureItemHtml(fr, { on, runHref, stageName }) {
   const at = isObj(fr.at) ? fr.at : {};
   const l = runLine(fr, stageName);
   const mark = fr.ended === true || at.state === "done" ? "done" : at.state === "not_started" ? "next" : "now";
@@ -244,12 +244,7 @@ function featureItemHtml(fr, { on, sel, runHref, stageName }) {
   const name = str(fr.name) || str(fr.id);
   const id = [fr.feature, fr.id].map(str).find((x) => x && name.startsWith(`${x} `));
   const dot = mark === "done" ? "✓" : id && id.length <= 3 ? id : "•";
-  const subs = on ? list(fr.stages).filter((s) => isObj(s) && str(s.stage)).map((s) => {
-    const sm = s.state === "done" ? "done" : s.stage === str(at.stage) && fr.ended !== true ? "now" : "next";
-    const son = s.stage === sel;
-    return `<a class="rs sub ${sm}${son ? " sel" : ""}" href="${esc(runHref(s.stage, fr.id))}"${son ? ' aria-current="page"' : ""}><span class="dot" aria-hidden="true">${sm === "done" ? "✓" : ""}</span><span class="rn">${esc(stageName(s.stage))}</span></a>`;
-  }).join("") : "";
-  return `<a class="rs run ${mark}${tone}${on ? " sel" : ""}" href="${esc(runHref(str(at.stage), fr.id))}"${on ? ' aria-current="true"' : ""} aria-label="${esc(`${name}: ${l.text}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(id ? name.slice(id.length + 1) : name)}</span><small class="${l.wait ? "w" : ""}">${esc(l.text)}</small></a>${subs}`;
+  return `<a class="rs run ${mark}${tone}${on ? " sel" : ""}" href="${esc(runHref(str(at.stage), fr.id))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${name}: ${l.text}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(id ? name.slice(id.length + 1) : name)}</span><small class="${l.wait ? "w" : ""}">${esc(l.text)}</small></a>`;
 }
 
 /** What another product waits on, from the products answer's latest build: "Waiting on you at Code". */

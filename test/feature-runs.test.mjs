@@ -234,13 +234,12 @@ test("the rail of a version with features: Spec, Features and Ship, none numbere
   const opts = { href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#/b/b_word_stats/code", stageName };
   const html = spineHtml(b, spine, { sel: "code", runSel: "F2", ...opts });
   const text = visible(html);
-  assert.equal(text, "word-stats 0.1.0 Spec ✓ Requirements Features 1 of 3 done ✓ Count words You OK'd the code on pull request #7 F2 Count lines Waiting on you at Code ✓ Test Code F3 Longest word Working at Code: waiting for a push to pull request #9 Ship after the features Package, Release, Deploy, Conformance and Acceptance");
+  assert.equal(text, "word-stats 0.1.0 Spec ✓ Requirements Features 1 of 3 done ✓ Count words You OK'd the code on pull request #7 F2 Count lines Waiting on you at Code F3 Longest word Working at Code: waiting for a push to pull request #9 Ship after the features Package, Release, Deploy, Conformance and Acceptance");
   assert.ok(!/<span class="dot" aria-hidden="true">\d/.test(html), "no step numbers");
-  // Each feature opens its run where it is; the open one shows its own Test and Code, Code being the page.
+  // Each feature opens its run where it is; its stages are the feature page's, not the menu's.
   assert.match(html, /<a class="rs run done" href="#\/b\/b_word_stats\/code\/run\/F1"/);
-  assert.match(html, /<a class="rs run now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="true"/);
+  assert.match(html, /<a class="rs run now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="page"/);
   assert.match(html, /<a class="rs run now work" href="#\/b\/b_word_stats\/code\/run\/F3"/);
-  assert.match(html, /<a class="rs sub done" href="#\/b\/b_word_stats\/test\/run\/F2"[^>]*>.*?Test<\/span><\/a><a class="rs sub now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="page"/);
   // Ship, folded, opens at its first stage; chosen, it unfolds.
   assert.match(html, /<a class="rs next ship" href="#\/b\/b_word_stats\/package"/);
   const open = spineHtml(b, spine, { sel: "deploy", ...opts });
