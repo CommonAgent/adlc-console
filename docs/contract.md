@@ -337,6 +337,43 @@ How the console reads these:
 - The product page's Features tab stays the matrix, the overview. The matrix no longer sits under
   the Requirements stage's Artifacts tab.
 
+Read by the console since lifecycle API 0.4.10 (additive; CommonAgent/adlc#148): each feature of a
+version in a run of its own.
+
+```
+GET /v1/lifecycle/builds
+builds[] adds feature_runs?: [{ id, feature, name, started, at: { stage, state, summary? }, ended }]
+
+GET /v1/lifecycle/builds/{id}
+build adds feature_runs?: [{ id, feature, name, started, by, ended, at,
+                             stages: [Stage],              // the run's own Test and Code
+                             actions: [Action],            // each naming the run as run; empty once it ended
+                             pull_request: PullRequest | null, log, timeline }]
+Action adds run?: <feature_runs[].id>
+TimelineBar adds run?: <feature_runs[].id>                  // on the build's timeline, a bar of that run
+
+POST /v1/lifecycle/builds/{id}/actions/{name}
+body adds run?: <feature_runs[].id>                         // sent whenever the action named one
+```
+
+How the console reads these:
+
+- The **Board** gives each feature run a card of its own beside its version's, in the column of
+  the run's own stage: the feature's name, the version, where it is and who it waits on. A run
+  that ended goes to Done. While any of its runs is open, the version's card shows the service's
+  words for how many features it is making, and **Waiting on me** counts the runs that wait on
+  you, never the version that waits on them. A run's card opens that run at its stage.
+- At **Test** and **Code** (the stages the runs hold), a row per run takes the gate card's place:
+  the feature, its stage and state, its pull request, and its actions, drawn the way every action
+  is, labeled without the run's own id since the row names it. The version's own actions at the
+  stage, such as Stop, follow the rows. Every action of a run is posted with its `run`.
+- Opening a row shows that run at the stage, as a build of its own made from the build answer: its
+  stage's state and holder, its pull request's check, its rounds and log as the chat (read only:
+  the stage's chat with its agent is the version's), what it handed back under Artifacts, each
+  file asked for at `runs/<run id>/<path>`, and its own timeline. Closing the row goes back to
+  the version's own view, where the timeline names each run's bars.
+- A service with no `feature_runs` is drawn exactly as before.
+
 Read by the console since lifecycle API 0.4.9 (additive): the skills of a stage's holder.
 
 ```

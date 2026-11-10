@@ -293,6 +293,31 @@ main .projof a{color:var(--accent)}
 .bc.unb .bw{color:var(--wait)}
 .bc.done .bw{color:var(--accent)}
 .bc.ar{opacity:.7}
+/* Feature runs (lifecycle API 0.4.10): a card per run beside its version's, and a row per run at Test and Code. */
+.bc.fr{margin-left:10px}
+.bc.fr .fid{font-size:11px;padding:0 4px}
+.bc.fr .bn i{white-space:normal;overflow-wrap:anywhere}
+.gcard.runs{padding:2px 12px}
+.rruns{list-style:none;margin:0;padding:0}
+.rrow{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:6px 0;border-top:1px solid var(--line)}
+.rrow:first-child{border-top:0}
+.rrow.sel{background:var(--panel);margin:0 -12px;padding:6px 12px}
+.rrn{flex:0 1 15em;min-width:0;color:var(--fg);text-decoration:none;font-weight:600;overflow-wrap:anywhere}
+.rrn:hover,.rrow.sel .rrn{color:var(--accent)}
+.rrs{flex:0 0 11.5em;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.rrp{flex:0 0 8.5em}
+.rrp a{font-size:12.5px;color:var(--accent);white-space:nowrap}
+.rra{display:contents}
+.rrow .acts{margin:0 0 0 auto;justify-content:flex-end;gap:6px}
+.rrow .btn,.gcard.runs>.acts .btn{padding:4px 10px;font-size:12.5px}
+.rrow .ask,.rrow .rrw,.rrow .clonecheck{flex:1 0 100%}
+.rrw{font-size:12.5px;color:var(--muted);margin:0}
+.rrw b{color:var(--fg)}
+.gcard.runs>.acts{margin:2px 0 6px}
+@media (max-width:640px){
+  .rrn{flex-basis:100%}
+  .rrow .acts{margin-left:0;flex-basis:100%;justify-content:flex-start}
+}
 
 /* The Dashboard: three tables, each row with a bar drawn in CSS. */
 .rail #board.boardl{margin-bottom:2px}

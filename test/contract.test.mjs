@@ -39,7 +39,7 @@ test("the build list has the contract's shape", async () => {
   const r = await get(d, "/v1/lifecycle/builds");
   assert.equal(r.status, 200);
   assert.deepEqual(checkBuildList(r.body), []);
-  assert.equal(r.body.builds.length, 13);
+  assert.equal(r.body.builds.length, 14);
 });
 
 test("every demo build has the contract's shape", async () => {
@@ -301,8 +301,11 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.4.9, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage, starting from existing code or an as-built record, back_to_requirements, the spec, and the holder's skills", () => {
-  assert.equal(SCHEMA.version, "0.4.9");
+test("the vendored schema is lifecycle API 0.4.10, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage, starting from existing code or an as-built record, back_to_requirements, the spec, the holder's skills, and feature runs", () => {
+  assert.equal(SCHEMA.version, "0.4.10");
+  assert.deepEqual(SCHEMA.$defs.FeatureRunCard.required, ["id", "feature", "name", "started", "at", "ended"]);
+  assert.deepEqual(SCHEMA.$defs.FeatureRun.required, ["id", "feature", "name", "started", "at", "ended", "stages", "actions", "log", "timeline"]);
+  for (const [d, k] of [["Build", "feature_runs"], ["BuildListItem", "feature_runs"], ["Action", "run"], ["TimelineBar", "run"]]) assert.ok(SCHEMA.$defs[d].properties[k], `${d}.${k}`);
   for (const k of ["skills", "skills_note"]) assert.ok(SCHEMA.$defs.Holder.properties[k], `Holder.${k}`);
   assert.deepEqual(SCHEMA.$defs.Skill.required, ["name", "text"]);
   assert.ok(SCHEMA.$defs.Artifact.properties.kind.enum.includes("spec"));

@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { createDemoService } from "../lib/demo.mjs";
 import { checkBuildList } from "../lib/contract.mjs";
-import { boardColumns, boardHtml, cardWords, isDone, waitsOnMe } from "../public/board.js";
+import { boardCards, boardColumns, boardHtml, cardWords, gathering, isDone, isRun, waitsOnMe } from "../public/board.js";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const DOC = JSON.parse(await readFile(join(HERE, "..", "standards", "stages.json"), "utf8"));
@@ -21,7 +21,8 @@ async function demoList() {
   const r = await createDemoService().handle("GET", "/v1/lifecycle/builds", new URLSearchParams("archived=1"), {});
   return r.body.builds;
 }
-const ids = (col) => col.builds.map((b) => b.id);
+// A feature run's card (0.4.10) is its build's id and the run's: "b_word_stats/F2".
+const ids = (col) => col.builds.map((b) => (b.run ? `${b.id}/${b.run.id}` : b.id));
 const byId = (cols) => Object.fromEntries(cols.map((c) => [c.id, c]));
 
 test("one column per phase in order, then Done", async () => {
@@ -34,7 +35,7 @@ test("each build goes in the column of the phase its current stage belongs to", 
   assert.deepEqual(checkBuildList({ builds: list }), []);
   const c = byId(boardColumns(list, STAGES, PHASES));
   assert.deepEqual(ids(c.define), ["b_invoice_reader", "b_meeting_notes"]);
-  assert.deepEqual(ids(c.make), ["b_palindrome_judge", "b_release_notes"]);
+  assert.deepEqual(ids(c.make), ["b_palindrome_judge", "b_word_stats", "b_word_stats/F2", "b_word_stats/F3", "b_release_notes"]);
   assert.deepEqual(ids(c.ship), ["b_ticket_triage", "b_expense_check"]);
   assert.deepEqual(ids(c.prove), ["b_tally_words", "b_contract_check"]);
   assert.deepEqual(ids(c.use), ["b_faq_answerer"]);
@@ -48,7 +49,7 @@ test("each build goes in the column of the phase its current stage belongs to", 
 test("finished, stopped and archived builds go in Done, with their end state", async () => {
   const list = await demoList();
   const c = byId(boardColumns(list, STAGES, PHASES));
-  assert.deepEqual(ids(c.done), ["b_word_tally", "b_lunch_poll", "b_greeter"]);
+  assert.deepEqual(ids(c.done), ["b_word_tally", "b_word_stats/F1", "b_lunch_poll", "b_greeter"]);
   const words = (id) => cardWords(list.find((b) => b.id === id), STAGES);
   assert.equal(words("b_word_tally").state, "Stopped at Code");
   assert.equal(words("b_lunch_poll").state, "Installed · conforms");
@@ -88,15 +89,16 @@ test("Waiting on me shows only the builds waiting on you", async () => {
   const list = await demoList();
   const cols = boardColumns(list, STAGES, PHASES, { mine: true });
   const shown = cols.flatMap(ids).sort();
-  assert.deepEqual(shown, ["b_contract_check", "b_invoice_reader", "b_palindrome_judge", "b_uptime_watch"]);
-  for (const id of shown) assert.ok(waitsOnMe(list.find((b) => b.id === id)));
+  // The version gathering its features waits on its runs: the run waiting on you is shown, not the version.
+  assert.deepEqual(shown, ["b_contract_check", "b_invoice_reader", "b_palindrome_judge", "b_uptime_watch", "b_word_stats/F2"]);
+  for (const id of shown.filter((x) => !x.includes("/"))) assert.ok(waitsOnMe(list.find((b) => b.id === id)));
   assert.equal(byId(cols).done.builds.length, 0);
   // The columns stay, empty.
   assert.equal(cols.length, 8);
   const html = boardHtml(list, STAGES, PHASES, { mine: true });
-  assert.match(html, /aria-pressed="true">Waiting on me \(4\)/);
+  assert.match(html, /aria-pressed="true">Waiting on me \(5\)/);
   assert.doesNotMatch(html, /b_meeting_notes/);
-  assert.match(visible(boardHtml(list.filter((b) => !waitsOnMe(b)), STAGES, PHASES, { mine: true })), /Nothing is waiting on you\./);
+  assert.match(visible(boardHtml(list.filter((b) => !boardCards([b]).some(waitsOnMe)), STAGES, PHASES, { mine: true })), /Nothing is waiting on you\./);
 });
 
 test("a list shaped like Product Factory's: done and stopped builds end, refused stays in its phase", () => {

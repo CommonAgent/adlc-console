@@ -125,7 +125,7 @@ test("the demo's builds carry rounds and timelines that read as the contract say
   assert.equal(backs.find((r) => r.stage === "package").back, 0);
 
   const w = waitingNow(list, STAGES);
-  assert.deepEqual(w.rows.flatMap((r) => r.person).sort(), ["contract-check", "invoice-reader", "palindrome-judge", "release-notes", "uptime-watch"]);
+  assert.deepEqual(w.rows.flatMap((r) => r.person).sort(), ["contract-check", "invoice-reader", "palindrome-judge", "release-notes", "uptime-watch", "word-stats"]);
   assert.deepEqual(w.rows.flatMap((r) => r.agent).sort(), ["currency-convert", "faq-answerer", "meeting-notes", "ticket-triage"]);
 });
 
@@ -135,14 +135,14 @@ test("the page: three tables with bars, the untimed builds said, names as text",
   const text = visible(html);
   assert.match(text, /Dashboard/);
   for (const h of ["How long each stage takes", "How often work is sent back", "What is waiting now"]) assert.match(text, new RegExp(h));
-  assert.match(text, /5 on a person · 4 with an agent working/);
+  assert.match(text, /6 on a person · 4 with an agent working/);
   assert.match(text, /3 builds carry no timeline with stages and are not counted/);
   assert.match(html, /<span class="hb" aria-hidden="true"><i data-w="\d/);
   assert.match(html, /<span class="hb back"/);
   // While the builds are read, the waiting table is drawn from the list alone.
   const loading = visible(dashboardHtml(list, [], STAGES, { loading: true }));
   assert.match(loading, /Reading the builds/);
-  assert.match(loading, /5 on a person/);
+  assert.match(loading, /6 on a person/);
   // Nothing yet.
   assert.match(visible(dashboardHtml([], [], STAGES)), /No builds yet\. .*No stage has finished with a timeline yet\. .*No stage has run a round yet\. .*Nothing is waiting or working now\./);
   const odd = dashboardHtml([{ id: "x", name: "<b>bold</b>", at: { stage: "code", state: "working" }, updated: "2026-11-07T18:00:00Z" }], [], STAGES);

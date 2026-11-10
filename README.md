@@ -82,6 +82,16 @@ opens the build. Waiting on me shows only the builds waiting on you. The board
 reads the same build list as the rail, and refreshes while any build is
 working.
 
+When a service makes each feature of a version in a run of its own (lifecycle
+API 0.4.10), each run has a card beside its version's, in the column of the
+run's own stage, and a run that ended goes to Done. Waiting on me counts the
+runs that wait on you. On the build page, Test and Code show a row per run in
+place of the gate: the feature, its stage and state, its pull request, and its
+actions, each sent with its run. Opening a row shows that run's own record at
+the stage: its check, its rounds and log, what it handed back and its timeline.
+The demo's word-stats is such a version, with one feature accepted, one waiting
+on you and one at Code.
+
 ## The Dashboard
 
 Dashboard, below Board in the rail, shows three things read from the build
