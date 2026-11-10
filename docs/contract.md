@@ -366,10 +366,23 @@ How the console reads these:
   page at those stages (below). The runs' stages are the features' steps, not the version's, and
   while any run is open the product's line is the version's `summary`. The menu lists no other
   products: it is this product's work, and the Board and Dashboard hold them all.
+- In the Spec group, a step is named for the document it made (a `statement` artifact reads
+  "Spec", an `architecture` one "Design"), with how it ended under it, and opens that document:
+  the Spec tab at Requirements, the Artifacts tab elsewhere. A step that made nothing keeps its
+  stage name.
 - A **feature's page** is headed by the feature's name, over a strip of its own stages (Test → Code,
-  each done, now or next, the page's marked). Its gate is the run's own: its pull request's check
-  and its own actions alone, labeled without the run's id; a feature that ended shows where it
-  ended, in the service's words, with its pull request. No other feature appears on it.
+  each done, now or next, the page's marked; the stage it is at names who holds it). Its gate is
+  the run's own, in three lines: the check's verdict with the pull request beside it, the check's
+  words, and its own actions, labeled without the run's id, Stop drawn quietly; done-when and the
+  clone check wait behind a disclosure. A feature that ended shows where it ended, in the service's
+  words, with its pull request. No other feature appears on it.
+- A feature's page opens at **Work**: what it was given (the version's spec at this feature, and
+  its design, each opening that document) and what the run handed back at this stage, the first
+  file open. Then Chat and Try it; it has no Artifacts or Skills tab of its own.
+- The factory's pages (Products, Board, Dashboard, Analytics, Lifecycle, People) are in the top
+  bar, with Ask the boss beside them while a product is open. **Products** (`#/products`) is a card
+  per product with where its latest version is, from `GET /products` when the service answers it,
+  else from the build list.
 - The **Board** gives each feature run a card of its own beside its version's, in the column of
   the run's own stage: the feature's name, the version, where it is and who it waits on. A run
   that ended goes to Done. While any of its runs is open, the version's card shows the service's

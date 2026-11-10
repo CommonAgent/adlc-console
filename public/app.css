@@ -269,7 +269,6 @@ main .projof a{color:var(--accent)}
 
 
 /* The Board: one column per phase, one card per build, then Done. */
-.rail .boardl{margin-bottom:12px}
 .board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(136px,1fr);gap:10px;overflow-x:auto;padding-bottom:6px;align-items:start;margin-top:12px}
 .col{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 8px;min-width:0}
 .col.end{background:transparent;border-style:dashed}
@@ -878,3 +877,43 @@ details.rfspec{margin:6px 0 0;border:1px solid var(--line);border-radius:6px}
 details.rfspec>summary{font-family:var(--sans);font-size:12.5px;color:var(--muted)}
 details.rfspec>:not(summary){margin-left:10px;margin-right:10px}
 details.rfspec>ul:last-child{margin-bottom:8px}
+
+/* The top bar holds the factory: its pages, and Ask the boss while a product is open. */
+.topnav{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--sans);font-size:13px}
+.topnav a{color:var(--muted);text-decoration:none;padding:2px 0;border-bottom:2px solid transparent}
+.topnav a:hover{color:var(--fg)}
+.topnav a.on{color:var(--fg);font-weight:600;border-color:var(--accent)}
+.top .askboss{margin-left:auto;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:4px 12px;text-decoration:none}
+.top .askboss.on{background:var(--accent);color:var(--panel)}
+.top #who{font-size:12px}
+@media (max-width:760px){.top .askboss{margin-left:0}}
+/* The menu's documents: a step before the features, named for what it made. */
+.spine.grouped .rs.doc small{display:block}
+/* A feature's gate: the verdict, one sentence, the buttons; the rest behind a disclosure. */
+.gcard.feat .row{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.gcard.feat .row h4{margin:0}
+.gcard.feat .row .pr{margin-left:auto;font-size:13px;white-space:nowrap}
+.gcard.feat>p{margin:4px 0 10px}
+.gcard.feat .acts [data-act="stop"]{border-color:transparent;background:none;color:var(--muted);padding-left:6px;padding-right:6px}
+.gcard.feat .acts [data-act="stop"]:hover{color:var(--bad)}
+.gcard.feat details.more{margin-top:10px;font-size:12.5px;color:var(--muted)}
+.gcard.feat details.more summary{cursor:pointer}
+.gcard.feat details.more .dw{margin:8px 0}
+/* A feature's Work tab: given on the left, made on the right. */
+.fwork{display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:0 18px;padding:14px 18px}
+.fwork h5{margin:0 0 8px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.fwork .gi{display:block;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;color:inherit;text-decoration:none}
+.fwork .gi:hover{border-color:var(--accent)}
+.fwork .gi b{display:block;font-size:13px}
+.fwork .gi small{display:block;color:var(--muted);font-size:11.5px;line-height:1.35}
+.fwork .made{min-width:0}
+.fwork .gw{margin:0 0 8px;color:var(--muted)}
+@media (max-width:900px){.fwork{grid-template-columns:1fr}}
+/* The Products page: one card per product, where its latest version is. */
+.products{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:12px}
+.pc{display:grid;gap:4px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:inherit;text-decoration:none}
+.pc:hover{border-color:var(--accent)}
+.pc b{font-size:15px}
+.pc b span{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--muted);margin-left:6px}
+.pc small{font-size:12.5px;color:var(--muted)}
+.pc small.w{color:var(--wait);font-weight:600}

@@ -189,9 +189,17 @@ export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, pro
     const on = x.stage === sel;
     return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${x.mark === "done" ? "✓" : ""}</span><span class="rn">${esc(x.name)}</span></a>`;
   };
+  // A step before the features is shown as the document it made (the spec, the design), with how it ended; it opens that document.
+  const doc = (x) => {
+    const on = x.stage === sel;
+    const d = documentOf(build, x.stage);
+    const name = d ? d.name : x.name;
+    const to = d ? `${href(x.stage)}/${d.tab}` : href(x.stage);
+    return `<a class="rs doc ${x.mark}${on ? " sel" : ""}" href="${esc(to)}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${name}: ${x.line}`)}"><span class="dot" aria-hidden="true">${x.mark === "done" ? "✓" : ""}</span><span class="rn">${esc(name)}</span>${x.line ? `<small>${esc(x.line)}</small>` : ""}</a>`;
+  };
   const done = runs.filter((r) => r.ended === true).length;
   const onAll = Boolean(sel) && held.has(sel) && !runSel;
-  const spec = before.length ? `<h3 class="rg">Spec</h3>${before.map(plain).join("")}` : "";
+  const spec = before.length ? `<h3 class="rg">Spec</h3>${before.map(doc).join("")}` : "";
   const feats = `<a class="rg${onAll ? " sel" : ""}" href="${esc(runsHref)}"${onAll ? ' aria-current="page"' : ""} title="Every feature of this version at once">Features <small>${done} of ${runs.length} done</small></a>`
     + runs.map((fr) => featureItemHtml(fr, { on: fr.id === runSel, sel, runHref, stageName })).join("");
   const reached = after.some((x) => x.mark !== "next" || x.stage === sel);
@@ -209,22 +217,70 @@ export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, pro
  */
 export function runGateHtml(fr, ws, build, ctx = {}) {
   const pr = isObj(fr?.pull_request) ? fr.pull_request : null;
+  const where = ws?.where ?? (pr ? { kind: "pull_request", ...pr } : null);
+  const url = where?.kind === "pull_request" ? safeUrl(where.url) : null;
+  const link = url ? `<a class="pr" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(prShort(url))}</a>` : "";
   if (fr?.ended === true) {
-    const url = pr ? safeUrl(pr.url) : null;
-    const said = str(fr.at?.summary) || "Done";
-    return `<div class="gcard done" id="gate"><h4>${esc(said)}</h4>${url ? `<p><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open ${esc(prShort(url))}</a></p>` : ""}</div>`;
+    return `<div class="gcard feat done" id="gate"><div class="row"><h4>${esc(str(fr.at?.summary) || "Done")}</h4>${link}</div></div>`;
   }
-  return gateCardHtml({ ...ws, where: ws?.where ?? (pr ? { kind: "pull_request", ...pr } : null) }, build, ctx);
+  const g = ws?.gate;
+  if (!g) return "";
+  if (g.state === "answered" || ws.stage === "requirements") return gateCardHtml({ ...ws, where }, build, ctx);
+  // Three lines: the verdict, one sentence, the buttons. Done-when and the clone check wait behind a disclosure.
+  const check = where?.kind === "pull_request" && isObj(where.check) ? where.check : null;
+  const acts = ctx.actionsHtml ? ctx.actionsHtml(ws.stage) : "";
+  const who = words(g.who_may).length ? words(g.who_may).join(", ") : str(g.who_may);
+  const may = !acts && (ws.whoWords || who) ? `<p class="whomay" role="note">${esc(ws.whoWords || `${cap(who)} may answer this gate.`)}</p>` : "";
+  const title = str(check?.title) || (acts ? "Waiting on you" : "Waiting at this gate");
+  const more = [ws.doneWhen ? `<p class="dw"><span>Done when</span> ${esc(doneWhenWords(ws.doneWhen))}</p>` : "", acts && url && ctx.checkHtml ? ctx.checkHtml() : ""].filter(Boolean);
+  const details = more.length ? `<details class="more"${ctx.cloneOpen ? " open" : ""}><summary>${esc(acts && url && ctx.checkHtml ? "Done when, and running its check in your clone" : "Done when")}</summary>${more.join("")}</details>` : "";
+  return `<div class="gcard feat${acts ? " gate" : ""}" id="gate"><div class="row"><h4>${esc(title)}</h4>${link}</div>${str(check?.words) ? `<p>${esc(check.words)}</p>` : ""}${acts}${may}${details}</div>`;
+}
+
+/** What a stage's document is called in the menu, by the kind of artifact it made. */
+const DOC_NAME = { statement: "Spec", architecture: "Design", suite: "Suite", programs: "Code", findings: "Review", security: "Security review", package: "Package", run_plan: "Run plan" };
+
+/** The document a stage made, as the menu lists it: its name and the tab that opens it, or null when it made none. */
+export function documentOf(build, stageId) {
+  const a = list(build?.artifacts).filter((x) => isObj(x) && x.stage === stageId && x.state === "made").at(-1);
+  if (!a) return null;
+  const name = DOC_NAME[str(a.kind)] ?? str(a.name) ?? "";
+  return { id: str(a.id), name, kind: str(a.kind), tab: stageId === "requirements" && a.kind === "statement" ? "spec" : "artifacts" };
+}
+
+/**
+ * A feature's Work tab: what it was given (the version's spec at this
+ * feature, and its design, each opening that document) and what it made
+ * (what the run handed back, the first file open). ctx: { href(stage, tab),
+ * filesHtml(files, openOne), stageName, feature }.
+ */
+export function runWorkHtml(fr, ws, build, ctx = {}) {
+  const href = ctx.href ?? ((s, t) => `#${s}/${t}`);
+  const files = ctx.filesHtml ?? (() => "");
+  const feat = str(fr?.feature) || str(fr?.id);
+  const given = list(build?.stages).map((s) => str(s?.stage)).map((id) => [id, documentOf(build, id)]).filter(([, d]) => d && ["statement", "architecture"].includes(d.kind))
+    .map(([id, d]) => {
+      const spec = d.kind === "statement";
+      const words = spec ? `The spec's feature ${feat}: what this feature does, and what it refuses.` : `The design: how the agent is put together, read for this feature.`;
+      return `<a class="gi" href="${esc(href(id, d.tab))}"><b>${esc(spec && feat ? `${d.name}, feature ${feat}` : d.name)}</b><small>${esc(words)}</small></a>`;
+    });
+  const hb = ws?.handedBack ?? {};
+  const said = words(hb.words);
+  const made = list(hb.files).filter(isObj);
+  const stageWords = ctx.stageName ? ctx.stageName(str(ws?.stage)) : str(ws?.stage);
+  return `<div class="fwork"><section class="given" aria-label="Given"><h5>Given</h5>${given.length ? given.join("") : `<p class="gw">${esc(ws?.givenWords || "Nothing from an earlier stage.")}</p>`}</section>
+    <section class="made" aria-label="Made"><h5>Made at ${esc(stageWords)}</h5>${said.map((x) => `<p class="gw">${esc(x)}</p>`).join("")}${made.length ? files(made, true) : said.length ? "" : `<p class="gw">Nothing handed back yet.</p>`}</section></div>`;
 }
 
 /** The strip under a feature's name: its own stages in order, each done, now or next, the page's marked. */
-export function runStripHtml(fr, { sel = null, href = (s) => `#${s}`, stageName = (x) => x } = {}) {
+export function runStripHtml(fr, { sel = null, href = (s) => `#${s}`, stageName = (x) => x, holder = "" } = {}) {
   const at = isObj(fr?.at) ? fr.at : {};
   const tone = { waiting_on_you: "waiting on you", working: "working", refused: "refused", stopped: "stopped" };
   const steps = list(fr?.stages).filter((s) => isObj(s) && str(s.stage)).map((s) => {
     const mark = s.state === "done" ? "done" : s.stage === str(at.stage) && fr.ended !== true ? "now" : "next";
     const on = s.stage === sel;
-    const word = mark === "done" ? "done" : mark === "now" ? tone[str(at.state)] ?? "now" : "next";
+    // The stage it is at names who holds it, so the page says so once.
+    const word = mark === "done" ? "done" : mark === "now" ? `${tone[str(at.state)] ?? "now"}${holder ? ` · ${holder}` : ""}` : "next";
     return `<a class="fs ${mark}${on ? " sel" : ""}" href="${esc(href(s.stage))}"${on ? ' aria-current="page"' : ""}>${esc(stageName(s.stage))}<small>${esc(word)}</small></a>`;
   });
   return `<nav class="fstrip" aria-label="This feature's stages">${steps.join('<span class="arrow" aria-hidden="true">→</span>')}</nav>`;

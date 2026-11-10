@@ -13,7 +13,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { boardCards, boardColumns, boardHtml, cardWords, gathering, isDone, waitsOnMe } from "../public/board.js";
-import { actionButtonsHtml, actionKey, featureRuns, featureRunsHtml, fallbackChat, runBuild, runLabel, runStageIds, stageWorkspace, artifactsTabHtml, steps, stepHeader, spineHtml, runGateHtml, runStripHtml } from "../public/workspace.js";
+import { actionButtonsHtml, actionKey, featureRuns, featureRunsHtml, fallbackChat, runBuild, runLabel, runStageIds, stageWorkspace, artifactsTabHtml, steps, stepHeader, spineHtml, runGateHtml, runStripHtml, runWorkHtml, documentOf } from "../public/workspace.js";
 import { validate, checkBuild, checkBuildList, stageIds } from "../standards/lifecycle-api-check.mjs";
 import { checkBuild as checkContract, checkBuildList as checkContractList } from "../lib/contract.mjs";
 import { createDemoService } from "../lib/demo.mjs";
@@ -234,7 +234,7 @@ test("the rail of a version with features: Spec, Features and Ship, none numbere
   const opts = { href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#/b/b_word_stats/code", stageName };
   const html = spineHtml(b, spine, { sel: "code", runSel: "F2", ...opts });
   const text = visible(html);
-  assert.equal(text, "word-stats 0.1.0 Spec ✓ Requirements Features 1 of 3 done ✓ Count words You OK'd the code on pull request #7 F2 Count lines Waiting on you at Code F3 Longest word Working at Code: waiting for a push to pull request #9 Ship after the features Package, Release, Deploy, Conformance and Acceptance");
+  assert.equal(text, "word-stats 0.1.0 Spec ✓ Requirements approved 2026-11-02T15:05:00Z Features 1 of 3 done ✓ Count words You OK'd the code on pull request #7 F2 Count lines Waiting on you at Code F3 Longest word Working at Code: waiting for a push to pull request #9 Ship after the features Package, Release, Deploy, Conformance and Acceptance");
   assert.ok(!/<span class="dot" aria-hidden="true">\d/.test(html), "no step numbers");
   // Each feature opens its run where it is; its stages are the feature page's, not the menu's.
   assert.match(html, /<a class="rs run done" href="#\/b\/b_word_stats\/code\/run\/F1"/);
@@ -267,13 +267,31 @@ test("a feature's page: its name over its own stages, and its gate alone, with i
   const ws = stageWorkspace(run, "code", null, { defs });
   const actionsHtml = (s) => actionButtonsHtml(run.actions.filter((a) => a.stage === s && a.run === "F2"), { labels: Object.fromEntries(run.actions.map((a) => [a.name, runLabel(a, fr("F2"))])) });
   const gate = runGateHtml(fr("F2"), ws, run, { actionsHtml });
-  assert.match(gate, /<h4>Pull request #8: Ready for your OK<\/h4>/);
+  assert.match(gate, /<h4>Ready for your OK<\/h4><a class="pr" href="https:\/\/github.com\/AgentMesh-Dev-Test\/word-stats\/pull\/8"/);
   assert.equal(visible(gate).includes("F1 Count words"), false, "no other feature on it");
   assert.deepEqual([...gate.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]), ["OK the code", "Send back to Test", "Stop"]);
+  assert.match(gate, /<details class="more"><summary>Done when<\/summary>/, "done-when waits behind a disclosure");
   // A feature that ended: where it ended, in the service's words, and its pull request.
   const done = runGateHtml(fr("F1"), stageWorkspace(runBuild(b, "F1"), "code", null, { defs }), runBuild(b, "F1"), { actionsHtml: () => "" });
-  assert.match(done, /<div class="gcard done" id="gate"><h4>You OK&#39;d the code on pull request #7<\/h4><p><a href="https:\/\/github.com\/AgentMesh-Dev-Test\/word-stats\/pull\/7"/);
+  assert.match(done, /<div class="gcard feat done" id="gate"><div class="row"><h4>You OK&#39;d the code on pull request #7<\/h4><a class="pr" href="https:\/\/github.com\/AgentMesh-Dev-Test\/word-stats\/pull\/7"/);
   // A run whose stage names no pull request still shows the run's.
   const bare = runGateHtml({ ...fr("F2"), stages: [] }, { ...ws, where: null }, run, { actionsHtml });
-  assert.match(bare, /<h4>Pull request #8: Ready for your OK<\/h4>/);
+  assert.match(bare, /<h4>Ready for your OK<\/h4><a class="pr" href="https:\/\/github.com\/AgentMesh-Dev-Test\/word-stats\/pull\/8"/);
+});
+
+test("the menu names a step before the features for the document it made, and opens it; a feature's Work tab gives the spec at that feature and what the run handed back", async () => {
+  const d = createDemoService();
+  const b0 = (await get(d, WS)).body.build;
+  const b = { ...b0, artifacts: [{ id: "a-spec", stage: "requirements", kind: "statement", name: "Statement of the job", state: "made", version: "0.1.0" }] };
+  assert.deepEqual(documentOf(b, "requirements"), { id: "a-spec", name: "Spec", kind: "statement", tab: "spec" });
+  assert.equal(documentOf(b, "package"), null);
+  const html = spineHtml(b, steps(b, { defs }), { sel: "code", runSel: "F2", href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#", stageName });
+  assert.match(html, /<h3 class="rg">Spec<\/h3><a class="rs doc done" href="#\/b\/b_word_stats\/requirements\/spec"[^>]*><span class="dot" aria-hidden="true">✓<\/span><span class="rn">Spec<\/span><small>approved 2026-11-02T15:05:00Z<\/small><\/a>/);
+  // The Work tab: given, the spec at this feature; made, the run's file, open.
+  const fr = b.feature_runs.find((r) => r.id === "F2");
+  const ws = stageWorkspace(runBuild(b, "F2"), "code", null, { defs });
+  const work = runWorkHtml(fr, ws, b, { href: (s, t) => `#/b/b_word_stats/${s}/${t}`, filesHtml: (files, openOne) => `<files open="${openOne}">${files.map((f) => f.get ?? f.path).join(",")}</files>`, stageName });
+  assert.match(work, /<h5>Given<\/h5><a class="gi" href="#\/b\/b_word_stats\/requirements\/spec"><b>Spec, feature F2<\/b>/);
+  assert.match(work, /<h5>Made at Code<\/h5>.*<files open="true">runs\/F2\/scripts\/lines\.mjs<\/files>/s);
+  assert.equal(visible(work).includes("F1"), false, "another feature's work is not on it");
 });

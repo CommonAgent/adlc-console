@@ -99,7 +99,7 @@ test("the rail shows Analytics only when the service answers the route", async (
   assert.equal(analyticsOffered(0, null), false);
   // Until the service has answered, the link is hidden.
   const page = await readFile(join(HERE, "..", "public", "index.html"), "utf8");
-  assert.match(page, /<a class="b boardl" id="analytics" href="#\/analytics" hidden>/);
+  assert.match(page, /<a id="analytics" href="#\/analytics" hidden>/);
   const app = await readFile(join(HERE, "..", "public", "app.js"), "utf8");
   assert.match(app, /an\.hidden = !state\.analytics/);
 });
