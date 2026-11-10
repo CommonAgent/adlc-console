@@ -234,7 +234,7 @@ test("the rail of a version with features: Spec, Features and Ship, none numbere
   const opts = { href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#/b/b_word_stats/code", stageName };
   const html = spineHtml(b, spine, { sel: "code", runSel: "F2", ...opts });
   const text = visible(html);
-  assert.equal(text, "word-stats 0.1.0 Spec ✓ Requirements approved 2026-11-02T15:05:00Z Features 1 of 3 done ✓ Count words You OK'd the code on pull request #7 F2 Count lines Waiting on you at Code F3 Longest word Working at Code: waiting for a push to pull request #9 Ship after the features Package, Release, Deploy, Conformance and Acceptance");
+  assert.equal(text, "word-stats 0.1.0 Spec all documents ✓ Requirements approved 2026-11-02T15:05:00Z Features 1 of 3 done ✓ Count words You OK'd the code on pull request #7 F2 Count lines Waiting on you at Code F3 Longest word Working at Code: waiting for a push to pull request #9 Ship after the features Package, Release, Deploy, Conformance and Acceptance");
   assert.ok(!/<span class="dot" aria-hidden="true">\d/.test(html), "no step numbers");
   // Each feature opens its run where it is; its stages are the feature page's, not the menu's.
   assert.match(html, /<a class="rs run done" href="#\/b\/b_word_stats\/code\/run\/F1"/);
@@ -286,7 +286,7 @@ test("the menu names a step before the features for the document it made, and op
   assert.deepEqual(documentOf(b, "requirements"), { id: "a-spec", name: "Spec", kind: "statement", tab: "spec" });
   assert.equal(documentOf(b, "package"), null);
   const html = spineHtml(b, steps(b, { defs }), { sel: "code", runSel: "F2", href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#", stageName });
-  assert.match(html, /<h3 class="rg">Spec<\/h3><a class="rs doc done" href="#\/b\/b_word_stats\/requirements\/spec"[^>]*><span class="dot" aria-hidden="true">✓<\/span><span class="rn">Spec<\/span><small>approved 2026-11-02T15:05:00Z<\/small><\/a>/);
+  assert.match(html, /<a class="rg" href="#\/documents"[^>]*>Spec <small>all documents<\/small><\/a><a class="rs doc done" href="#\/b\/b_word_stats\/requirements\/spec"[^>]*><span class="dot" aria-hidden="true">✓<\/span><span class="rn">Spec<\/span><small>approved 2026-11-02T15:05:00Z<\/small><\/a>/);
   // The Work tab: given, the spec at this feature; made, the run's file, open.
   const fr = b.feature_runs.find((r) => r.id === "F2");
   const ws = stageWorkspace(runBuild(b, "F2"), "code", null, { defs });

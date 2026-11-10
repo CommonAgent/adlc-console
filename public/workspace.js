@@ -199,7 +199,8 @@ export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, pro
   };
   const done = runs.filter((r) => r.ended === true).length;
   const onAll = Boolean(sel) && held.has(sel) && !runSel;
-  const spec = before.length ? `<h3 class="rg">Spec</h3>${before.map(doc).join("")}` : "";
+  // The Spec heading opens the product's Documents, where every standing document is, whichever version made it.
+  const spec = before.length ? `<a class="rg" href="${esc(`${productHref}/documents`)}" title="Every document of this product">Spec <small>all documents</small></a>${before.map(doc).join("")}` : "";
   const feats = `<a class="rg${onAll ? " sel" : ""}" href="${esc(runsHref)}"${onAll ? ' aria-current="page"' : ""} title="Every feature of this version at once">Features <small>${done} of ${runs.length} done</small></a>`
     + runs.map((fr) => featureItemHtml(fr, { on: fr.id === runSel, sel, runHref, stageName })).join("");
   const reached = after.some((x) => x.mark !== "next" || x.stage === sel);
@@ -853,6 +854,7 @@ export function productFromBuilds(name, builds, latest = null) {
 }
 
 export const PRODUCT_TABS = [
+  { id: "documents", label: "Documents" },
   { id: "boss", label: "Boss" },
   { id: "versions", label: "Versions" },
   { id: "features", label: "Features" },
@@ -1237,6 +1239,61 @@ export function bossBuildsToRead(messages) {
 }
 
 /** The product page: its name and its when-needed actions, then tabs for the boss, its versions, its setup, its run plan and its activity. ctx.boss: { offered, messages, ... } when the service has the boss. */
+// ---------- a product's documents (lifecycle API 0.4.11) ----------
+
+/** Which group a document sits in: standing (a setup stage's, or the spec and the AgentDoc, read as one document that evolves), a version's proofs, or occasional. */
+export function documentGroup(d) {
+  if (d?.cadence === "when_needed") return "occasional";
+  if (d?.cadence === "setup" || ["requirements", "docs"].includes(str(d?.stage))) return "standing";
+  return "proofs";
+}
+const DOC_GROUPS = [["standing", "Standing documents"], ["proofs", "This version's proofs"], ["occasional", "Occasional records"]];
+
+/** The line beside a document's name: its version, carried or not, or why there is none. */
+export function documentLine(d, { when = (x) => x } = {}) {
+  const c = isObj(d?.current) ? d.current : null;
+  if (d?.state === "made" && c) return c.carried ? `unchanged since ${str(c.version)}` : `${str(c.version)}${c.artifact?.at && when(c.artifact.at) ? ` · ${when(c.artifact.at)}` : ""}`;
+  if (d?.state === "not_used") return "not in this lifecycle";
+  return "not made yet";
+}
+
+/**
+ * The Documents tab: the product's documents in three groups on the left, the
+ * chosen one read in full on the right, with the versions that made it and
+ * the way to ask for a change (the stage's chat). ctx: { sel, stageName, when,
+ * stageHref(build, stage, tab), filesHtml(files, openOne) }.
+ */
+export function documentsHtml(answer, ctx = {}) {
+  const docs = list(answer?.documents).filter((d) => isObj(d) && str(d.stage));
+  const stageName = ctx.stageName ?? ((x) => x);
+  const when = ctx.when ?? ((x) => x);
+  const href = ctx.stageHref ?? ((b, s, t) => `#/b/${encodeURIComponent(b)}/${s}/${t}`);
+  const files = ctx.filesHtml ?? (() => "");
+  if (!docs.length) return `<div class="docs none"><p class="gw">This product has no documents yet.</p></div>`;
+  const made = docs.filter((d) => d.state === "made");
+  const sel = docs.find((d) => d.stage === ctx.sel) ?? made[0] ?? docs[0];
+  const groups = DOC_GROUPS.map(([id, title]) => {
+    const rows = docs.filter((d) => documentGroup(d) === id && (id !== "occasional" || d.state === "made"));
+    if (!rows.length) return "";
+    return `<div class="grp">${esc(title)}</div>${rows.map((d) => `<button class="drow ${esc(d.state)}${d === sel ? " sel" : ""}" type="button" data-doc="${esc(d.stage)}" aria-pressed="${d === sel}"><b>${esc(str(d.name))}</b><small>${esc(documentLine(d, { when }))}</small></button>`).join("")}`;
+  }).join("");
+  const c = isObj(sel.current) ? sel.current : null;
+  const a = c && isObj(c.artifact) ? c.artifact : null;
+  let reader;
+  if (a) {
+    const meta = [`${stageName(str(sel.stage))} · ${str(a.by)}`, `version ${str(c.version)}`, c.carried ? "carried forward unchanged" : "", a.at && when(a.at) ? when(a.at) : ""].filter(Boolean).join(" · ");
+    const hist = list(sel.history).filter(isObj);
+    const history = hist.length ? `<section class="dhist"><h4 class="ft">Versions <span>${hist.length === 1 ? "made once" : `made ${hist.length} times`}</span></h4><ul>${hist.map((h) => `<li><a href="${esc(href(str(h.build), str(sel.stage), "artifacts"))}"><b>${esc(str(h.version))}</b>${h.at && when(h.at) ? `<span>${esc(when(h.at))}</span>` : ""}${h.build === c.build ? "<i>stands now</i>" : ""}</a></li>`).join("")}</ul></section>` : "";
+    const fl = list(a.files).length ? `<section class="vfiles" aria-label="Full text"><h4 class="ft">Full text <span>${list(a.files).length === 1 ? "1 file" : `${list(a.files).length} files`}, as written</span></h4>${files(list(a.files), true, str(c.build))}</section>` : "";
+    reader = `<h3>${esc(str(sel.name))}</h3><div class="vm">${esc(meta)}</div>
+      <p class="dact"><a class="btn" href="${esc(href(str(c.build), str(sel.stage), "chat"))}">Ask for a change</a><a class="linkbtn" href="${esc(href(str(c.build), str(sel.stage), "artifacts"))}">Open at ${esc(stageName(str(sel.stage)))}</a></p>
+      ${artifactBodyHtml(a, { stageName })}${fl}${history}`;
+  } else {
+    reader = `<h3>${esc(str(sel.name))}</h3><div class="vm">${esc(stageName(str(sel.stage)))}</div><p class="gw">${esc(str(sel.words) || (sel.state === "not_used" ? "The product's lifecycle leaves this stage out." : "Nothing made yet."))}</p>`;
+  }
+  return `<div class="docs"><div class="dlist">${groups}</div><div class="viewer dview" id="reader">${reader}</div></div>`;
+}
+
 export function productPageHtml(p, ctx = {}, tab = null) {
   const stageName = ctx.stageName ?? ((x) => x);
   const when = ctx.when ?? ((x) => x);
@@ -1257,18 +1314,22 @@ export function productPageHtml(p, ctx = {}, tab = null) {
   // The Features tab (0.4.3): the matrix for a version, and the history of the feature picked.
   const feats = isObj(ctx.features) && ctx.features.offered ? ctx.features : null;
   const todo = setupToDo(p?.setup);
+  // The Documents tab (0.4.11): the product's standing documents, the landing tab when the service answers them.
+  const docs = isObj(ctx.documents) && ctx.documents.offered ? ctx.documents : null;
   const tabs = PRODUCT_TABS.map((t) => ({
     ...t,
+    ...(t.id === "documents" && !docs ? { disabled: true, title: "This service does not list the product's documents" } : {}),
     ...(t.id === "boss" && !boss ? { disabled: true, title: "This service has no boss" } : {}),
     ...(t.id === "setup" && !hasSetup ? { disabled: true, title: "This service does not say how the product is set up" } : {}),
     ...(t.id === "features" && !feats ? { disabled: true, title: "This service keeps no feature list" } : {}),
-    count: t.id === "features" && feats?.answer ? list(feats.answer.features).length : t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : t.id === "setup" && todo ? todo : undefined,
+    count: t.id === "documents" && docs?.answer ? list(docs.answer.documents).filter((d) => d?.state === "made").length || undefined : t.id === "features" && feats?.answer ? list(feats.answer.features).length : t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : t.id === "setup" && todo ? todo : undefined,
   }));
-  const want = tab ?? (boss ? "boss" : "versions");
+  const want = tab ?? (docs ? "documents" : boss ? "boss" : "versions");
   const on = tabs.some((t) => t.id === want && !t.disabled) ? want : "versions";
   // Info (which version runs, the lifecycle the build follows, the when-needed actions) is a tab, so it never takes room above the others.
   const info = `${runningHtml(p)}${ctx.extra ?? ""}${whenNeededHtml(p?.when_needed, { stageName, pending: ctx.whenPending ?? null, source: p?.source ?? null })}${whenCardHtml(p, ctx, stageName)}`;
-  const body = on === "boss" ? `<div class="thread" id="thread">${bossChatHtml(boss.messages, { ...ctx, ...boss, stageName, when })}</div>`
+  const body = on === "documents" ? (docs.answer ? documentsHtml(docs.answer, { sel: docs.sel, stageName, when, stageHref: ctx.stageHref, filesHtml: ctx.filesHtml }) : `<p class="gw">${esc(docs.error || "Loading…")}</p>`)
+    : on === "boss" ? `<div class="thread" id="thread">${bossChatHtml(boss.messages, { ...ctx, ...boss, stageName, when })}</div>`
     : on === "setup" ? setupHtml(p.setup, { stageName, roleName: ctx.roleName, chooseHref: ctx.chooseHref, ...(isObj(ctx.setup) ? ctx.setup : {}), readOnly: !ctx.chooseHref, bossOffered: Boolean(boss) })
     : on === "features" ? featuresMatrixHtml(feats.answer, { ...feats, when, filter: true })
     : on === "plan" ? (plan || `<p class="gw">No run plan yet. Deploy makes it.</p>`)

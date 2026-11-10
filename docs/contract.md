@@ -399,6 +399,33 @@ How the console reads these:
   the version's own view, where the timeline names each run's bars.
 - A service with no `feature_runs` is drawn exactly as before.
 
+Read by the console since lifecycle API 0.4.11 (additive; CommonAgent/adlc#150): a product's documents.
+
+```
+GET /v1/lifecycle/products/{name}/documents
+  -> { product, documents: [{ stage, name,              // the stage's asset as stages.json names it: "Spec", "Architecture record"
+                              cadence,                  // every_build | setup | when_needed
+                              state,                    // made | not_made | not_used
+                              current: { build, version, artifact: Artifact, carried } | null,   // the copy that stands now; carried: a newer version did not remake it
+                              history: [{ build, version, artifact, at? }],                       // every version that made one, newest first
+                              words? }] }               // why there is none
+```
+
+How the console reads these:
+
+- The product page lands on its **Documents** tab when the service answers the route. The left
+  column is three groups: standing documents (a setup stage's, and the Spec and the AgentDoc,
+  which every version remakes but a person reads as one document that evolves), this version's
+  proofs (the suite, the code, the findings, the security statement, the package, the records and
+  verdicts), and occasional records (a when-needed stage's, listed only when one exists). Each
+  row is the document's name and its version, "unchanged since 0.1.0" when it carried, "not made
+  yet", or "not in this lifecycle".
+- The chosen document is read in full on the right, from the copy that stands: its summary by
+  kind, its files as written (read from the build that made it), and the versions that made one,
+  each opening that build's stage. **Ask for a change** opens the stage's chat on that build: a
+  document changes through its holder, never by typing into it here. A service without the route
+  has the tab disabled and the page lands on the boss, as before.
+
 Read by the console since lifecycle API 0.4.9 (additive): the skills of a stage's holder.
 
 ```

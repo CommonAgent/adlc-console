@@ -155,7 +155,7 @@ function parseHash() {
     const tab = run ? parts[5] : parts[3];
     return { view: "build", id: parts[1], sel: parts[2] || null, run, tab: ["chat", "artifacts", "skills", "try", "features", "spec", "work"].includes(tab) ? tab : null };
   }
-  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "features", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
+  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["documents", "boss", "versions", "features", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
@@ -297,7 +297,23 @@ async function openProduct(name) {
   state.product = p && typeof p === "object" && Array.isArray(p.builds) ? p : productFromBuilds(name, state.builds, state.build && productOf(state.build) === name ? state.build : null);
   try { await loadBoss(name); } catch (e) { if (e.needKey) return problem(e); }
   try { await loadFeatures(name); } catch (e) { if (e.needKey) return problem(e); }
+  try { await loadDocuments(name); } catch (e) { if (e.needKey) return problem(e); }
   if (state.view === "product") draw();
+}
+
+// The product's documents (0.4.11). A service without the route (404, 405 or 501) lists none: the tab is shown disabled.
+async function loadDocuments(name) {
+  const d0 = state.docs ?? { has: null, name: null, answer: null, error: "", sel: null };
+  if (d0.name !== name) state.docs = { has: d0.has, name, answer: null, error: "", sel: null };
+  else state.docs = d0;
+  try {
+    state.docs.answer = await api(`/products/${encodeURIComponent(name)}/documents`);
+    state.docs.has = true; state.docs.error = "";
+  } catch (e) {
+    if (e.needKey) throw e;
+    if (!messagesOffered(e.status ?? 0)) { state.docs.has = false; return; }
+    state.docs.error = e.message;
+  }
 }
 
 // The product's features matrix (0.4.3), for the version chosen. A service without the route (404, 405
@@ -894,9 +910,14 @@ function drawProduct() {
       setup: state.setupUi,
       whenCard: state.whenCard,
       features: { offered: state.feat.has === true && state.feat.name === state.product.name, answer: state.feat.answer, error: state.feat.error, selected: state.feat.sel, history: state.feat.history, historyError: state.feat.historyError, stageName: (id) => def(id).name },
+      // The product's documents (0.4.11), the landing tab; a document's files are read from the build that made it.
+      documents: { offered: state.docs?.has === true && state.docs.name === state.product.name, answer: state.docs?.answer ?? null, error: state.docs?.error ?? "", sel: state.docs?.sel ?? null },
+      stageHref: (id, stage, t) => `${hashFor(id, stage)}/${t}`,
+      filesHtml: (files, openOne = true, build = null) => filesHtml(files, openOne, build),
     }, state.ptab)
     : `<div class="err" role="alert">${esc(state.error)}</div><p class="does">Loading…</p>`;
   $("stage").innerHTML = "";
+  for (const det of document.querySelectorAll("#tabbody details[open][data-file]")) loadFile(det);
   const onBoss = Boolean(boss) && (state.ptab ?? "boss") === "boss";
   // The boss's conversation opens at its newest message, and stays where it was across a redraw.
   if (onBoss) { if (keep !== null) setScroll(keep); else if (!phone()) setScroll(1e9); }
@@ -949,12 +970,14 @@ function buttonsHtml(list, { labels = {} } = {}) {
 }
 
 // A feature run's file (0.4.10) is asked for at runs/<run id>/<its path> (get), and shown at its own path.
-function filesHtml(list, openOne = true) {
+function filesHtml(list, openOne = true, build = null) {
+  // A document's file (0.4.11) is read from the build that made it, which may not be the one open.
+  const bid = build || state.build.id;
   return `<div class="files">${list.map((f, i) => {
-    const key = `${state.build.id}\n${f.get ?? f.path}`;
+    const key = `${bid}\n${f.get ?? f.path}`;
     const got = state.files.get(key);
     const open = openOne && list.length === 1 && i === 0;
-    return `<details data-file="${esc(f.get ?? f.path)}"${open ? " open" : ""}><summary><b>${esc(f.path)}</b><span>${esc(size(f.size))}</span></summary><pre>${got === undefined ? "Loading…" : esc(got)}</pre></details>`;
+    return `<details data-file="${esc(f.get ?? f.path)}"${build ? ` data-build="${esc(build)}"` : ""}${open ? " open" : ""}><summary><b>${esc(f.path)}</b><span>${esc(size(f.size))}</span></summary><pre>${got === undefined ? "Loading…" : esc(got)}</pre></details>`;
   }).join("")}</div>`;
 }
 
@@ -1204,12 +1227,13 @@ async function refreshBuilds() {
 
 async function loadFile(det) {
   const path = det.dataset.file;
-  const key = `${state.build.id}\n${path}`;
+  const bid = det.dataset.build || state.build.id;
+  const key = `${bid}\n${path}`;
   if (state.files.has(key)) return;
   state.files.set(key, "Loading…");
   let body;
   try {
-    body = await call(`/api/v1/lifecycle${buildPath(state.build.id, `/files?path=${encodeURIComponent(path)}`)}`, { text: true });
+    body = await call(`/api/v1/lifecycle${buildPath(bid, `/files?path=${encodeURIComponent(path)}`)}`, { text: true });
     if (body.includes("\u0000")) body = "This file is not text, so it is not shown here.";
   } catch (e) {
     state.files.delete(key);
@@ -1456,6 +1480,9 @@ document.addEventListener("click", async (e) => {
   if (featAll) return approveAll(featAll.dataset);
   const featList = t.closest("[data-feat-backfill]");
   if (featList) return listFeatures(featList.dataset.featBackfill);
+  // A document chosen on the product's Documents tab (0.4.11).
+  const docRow = t.closest("[data-doc]");
+  if (docRow && state.view === "product" && state.docs) { state.docs.sel = docRow.dataset.doc; return drawProduct(); }
   const featCell = t.closest("[data-feat-cell]");
   if (featCell) {
     const to = cellTarget(featCell.dataset);
