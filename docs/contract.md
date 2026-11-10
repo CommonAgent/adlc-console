@@ -358,6 +358,15 @@ body adds run?: <feature_runs[].id>                         // sent whenever the
 
 How the console reads these:
 
+- Every version gets the same menu, whether or not its features run on their own; stage names are
+  never the menu. A version made in one chain lists its features from `GET /builds/:id/features`,
+  else from its spec's `features`, else one line for the version's work; each line says where the
+  version is while it is at its features' stages (Test, Code, Review, Security review), and after,
+  what the feature has and lacks ("Tests and code done", "No tests, no code"). A feature opens its
+  page at `#/b/<id>/f/<feature>`: its strip (the features answer's cells, else the version's
+  features' stages), one card (the version's gate when it is the only feature; a note pointing at
+  the Features page when one OK covers several; Approve feature for one listed after the build),
+  and its Work. Opening a version with no stage named opens the feature it is at, or its first.
 - The **left menu** is the version's work, in three groups and with no step numbers: **Spec**, its
   steps before the runs' stages (Requirements, and whatever else it runs before Test); **Features**,
   a line per feature run with the service's words for where it is, each opening its run at that

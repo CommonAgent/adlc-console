@@ -447,6 +447,10 @@ main .projof a{color:var(--accent)}
 .spine.grouped .rs.run.now .dot{background:var(--wait);color:var(--panel)}
 .spine.grouped .rs.run.work .dot{background:var(--wait-bg);color:var(--wait)}
 .spine.grouped .rs.run.bad .dot{background:var(--bad-bg);color:var(--bad)}
+.spine.grouped .rs.run small.bad{color:var(--bad)}
+.spine.grouped .rs.run.gap .dot{background:var(--bad-bg);color:var(--bad)}
+#spine .rb small{display:block;font-size:12px;font-weight:600;color:var(--muted)}
+#spine .rb small.w{color:var(--wait)}
 .spine.grouped .rs.ship .rn{font-weight:500;color:var(--muted);font-size:12.5px}
 .rfeat{display:grid}
 .rg{display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin:8px 0 0;padding:6px 6px 2px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);text-decoration:none}

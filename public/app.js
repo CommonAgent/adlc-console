@@ -15,7 +15,7 @@ import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
 import { specOf, specTabHtml } from "./spec.js";
-import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel, runWorkHtml } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel, runWorkHtml, featureRegion, versionFeatures, featurePageHtml, currentStage } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -150,6 +150,7 @@ function parseHash() {
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
   // #/b/<id>/<stage>/run/<run>[/<tab>] opens one feature run at that stage (0.4.10).
+  if (parts[0] === "b" && parts[1] && parts[2] === "f") return { view: "build", id: parts[1], feature: parts[3] ?? "", sel: null, run: null, tab: null };
   if (parts[0] === "b" && parts[1]) {
     const run = parts[3] === "run" ? parts[4] || null : null;
     const tab = run ? parts[5] : parts[3];
@@ -160,6 +161,7 @@ function parseHash() {
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 const hashFor = (id, sel) => `#/b/${encodeURIComponent(id)}${sel ? `/${encodeURIComponent(sel)}` : ""}`;
+const featureHash = (id, feature) => `${hashFor(id)}/f/${encodeURIComponent(feature)}`;
 const runHash = (id, sel, run) => `${hashFor(id, sel)}${run ? `/run/${encodeURIComponent(run)}` : ""}`;
 const productHash = (name) => `#/p/${encodeURIComponent(name)}`;
 
@@ -224,6 +226,34 @@ async function route() {
   if (!(await openBuild(id))) return;
   // Whether the service has a boss, asked once, so the menu can offer it.
   if (state.boss.has === null) { try { await loadBoss(productOf(state.build)); } catch (e) { if (e.needKey) return problem(e); } }
+  // The rail is the version's features and the product's documents, for every version.
+  try { await loadVersionData(); } catch (e) { if (e.needKey) return problem(e); }
+  if (h.feature !== undefined) {
+    state.featSel = h.feature; state.stageSel = null; state.runSel = null; state.error = "";
+    return draw();
+  }
+  state.featSel = null;
+  if (!h.sel && !h.run && !h.tab) {
+    const b = state.build;
+    const region = featureRegion(b);
+    const at = openingStage(b, defs());
+    if (at && region.has(at)) {
+      const runs = featureRuns(b);
+      if (runs.length) {
+        const r = runs.find((x) => x.at?.state === "waiting_on_you") ?? runs.find((x) => x.ended !== true) ?? runs[0];
+        return go(runHash(b.id, String(r.at?.stage || at), r.id));
+      }
+      const fs = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName: (id) => def(id).name });
+      const f = fs.find((x) => x.id && x.mark === "now") ?? fs.find((x) => x.id);
+      if (f) return go(featureHash(b.id, f.id));
+    } else if (!at || !featureRuns(b).length) {
+      // A finished version opens at its first feature.
+      const fs = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName: (id) => def(id).name });
+      const done = !at || stepStages(b, defs()).every((s) => s.state === "done");
+      const f = done ? fs.find((x) => x.id) : null;
+      if (f) return go(featureHash(b.id, f.id));
+    }
+  }
   // Opening a build opens the stage it is at now. An old link to Try it opens it beside that stage.
   if (h.sel === "try") state.tab = "try";
   if (h.tab) state.tab = h.tab;
@@ -247,6 +277,16 @@ async function route() {
   state.openAt = null;
   if (state.tab === "try") await loadTries();
   draw();
+}
+
+// A version's features (0.4.3) and its product's documents (0.4.11), read once per build and product.
+async function loadVersionData() {
+  const b = state.build;
+  if (!b) return;
+  if (state.bfeat.build !== b.id) {
+    try { state.bfeat = { ...state.bfeat, build: b.id, answer: await api(buildPath(b.id, "/features")) }; } catch (e) { if (e.needKey) throw e; state.bfeat = { build: b.id, answer: null, sel: null, history: null, historyError: "" }; }
+  }
+  if (state.docs?.name !== productOf(b)) await loadDocuments(productOf(b));
 }
 
 async function openBuild(id) {
@@ -391,7 +431,7 @@ async function answerFeature(d) {
     await api(go1.path, { method: "POST", body: go1.body, own403: true });
     state.error = ""; state.boss.error = "";
     if (onProduct) { await loadBoss(state.boss.name); await loadFeatures(state.product?.name ?? state.boss.name); }
-    else { await loadStage(); state.build = (await api(buildPath(state.build.id))).build; }
+    else { await loadStage(); state.build = (await api(buildPath(state.build.id))).build; state.bfeat.build = null; await loadVersionData(); }
   } catch (e) {
     state.featPending = null;
     if (e.needKey) return problem(e);
@@ -700,6 +740,7 @@ function drawRail() {
 }
 
 const defs = () => state.byId;
+const currentStageOf = (b) => currentStage(b, defs());
 const stepsNow = () => steps(state.build, { defs: defs(), roleDefs: state.roleDefs, when });
 const buildProject = (b) => {
   const lc = b?.lifecycle;
@@ -719,7 +760,16 @@ function buildMenuHtml() {
   // The version's features in the rail (0.4.10): each opens its run where it is; the heading opens every run at once.
   const held = runStageIds(b);
   const allAt = [openingStage(b, defs()), ...held].find((s) => s && held.has(s));
-  return `${spineHtml(b, spine, { sel: state.view === "build" ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" && !onBoss, runSel: state.view === "build" ? state.runSel : null, runHref: (s, r) => runHash(b.id, s, r), runsHref: allAt ? hashFor(b.id, allAt) : hashFor(b.id), stageName })}
+  // Every other version: its features from its features answer or its spec, each opening its page; the heading opens the version at its features' stage.
+  const region = featureRegion(b);
+  const regionAt = [openingStage(b, defs()), ...region].find((s) => s && region.has(s));
+  const feats = held.size ? null : versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName });
+  const featureHref = (f) => (f.id ? featureHash(b.id, f.id) : hashFor(b.id, regionAt ?? openingStage(b, defs())));
+  const listed = state.builds.find((x) => x.id === b.id);
+  const line0 = listed ? railLine(listed) : null;
+  const tail = ` · ${mine} ${b.version ?? ""}`;
+  const line = line0 ? { ...line0, text: line0.text.endsWith(tail) ? line0.text.slice(0, -tail.length) : line0.text } : null;
+  return `${spineHtml(b, spine, { sel: state.view === "build" && !state.featSel ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" && !onBoss, runSel: state.view === "build" ? state.runSel : null, runHref: (s, r) => runHash(b.id, s, r), runsHref: allAt ? hashFor(b.id, allAt) : regionAt ? hashFor(b.id, regionAt) : hashFor(b.id), stageName, features: feats, featSel: state.view === "build" ? state.featSel : null, featureHref, docs: state.docs?.name === mine ? state.docs.answer : null, line, when })}
     ${state.status?.read_only ? "" : `<button class="newb" id="new2" type="button">New build</button>`}`;
 }
 
@@ -794,6 +844,7 @@ function draw() {
   if (!state.build) return;
   if (state.view === "product") return drawProduct();
   if (state.view !== "build") return;
+  if (state.featSel !== null && state.featSel !== undefined) return drawFeature();
   const b = state.build;
   const ws = currentWs();
   const ctx = stageCtx(ws);
@@ -888,6 +939,37 @@ function draw() {
   } else if (!phone()) setScroll(0);
   state.drawnKey = key;
   if (b.stages.some((y) => y.state === "working") || featureRuns(b).some((r) => r.at?.state === "working")) schedule();
+}
+
+// A feature's page, for a version that does not run its features on their own: the feature, its strip,
+// one card (the version's gate when the feature is its only one), and its Work.
+function drawFeature() {
+  const b = state.build;
+  const stageName = (id) => def(id).name;
+  const feats = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName });
+  const f = feats.find((x) => x.id === state.featSel);
+  layout("thread");
+  $("app").classList.add("noarts");
+  if (!f) {
+    $("main").innerHTML = `<section class="thread-wrap work"><div class="whead"><div class="hd"><div><h1>No such feature</h1><p class="sub">${esc(`${productOf(b)} ${b.version} lists no feature ${state.featSel}.`)}</p></div></div></div></section>`;
+    $("stage").innerHTML = "";
+    return;
+  }
+  const region = featureRegion(b);
+  const at = currentStageOf(b);
+  const atRegion = at && region.has(at.stage) ? at : null;
+  const ws = atRegion ? stageWorkspace(b, atRegion.stage, null, { defs: defs() }) : null;
+  const holder = ws ? holderName(ws.holder, stageOf(ws.stage) ?? { stage: ws.stage }, def(ws.stage), state.roleDefs) : "";
+  $("main").innerHTML = featurePageHtml(f, b, {
+    features: feats, defs: defs(), stageName, holder, error: state.error,
+    stageHref: (s, t) => `${hashFor(b.id, s)}/${t}`,
+    featuresHref: atRegion ? hashFor(b.id, atRegion.stage) : hashFor(b.id),
+    gateHtml: ws ? () => runGateHtml({}, ws, b, stageCtx(ws)) : null,
+    pending: state.featPending,
+    canTry: state.status?.can_try !== false && (Boolean(prStage()) || installed()),
+  });
+  $("stage").innerHTML = "";
+  if (b.stages.some((y) => y.state === "working")) schedule();
 }
 
 // The product page: tabs for its versions, run plan and activity.

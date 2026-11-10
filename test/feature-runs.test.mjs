@@ -283,7 +283,7 @@ test("the menu names a step before the features for the document it made, and op
   const d = createDemoService();
   const b0 = (await get(d, WS)).body.build;
   const b = { ...b0, artifacts: [{ id: "a-spec", stage: "requirements", kind: "statement", name: "Statement of the job", state: "made", version: "0.1.0" }] };
-  assert.deepEqual(documentOf(b, "requirements"), { id: "a-spec", name: "Spec", kind: "statement", tab: "spec" });
+  assert.deepEqual(documentOf(b, "requirements"), { id: "a-spec", name: "Spec", kind: "statement", version: "0.1.0", tab: "spec" });
   assert.equal(documentOf(b, "package"), null);
   const html = spineHtml(b, steps(b, { defs }), { sel: "code", runSel: "F2", href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#", stageName });
   assert.match(html, /<a class="rg" href="#\/documents"[^>]*>Spec <small>all documents<\/small><\/a><a class="rs doc done" href="#\/b\/b_word_stats\/requirements\/spec"[^>]*><span class="dot" aria-hidden="true">✓<\/span><span class="rn">Spec<\/span><small>approved 2026-11-02T15:05:00Z<\/small><\/a>/);
