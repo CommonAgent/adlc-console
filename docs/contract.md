@@ -358,13 +358,18 @@ body adds run?: <feature_runs[].id>                         // sent whenever the
 
 How the console reads these:
 
-- The **left menu** is the version's work: its steps before the runs' stages (Requirements, and
-  whatever else it runs before Test), then **Features**, a line per feature run where the runs'
-  stages were, then its steps after (Package and on). Each feature shows where it is, in the
-  service's words, and opens its run at that stage; the open one shows its own Test and Code under
-  it. The Features heading opens every run at once, the version's own page at those stages (below).
-  The runs' stages are the features' steps, not the version's: the version's steps count on
-  without them, and while any run is open the product's line is the version's `summary`.
+- The **left menu** is the version's work, in three groups and with no step numbers: **Spec**, its
+  steps before the runs' stages (Requirements, and whatever else it runs before Test); **Features**,
+  a line per feature run with the service's words for where it is, each opening its run at that
+  stage, the open one showing its own Test and Code under it; and **Ship**, its steps after
+  (Package and on), one line "after the features" until one of them is reached or chosen. The
+  Features heading opens every run at once, the version's own page at those stages (below). The
+  runs' stages are the features' steps, not the version's, and while any run is open the product's
+  line is the version's `summary`.
+- A **feature's page** is headed by the feature's name, over a strip of its own stages (Test → Code,
+  each done, now or next, the page's marked). Its gate is the run's own: its pull request's check
+  and its own actions alone, labeled without the run's id; a feature that ended shows where it
+  ended, in the service's words, with its pull request. No other feature appears on it.
 - The **Board** gives each feature run a card of its own beside its version's, in the column of
   the run's own stage: the feature's name, the version, where it is and who it waits on. A run
   that ended goes to Done. While any of its runs is open, the version's card shows the service's

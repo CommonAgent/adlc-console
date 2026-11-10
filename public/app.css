@@ -438,12 +438,34 @@ main .projof a{color:var(--accent)}
 .rs.sel:not(.now){background:var(--bg);box-shadow:inset 3px 0 0 var(--accent)}
 .rs:not(:last-child)::after{content:"";position:absolute;left:15px;top:26px;bottom:-6px;width:2px;background:var(--line)}
 .rs.done::after{background:var(--accent)}
-/* The version's features between its steps (0.4.10): a heading, a line per feature, the open one's own stages under it. */
-.rfeat{display:grid;position:relative}
-.rfeat::before{content:"";position:absolute;left:15px;top:0;bottom:0;width:2px;background:var(--line)}
-.rg{display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-left:28px;padding:6px 6px 2px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);text-decoration:none}
-.rg:hover,.rg.sel{background:var(--bg);color:var(--fg)}
+/* A version with features (0.4.10): three groups, Spec, Features and Ship, none numbered; the open feature's own stages under it. */
+.spine.grouped .rs::after{content:none}
+.spine.grouped .rs .dot{width:14px;height:14px;margin:3px;font-size:9px;border:2px solid var(--line);background:var(--panel)}
+.spine.grouped .rs.done .dot{border-color:var(--accent);background:var(--done-bg);color:var(--accent)}
+.spine.grouped .rs.now .dot{border-color:var(--wait);background:var(--wait)}
+.spine.grouped .rs.run .dot{width:20px;height:20px;margin:0;font-size:11px;border:0;background:var(--code);color:var(--muted)}
+.spine.grouped .rs.run.done .dot{background:var(--done-bg);color:var(--accent)}
+.spine.grouped .rs.run.now .dot{background:var(--wait);color:var(--panel)}
+.spine.grouped .rs.run.work .dot{background:var(--wait-bg);color:var(--wait)}
+.spine.grouped .rs.run.bad .dot{background:var(--bad-bg);color:var(--bad)}
+.spine.grouped .rs.ship .rn{font-weight:500;color:var(--muted);font-size:12.5px}
+.spine.grouped .rs.ship small{display:block}
+.rfeat{display:grid}
+.rg{display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin:8px 0 0;padding:6px 6px 2px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);text-decoration:none}
+h3.rg{margin-bottom:0}
+a.rg:hover,a.rg.sel{background:var(--bg);color:var(--fg)}
 .rg small{font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:0;text-transform:none}
+/* The strip under a feature's name: its own stages, the page's marked. */
+.fstrip{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+.fstrip .arrow{color:var(--off);font-size:12px}
+.fstrip .fs{display:inline-flex;align-items:baseline;gap:6px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);color:var(--fg);text-decoration:none;font-size:12.5px;font-weight:600}
+.fstrip .fs small{font-weight:500;color:var(--muted);font-size:11px}
+.fstrip .fs.done{border-color:var(--accent);background:var(--done-bg)}
+.fstrip .fs.done small{color:var(--accent)}
+.fstrip .fs.now{border-color:var(--wait);background:var(--wait-bg)}
+.fstrip .fs.now small{color:var(--wait)}
+.fstrip .fs.next{color:var(--muted)}
+.fstrip .fs.sel{box-shadow:0 0 0 2px var(--panel),0 0 0 3px var(--fg)}
 .rs.run small{display:block;line-height:1.3}
 .rs.run small.w{color:var(--wait);font-weight:600}
 .rs.run.work .dot{background:var(--wait-bg);color:var(--wait)}

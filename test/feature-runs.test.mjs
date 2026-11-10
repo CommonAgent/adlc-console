@@ -13,7 +13,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { boardCards, boardColumns, boardHtml, cardWords, gathering, isDone, waitsOnMe } from "../public/board.js";
-import { actionButtonsHtml, actionKey, featureRuns, featureRunsHtml, fallbackChat, runBuild, runLabel, runStageIds, stageWorkspace, artifactsTabHtml, steps, stepHeader, spineHtml } from "../public/workspace.js";
+import { actionButtonsHtml, actionKey, featureRuns, featureRunsHtml, fallbackChat, runBuild, runLabel, runStageIds, stageWorkspace, artifactsTabHtml, steps, stepHeader, spineHtml, runGateHtml, runStripHtml } from "../public/workspace.js";
 import { validate, checkBuild, checkBuildList, stageIds } from "../standards/lifecycle-api-check.mjs";
 import { checkBuild as checkContract, checkBuildList as checkContractList } from "../lib/contract.mjs";
 import { createDemoService } from "../lib/demo.mjs";
@@ -223,31 +223,58 @@ test("the console's checks notice a feature run that breaks the contract", async
   assert.ok(checkContractList(list).some((x) => x.includes("at has a stage id and a known state")));
 });
 
-test("the rail: the version's features between its steps, each where it is, the open one with its own stages; the runs' stages are no steps of the version", async () => {
+test("the rail of a version with features: Spec, Features and Ship, none numbered; a feature opens its run, the open one shows its stages; Ship is one line until reached", async () => {
   const d = createDemoService();
   const b = (await get(d, WS)).body.build;
   const spine = steps(b, { defs });
-  // Test and Code are the features'; the version counts Requirements, then Package and on.
-  assert.deepEqual(spine.slice(0, 2).map((x) => [x.stage, x.number, x.mark]), [["requirements", 1, "done"], ["package", 2, "next"]]);
+  // Test and Code are the features'; the version's steps are Requirements, then Package and on.
+  assert.deepEqual(spine.slice(0, 2).map((x) => [x.stage, x.mark]), [["requirements", "done"], ["package", "next"]]);
   assert.ok(!spine.some((x) => ["test", "code"].includes(x.stage)));
   assert.deepEqual(stepHeader(b, spine), { text: "Making 2 features, each in a run of its own: 1 waits on you", tone: "wait" });
-  const html = spineHtml(b, spine, { sel: "code", runSel: "F2", href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#/b/b_word_stats/code", stageName });
+  const opts = { href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#/b/b_word_stats/code", stageName };
+  const html = spineHtml(b, spine, { sel: "code", runSel: "F2", ...opts });
   const text = visible(html);
-  // Requirements, then the features, then Package: in that order.
-  assert.ok(text.indexOf("Requirements") < text.indexOf("Features 1 of 3 done"), text);
-  assert.ok(text.indexOf("Features 1 of 3 done") < text.indexOf("Count words"), text);
-  assert.ok(text.indexOf("Longest word") < text.indexOf("Package"), text);
-  // Each feature opens its run where it is, with the service's words for where that is.
-  assert.match(html, /<a class="rs run done" href="#\/b\/b_word_stats\/code\/run\/F1"[^>]*>.*?✓.*?Count words.*?You OK&#39;d the code on pull request #7/);
-  assert.match(html, /aria-label="F1 Count words: You OK&#39;d the code on pull request #7"/);
-  assert.match(html, /<a class="rs run now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="true"[^>]*>.*?Count lines.*?<small class="w">Waiting on you at Code/);
-  assert.match(html, /<a class="rs run now work" href="#\/b\/b_word_stats\/code\/run\/F3"[^>]*>.*?Longest word.*?Working at Code/);
-  // The open feature shows its own Test and Code, Code being the page.
+  assert.equal(text, "word-stats 0.1.0 Spec ✓ Requirements Features 1 of 3 done ✓ Count words You OK'd the code on pull request #7 F2 Count lines Waiting on you at Code ✓ Test Code F3 Longest word Working at Code: waiting for a push to pull request #9 Ship after the features Package, Release, Deploy, Conformance and Acceptance");
+  assert.ok(!/<span class="dot" aria-hidden="true">\d/.test(html), "no step numbers");
+  // Each feature opens its run where it is; the open one shows its own Test and Code, Code being the page.
+  assert.match(html, /<a class="rs run done" href="#\/b\/b_word_stats\/code\/run\/F1"/);
+  assert.match(html, /<a class="rs run now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="true"/);
+  assert.match(html, /<a class="rs run now work" href="#\/b\/b_word_stats\/code\/run\/F3"/);
   assert.match(html, /<a class="rs sub done" href="#\/b\/b_word_stats\/test\/run\/F2"[^>]*>.*?Test<\/span><\/a><a class="rs sub now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="page"/);
-  assert.ok(!/run\/F1"[^>]*>(?:(?!<a).)*<\/a><a class="rs sub/.test(html), "a feature that is not open shows no stages");
-  // The heading opens every feature at once, and is the page when the version's own Code is.
-  assert.match(html, /<a class="rg" href="#\/b\/b_word_stats\/code"/);
-  assert.match(spineHtml(b, spine, { sel: "code", runSel: null, href: (s) => s, runHref: (s, r) => `${s}/${r}`, runsHref: "code", stageName }), /<a class="rg sel" href="code" aria-current="page"/);
-  // Without a way to open a run, the rail is the version's steps alone, as before.
+  // Ship, folded, opens at its first stage; chosen, it unfolds.
+  assert.match(html, /<a class="rs next ship" href="#\/b\/b_word_stats\/package"/);
+  const open = spineHtml(b, spine, { sel: "deploy", ...opts });
+  assert.ok(!/class="rs next ship"/.test(open));
+  assert.match(open, /<h3 class="rg">Ship<\/h3><a class="rs next" href="#\/b\/b_word_stats\/package"/);
+  assert.match(open, /<a class="rs next sel" href="#\/b\/b_word_stats\/deploy" aria-current="page"/);
+  // The Features heading opens every feature at once, and is the page when the version's own Code is.
+  assert.match(spineHtml(b, spine, { sel: "code", runSel: null, ...opts }), /<a class="rg sel" href="#\/b\/b_word_stats\/code" aria-current="page"/);
+  // Without a way to open a run, the rail is the version's numbered steps alone, as before.
   assert.ok(!/class="rg/.test(spineHtml(b, spine, { sel: "code", href: (s) => s })));
+});
+
+test("a feature's page: its name over its own stages, and its gate alone, with its actions; a feature that ended says where, with its pull request", async () => {
+  const d = createDemoService();
+  const b = (await get(d, WS)).body.build;
+  const fr = (id) => b.feature_runs.find((r) => r.id === id);
+  const href = (s) => `#/b/b_word_stats/${s}/run/F2`;
+  const strip = runStripHtml(fr("F2"), { sel: "code", href, stageName });
+  assert.equal(visible(strip), "Test done → Code waiting on you");
+  assert.match(strip, /<a class="fs done" href="#\/b\/b_word_stats\/test\/run\/F2">Test<small>done<\/small><\/a>.*<a class="fs now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="page">Code<small>waiting on you<\/small><\/a>/);
+  assert.equal(visible(runStripHtml(fr("F1"), { stageName })), "Test done → Code done");
+  assert.equal(visible(runStripHtml(fr("F3"), { sel: "test", stageName })), "Test done → Code working");
+  // F2's gate: its pull request's check, and only its own actions, labeled without the run.
+  const run = runBuild(b, "F2");
+  const ws = stageWorkspace(run, "code", null, { defs });
+  const actionsHtml = (s) => actionButtonsHtml(run.actions.filter((a) => a.stage === s && a.run === "F2"), { labels: Object.fromEntries(run.actions.map((a) => [a.name, runLabel(a, fr("F2"))])) });
+  const gate = runGateHtml(fr("F2"), ws, run, { actionsHtml });
+  assert.match(gate, /<h4>Pull request #8: Ready for your OK<\/h4>/);
+  assert.equal(visible(gate).includes("F1 Count words"), false, "no other feature on it");
+  assert.deepEqual([...gate.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]), ["OK the code", "Send back to Test", "Stop"]);
+  // A feature that ended: where it ended, in the service's words, and its pull request.
+  const done = runGateHtml(fr("F1"), stageWorkspace(runBuild(b, "F1"), "code", null, { defs }), runBuild(b, "F1"), { actionsHtml: () => "" });
+  assert.match(done, /<div class="gcard done" id="gate"><h4>You OK&#39;d the code on pull request #7<\/h4><p><a href="https:\/\/github.com\/AgentMesh-Dev-Test\/word-stats\/pull\/7"/);
+  // A run whose stage names no pull request still shows the run's.
+  const bare = runGateHtml({ ...fr("F2"), stages: [] }, { ...ws, where: null }, run, { actionsHtml });
+  assert.match(bare, /<h4>Pull request #8: Ready for your OK<\/h4>/);
 });

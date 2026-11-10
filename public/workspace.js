@@ -177,18 +177,57 @@ export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, pro
   const product = `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its versions, run plan and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b></a>`;
   const runs = featureRuns(build);
   if (!runs.length || !runHref) return `${product}<div class="spine">${spine.map(item).join("")}</div>`;
-  // The version's features between its steps (0.4.10): the steps before the runs' stages, then a line per
-  // feature where the runs' stages were, the open one showing its own stages, then the steps after.
+  // A version whose features run in runs of their own (0.4.10) is three groups, none numbered: Spec, the
+  // steps before the runs' stages; Features, a line per run, the open one showing its own stages; and
+  // Ship, the steps after, folded to one line until one of them is reached or chosen.
   const held = runStageIds(build);
   const order = list(build.stages).map((s) => str(s?.stage));
   const first = order.findIndex((id) => held.has(id));
   const before = spine.filter((x) => order.indexOf(x.stage) < first);
   const after = spine.filter((x) => !before.includes(x));
+  const plain = (x) => {
+    const on = x.stage === sel;
+    return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${x.mark === "done" ? "✓" : ""}</span><span class="rn">${esc(x.name)}</span></a>`;
+  };
   const done = runs.filter((r) => r.ended === true).length;
   const onAll = Boolean(sel) && held.has(sel) && !runSel;
-  const head = `<a class="rg${onAll ? " sel" : ""}" href="${esc(runsHref)}"${onAll ? ' aria-current="page"' : ""} title="Every feature of this version at once">Features <small>${done} of ${runs.length} done</small></a>`;
-  const items = runs.map((fr) => featureItemHtml(fr, { on: fr.id === runSel, sel, runHref, stageName })).join("");
-  return `${product}<div class="spine">${before.map(item).join("")}<div class="rfeat">${head}${items}</div>${after.map(item).join("")}</div>`;
+  const spec = before.length ? `<h3 class="rg">Spec</h3>${before.map(plain).join("")}` : "";
+  const feats = `<a class="rg${onAll ? " sel" : ""}" href="${esc(runsHref)}"${onAll ? ' aria-current="page"' : ""} title="Every feature of this version at once">Features <small>${done} of ${runs.length} done</small></a>`
+    + runs.map((fr) => featureItemHtml(fr, { on: fr.id === runSel, sel, runHref, stageName })).join("");
+  const reached = after.some((x) => x.mark !== "next" || x.stage === sel);
+  const names = after.map((x) => x.name);
+  const folded = after.length ? `<a class="rs next ship" href="${esc(href(after[0].stage))}" aria-label="${esc(`Ship, after the features: ${names.join(", ")}`)}"><span class="dot" aria-hidden="true"></span><span class="rn">${esc(names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0])}</span></a>` : "";
+  const ship = after.length ? `<h3 class="rg">Ship${reached ? "" : " <small>after the features</small>"}</h3>${reached ? after.map(plain).join("") : folded}` : "";
+  return `${product}<div class="spine grouped">${spec}<div class="rfeat">${feats}</div>${ship}</div>`;
+}
+
+/**
+ * The gate at the top of a feature's page: the run's own, with its actions
+ * (ctx.actionsHtml is already the run's), its pull request standing in where
+ * its stage names none; a run that ended shows where it ended, in the
+ * service's words, with its pull request.
+ */
+export function runGateHtml(fr, ws, build, ctx = {}) {
+  const pr = isObj(fr?.pull_request) ? fr.pull_request : null;
+  if (fr?.ended === true) {
+    const url = pr ? safeUrl(pr.url) : null;
+    const said = str(fr.at?.summary) || "Done";
+    return `<div class="gcard done" id="gate"><h4>${esc(said)}</h4>${url ? `<p><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open ${esc(prShort(url))}</a></p>` : ""}</div>`;
+  }
+  return gateCardHtml({ ...ws, where: ws?.where ?? (pr ? { kind: "pull_request", ...pr } : null) }, build, ctx);
+}
+
+/** The strip under a feature's name: its own stages in order, each done, now or next, the page's marked. */
+export function runStripHtml(fr, { sel = null, href = (s) => `#${s}`, stageName = (x) => x } = {}) {
+  const at = isObj(fr?.at) ? fr.at : {};
+  const tone = { waiting_on_you: "waiting on you", working: "working", refused: "refused", stopped: "stopped" };
+  const steps = list(fr?.stages).filter((s) => isObj(s) && str(s.stage)).map((s) => {
+    const mark = s.state === "done" ? "done" : s.stage === str(at.stage) && fr.ended !== true ? "now" : "next";
+    const on = s.stage === sel;
+    const word = mark === "done" ? "done" : mark === "now" ? tone[str(at.state)] ?? "now" : "next";
+    return `<a class="fs ${mark}${on ? " sel" : ""}" href="${esc(href(s.stage))}"${on ? ' aria-current="page"' : ""}>${esc(stageName(s.stage))}<small>${esc(word)}</small></a>`;
+  });
+  return `<nav class="fstrip" aria-label="This feature's stages">${steps.join('<span class="arrow" aria-hidden="true">→</span>')}</nav>`;
 }
 
 /** Where a feature run is, in words: the service's summary, else its stage and state. */

@@ -15,7 +15,7 @@ import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
 import { specOf, specTabHtml } from "./spec.js";
-import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -802,10 +802,19 @@ function draw() {
   const chat = state.hasChat && !run;
   const talk = chat && canTalkTo(ws.holder);
   const msgs = chat && Array.isArray(state.chat) ? state.chat : fallbackChat(run ?? b, ws.stage, { defs: defs(), roleDefs: state.roleDefs });
-  // At Test and Code of a version whose features are made in runs of their own, a row for each run takes the gate's place.
-  const gate = runStageIds(b).has(ws.stage)
-    ? featureRunsHtml(b, ws.stage, { sel: state.runSel, href: (r) => runHash(b.id, ws.stage, r), stageName: (id) => def(id).name, actionsHtml: (r, labels) => actionsHtml(ws.stage, { run: r, labels }), checkHtml: localCheckHtml, cloneOpen: state.cloneOpen })
-    : gateCardHtml(ws, b, ctx);
+  // A feature's page: its own gate alone. At the version's Test and Code, a row for each run takes the gate's place.
+  const fr = run?.run ?? null;
+  const gate = fr
+    ? runGateHtml(fr, ws, run, { ...ctx, actionsHtml: (s) => actionsHtml(s, { run: fr.id, labels: Object.fromEntries((fr.actions ?? []).map((a) => [a.name, runLabel(a, fr)])) }) })
+    : runStageIds(b).has(ws.stage)
+      ? featureRunsHtml(b, ws.stage, { sel: state.runSel, href: (r) => runHash(b.id, ws.stage, r), stageName: (id) => def(id).name, actionsHtml: (r, labels) => actionsHtml(ws.stage, { run: r, labels }), checkHtml: localCheckHtml, cloneOpen: state.cloneOpen })
+      : gateCardHtml(ws, b, ctx);
+  // The page's heading: the feature's name over its own stages, or the stage's name and its step.
+  const frName = fr ? String(fr.name || fr.id || "") : "";
+  const frId = fr ? [fr.feature, fr.id].map((x) => String(x ?? "")).find((x) => x && frName.startsWith(`${x} `)) : "";
+  const head = fr
+    ? `<h1>${esc(frId ? frName.slice(frId.length + 1) : frName)}${frId ? `<span>${esc(frId)}</span>` : ""}</h1>${runStripHtml(fr, { sel: ws.stage, href: (s) => runHash(b.id, s, fr.id), stageName: (id) => def(id).name })}`
+    : `<h1>${esc(ws.name)}${x && !featureRuns(b).length ? `<span>${esc(stepLabel(x, spine))}</span>` : ""}</h1>`;
   const st = stateOf({ state: ws.state });
   const tabs = [
     ...(reqFeat ? [{ id: "features", label: "Features", count: Array.isArray(state.bfeat.answer.features) ? state.bfeat.answer.features.length : undefined }] : []),
@@ -834,7 +843,7 @@ function draw() {
   $("main").innerHTML = `
     <section class="thread-wrap work">
       <div class="whead">
-        <div class="hd"><div><h1>${esc(ws.name)}${run ? `<span>${esc(String(run.run?.name || run.run?.id || ""))}</span>` : x ? `<span>${esc(stepLabel(x, spine))}</span>` : ""}</h1><p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p></div></div>
+        <div class="hd"><div>${head}<p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p></div></div>
         <div class="err" role="alert">${esc(state.error)}</div>
         ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
         ${ws.stage === STAGE_ZERO ? buildSourceHtml(b.source) : ""}
