@@ -697,7 +697,10 @@ function buildMenuHtml() {
   // The boss sits at the top: the default place to talk about the product.
   const onBoss = state.view === "product" && (state.ptab ?? "boss") === "boss" && state.boss.has === true;
   const ask = state.boss.has === false ? "" : `<a class="askboss${onBoss ? " on" : ""}" href="${esc(`${productHash(mine)}/boss`)}"${onBoss ? ' aria-current="page"' : ""}>Ask the boss</a>`;
-  return `${ask}${spineHtml(b, spine, { sel: state.view === "build" ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" && !onBoss })}
+  // The version's features in the rail (0.4.10): each opens its run where it is; the heading opens every run at once.
+  const held = runStageIds(b);
+  const allAt = [openingStage(b, defs()), ...held].find((s) => s && held.has(s));
+  return `${ask}${spineHtml(b, spine, { sel: state.view === "build" ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" && !onBoss, runSel: state.view === "build" ? state.runSel : null, runHref: (s, r) => runHash(b.id, s, r), runsHref: allAt ? hashFor(b.id, allAt) : hashFor(b.id), stageName })}
     ${others || archived ? `<h2>Other products</h2>${others}` : ""}
     ${archived ? `<button class="linkbtn archt" id="archt" type="button" aria-pressed="${state.showArchived}">${state.showArchived ? "Hide archived" : `Show archived (${archived})`}</button>` : ""}
     ${state.status?.read_only ? "" : `<button class="newb" id="new2" type="button">New build</button>`}
@@ -831,7 +834,7 @@ function draw() {
   $("main").innerHTML = `
     <section class="thread-wrap work">
       <div class="whead">
-        <div class="hd"><div><h1>${esc(ws.name)}${x ? `<span>${esc(stepLabel(x, spine))}</span>` : ""}</h1><p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p></div></div>
+        <div class="hd"><div><h1>${esc(ws.name)}${run ? `<span>${esc(String(run.run?.name || run.run?.id || ""))}</span>` : x ? `<span>${esc(stepLabel(x, spine))}</span>` : ""}</h1><p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p></div></div>
         <div class="err" role="alert">${esc(state.error)}</div>
         ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
         ${ws.stage === STAGE_ZERO ? buildSourceHtml(b.source) : ""}

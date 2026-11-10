@@ -13,7 +13,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { boardCards, boardColumns, boardHtml, cardWords, gathering, isDone, waitsOnMe } from "../public/board.js";
-import { actionButtonsHtml, actionKey, featureRuns, featureRunsHtml, fallbackChat, runBuild, runLabel, runStageIds, stageWorkspace, artifactsTabHtml } from "../public/workspace.js";
+import { actionButtonsHtml, actionKey, featureRuns, featureRunsHtml, fallbackChat, runBuild, runLabel, runStageIds, stageWorkspace, artifactsTabHtml, steps, stepHeader, spineHtml } from "../public/workspace.js";
 import { validate, checkBuild, checkBuildList, stageIds } from "../standards/lifecycle-api-check.mjs";
 import { checkBuild as checkContract, checkBuildList as checkContractList } from "../lib/contract.mjs";
 import { createDemoService } from "../lib/demo.mjs";
@@ -221,4 +221,33 @@ test("the console's checks notice a feature run that breaks the contract", async
   const list = structuredClone((await get(createDemoService(), "/v1/lifecycle/builds")).body);
   delete list.builds.find((x) => x.id === "b_word_stats").feature_runs[0].at;
   assert.ok(checkContractList(list).some((x) => x.includes("at has a stage id and a known state")));
+});
+
+test("the rail: the version's features between its steps, each where it is, the open one with its own stages; the runs' stages are no steps of the version", async () => {
+  const d = createDemoService();
+  const b = (await get(d, WS)).body.build;
+  const spine = steps(b, { defs });
+  // Test and Code are the features'; the version counts Requirements, then Package and on.
+  assert.deepEqual(spine.slice(0, 2).map((x) => [x.stage, x.number, x.mark]), [["requirements", 1, "done"], ["package", 2, "next"]]);
+  assert.ok(!spine.some((x) => ["test", "code"].includes(x.stage)));
+  assert.deepEqual(stepHeader(b, spine), { text: "Making 2 features, each in a run of its own: 1 waits on you", tone: "wait" });
+  const html = spineHtml(b, spine, { sel: "code", runSel: "F2", href: (s) => `#/b/b_word_stats/${s}`, runHref: (s, r) => `#/b/b_word_stats/${s}/run/${r}`, runsHref: "#/b/b_word_stats/code", stageName });
+  const text = visible(html);
+  // Requirements, then the features, then Package: in that order.
+  assert.ok(text.indexOf("Requirements") < text.indexOf("Features 1 of 3 done"), text);
+  assert.ok(text.indexOf("Features 1 of 3 done") < text.indexOf("Count words"), text);
+  assert.ok(text.indexOf("Longest word") < text.indexOf("Package"), text);
+  // Each feature opens its run where it is, with the service's words for where that is.
+  assert.match(html, /<a class="rs run done" href="#\/b\/b_word_stats\/code\/run\/F1"[^>]*>.*?✓.*?Count words.*?You OK&#39;d the code on pull request #7/);
+  assert.match(html, /aria-label="F1 Count words: You OK&#39;d the code on pull request #7"/);
+  assert.match(html, /<a class="rs run now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="true"[^>]*>.*?Count lines.*?<small class="w">Waiting on you at Code/);
+  assert.match(html, /<a class="rs run now work" href="#\/b\/b_word_stats\/code\/run\/F3"[^>]*>.*?Longest word.*?Working at Code/);
+  // The open feature shows its own Test and Code, Code being the page.
+  assert.match(html, /<a class="rs sub done" href="#\/b\/b_word_stats\/test\/run\/F2"[^>]*>.*?Test<\/span><\/a><a class="rs sub now sel" href="#\/b\/b_word_stats\/code\/run\/F2" aria-current="page"/);
+  assert.ok(!/run\/F1"[^>]*>(?:(?!<a).)*<\/a><a class="rs sub/.test(html), "a feature that is not open shows no stages");
+  // The heading opens every feature at once, and is the page when the version's own Code is.
+  assert.match(html, /<a class="rg" href="#\/b\/b_word_stats\/code"/);
+  assert.match(spineHtml(b, spine, { sel: "code", runSel: null, href: (s) => s, runHref: (s, r) => `${s}/${r}`, runsHref: "code", stageName }), /<a class="rg sel" href="code" aria-current="page"/);
+  // Without a way to open a run, the rail is the version's steps alone, as before.
+  assert.ok(!/class="rg/.test(spineHtml(b, spine, { sel: "code", href: (s) => s })));
 });
