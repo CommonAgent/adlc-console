@@ -15,7 +15,7 @@ import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
 import { specOf, specTabHtml } from "./spec.js";
-import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, hasSkills, skillsOf, skillsTabHtml } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -42,7 +42,7 @@ const state = {
   // The open build's selected stage: the service's workspace for it (null when it has no such route),
   // its chat with the stage's agent (null without the route), the artifact open on the right, the
   // composer's draft, the proposals confirmed, and whether Try it is open on the right.
-  roleDefs: [], stageSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: null, chatScroll: null, drawnKey: null,
+  roleDefs: [], stageSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, skill: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: null, chatScroll: null, drawnKey: null,
   // The products (GET /products, null without the route) and the open product page.
   products: null, product: null,
   // The when-needed action being taken from the product page (0.4.2), and a role the Setup tab sent the
@@ -147,7 +147,7 @@ function parseHash() {
   // The Roles page is now part of the Lifecycle page; an old link still lands there.
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
-  if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "try", "features", "spec"].includes(parts[3]) ? parts[3] : null };
+  if (parts[0] === "b" && parts[1]) return { view: "build", id: parts[1], sel: parts[2] || null, tab: ["chat", "artifacts", "skills", "try", "features", "spec"].includes(parts[3]) ? parts[3] : null };
   if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "features", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
@@ -215,7 +215,7 @@ async function route() {
   const used = stepStages(state.build, defs()).map((s) => s.stage);
   const stage = used.includes(h.sel) ? h.sel : openingStage(state.build, defs());
   if (stage !== state.stageSel) {
-    state.stageSel = stage; state.art = null; state.featFocus = null; state.sayDraft = ""; state.sayError = ""; state.asking = null;
+    state.stageSel = stage; state.art = null; state.skill = null; state.featFocus = null; state.sayDraft = ""; state.sayError = ""; state.asking = null;
     try { await loadStage(); } catch (e) { return problem(e); }
     // 0.4.5: Requirements opens at its Features tab, the first one, when the service has features; other stages never have it.
     if (!h.tab) { if (stage === "requirements" && hasReqFeatures()) state.tab = "features"; else if (state.tab === "features" || state.tab === "spec") state.tab = "chat"; }
@@ -232,7 +232,7 @@ async function route() {
 async function openBuild(id) {
   if (state.build && state.build.id === id) return true;
   state.tries = []; state.lastTry = null; state.asking = null; state.wrongFor = null; if (state.tab === "try") state.tab = "chat";
-  state.stageSel = null; state.wsAnswer = null; state.chat = null; state.hasChat = false; state.art = null; state.confirmed = new Set();
+  state.stageSel = null; state.wsAnswer = null; state.chat = null; state.hasChat = false; state.art = null; state.skill = null; state.confirmed = new Set();
   try { state.build = (await api(buildPath(id))).build; } catch (e) { problem(e); return false; }
   return true;
 }
@@ -776,6 +776,9 @@ function draw() {
   // The spec (0.4.8): what Requirements hands back, on a tab of its own beside Features.
   const spec = ws.stage === "requirements" ? specOf(ws.outputs) : null;
   if (state.tab === "spec" && !spec) state.tab = "chat";
+  // The holder's skills (0.4.9), on a tab of their own after Artifacts, when the service says anything about them.
+  const skills = hasSkills(ws.holder);
+  if (state.tab === "skills" && !skills) state.tab = "chat";
   const agent = holderName(ws.holder, s, def(ws.stage), state.roleDefs);
   const who = holderHtml(ws.holder);
   const talk = state.hasChat && canTalkTo(ws.holder);
@@ -787,6 +790,7 @@ function draw() {
     ...(spec ? [{ id: "spec", label: "Spec" }] : []),
     { id: "chat", label: "Chat", count: msgs.filter((m) => m?.from?.kind !== "system").length },
     { id: "artifacts", label: "Artifacts", count: artifactCount(ws) ?? undefined },
+    ...(skills ? [{ id: "skills", label: "Skills", count: skillsOf(ws.holder).length || undefined }] : []),
     ...(canTry ? [{ id: "try", label: "Try it" }] : []),
   ];
   let body;
@@ -795,7 +799,8 @@ function draw() {
   const slice = ws.stage !== "requirements" && ws.features ? ws.features : null;
   if (state.tab === "features" && reqFeat) body = requirementsFeaturesHtml(state.bfeat.answer, { pending: state.featPending, allPending: state.featAllPending, listing: state.featListing, spec: spec?.summary ?? null });
   else if (state.tab === "spec" && spec) body = specTabHtml(spec, { when });
-  else if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list) => filesHtml(list, false), feature: state.featFocus, featureName: focusName, featuresTitle: "Features at this stage", featuresHtml: slice ? () => stageFeaturesHtml(slice) : null });
+  else if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list, openOne = false) => filesHtml(list, openOne), feature: state.featFocus, featureName: focusName, featuresTitle: "Features at this stage", featuresHtml: slice ? () => stageFeaturesHtml(slice) : null });
+  else if (state.tab === "skills" && skills) body = skillsTabHtml(ws.holder, state.skill);
   else if (state.tab === "try") body = `<div class="stage trypane" id="trybody"></div>`;
   else body = `<div class="thread" id="thread">${chatHtml(msgs, { ...ctx, empty: talk ? `Nothing has been said here yet. Ask ${agent} about what it read or made.` : "Nothing has been said here yet." })}
       ${ws.evidence.length ? `<div class="evid">${evidenceHtml(ws.evidence, { when, fileHtml: (f) => filesHtml([f], false) })}</div>` : ""}</div>${timeline()}`;
@@ -1372,7 +1377,7 @@ function formValues(f) {
 
 document.addEventListener("click", async (e) => {
   const t = e.target;
-  // The stage's tabs: Chat, Artifacts, Try it. Leaving Chat remembers where it was.
+  // The stage's tabs: Chat, Artifacts, Skills, Try it. Leaving Chat remembers where it was.
   const tab = t.closest("[data-tab]");
   if (tab || t.closest("[data-tryit]")) {
     const to = tab ? tab.dataset.tab : "try";
@@ -1426,6 +1431,14 @@ document.addEventListener("click", async (e) => {
     draw();
     if (phone()) requestAnimationFrame(() => $("reader")?.scrollIntoView({ block: "start", behavior: "smooth" }));
     else setScroll(t.closest(".alist") ? top : 0);
+    return;
+  }
+  // A skill in the Skills tab: its SKILL.md in full in the reader.
+  const skill = t.closest("[data-skill]");
+  if (skill) {
+    state.skill = skill.dataset.skill;
+    draw();
+    if (phone()) requestAnimationFrame(() => $("reader")?.scrollIntoView({ block: "start", behavior: "smooth" }));
     return;
   }
   const confirmBtn = t.closest("[data-confirm]");
