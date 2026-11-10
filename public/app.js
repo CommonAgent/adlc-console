@@ -582,7 +582,6 @@ function drawTop() {
   if (st?.demo) who = "Made-up builds, for a look around";
   else if (st?.source === "file") who = "No service · saved to a file on this computer";
   else if (st?.key_from === "saved") who = `Using your saved key · <button class="linkbtn" id="forget" type="button">Forget it</button>`;
-  else if (st?.key_from === "service") who = "Started by the service, with its key";
   else if (st?.key_from === "environment") who = "Using the key from your environment";
   else if (st?.key_from === "key file") who = "Using the key from your key file";
   else if (st?.key_from === "github token") who = "Read-only · using your GitHub token";

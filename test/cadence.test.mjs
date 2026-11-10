@@ -149,7 +149,7 @@ test("the when-needed actions: a button enabled only where the service can run i
   assert.deepEqual([dc.can_run, dc.action.build, dc.action.name, dc.action.label], [true, "b_tally_words", "decommission", "Decommission"]);
   assert.equal(dc.confirm.title, "Decommission tally-words?");
   assert.equal(one(p.when_needed, "rollback").why_not, "There is no earlier installed version to roll back to.");
-  assert.match(productPageHtml(p, {}, "versions"), /data-when-act="decommission">Decommission<\/button>/);
+  assert.match(productPageHtml(p, {}, "info"), /data-when-act="decommission">Decommission<\/button>/);
   const a = whenNeededAction(p.when_needed, "decommission");
   const taken = await post(d, `/v1/lifecycle/builds/${a.build}/actions/${a.name}`);
   assert.equal(taken.status, 200);

@@ -117,11 +117,11 @@ test("the product page shows the open confirm card under the buttons, then the r
   assert.match(visible(runningHtml(p)), /^Running 0\.2\.0 runs$/);
   assert.match(visible(runningHtml({ retired: { version: "0.2.0", why: "Replaced." } })), /^Retired at 0\.2\.0\. Replaced\.$/);
   assert.equal(runningHtml({}), "");
-  const closed = productPageHtml(p, {}, "versions");
+  const closed = productPageHtml(p, {}, "info");
   assert.match(closed, /data-when-act="rollback">Roll back<\/button>/);
   assert.doesNotMatch(closed, /data-when-form/);
-  assert.match(productPageHtml(p, { whenCard: { open: "rollback", draft: {} } }, "versions"), /data-when-form="rollback"/);
-  const res = productPageHtml(p, { whenCard: { result: { stage: "impact", ok: true, words: "I compared word-counter 0.1.0 with 0.2.0.", report: "# What changing word-counter touches\n" } }, stageName: (id) => ({ impact: "Impact" })[id] ?? id }, "versions");
+  assert.match(productPageHtml(p, { whenCard: { open: "rollback", draft: {} } }, "info"), /data-when-form="rollback"/);
+  const res = productPageHtml(p, { whenCard: { result: { stage: "impact", ok: true, words: "I compared word-counter 0.1.0 with 0.2.0.", report: "# What changing word-counter touches\n" } }, stageName: (id) => ({ impact: "Impact" })[id] ?? id }, "info");
   assert.match(visible(res), /Impact: done I compared word-counter 0\.1\.0 with 0\.2\.0\. The report # What changing word-counter touches/);
   assert.match(visible(whenResultHtml({ stage: "rollback", ok: true, words: "Back on 0.1.0.", cannot_undo: ["Sent messages stay sent."] })), /What can't be undone Sent messages stay sent\./);
   assert.match(whenResultHtml({ stage: "decommission", ok: false, words: "Refused." }), /class="gcard wresult bad"/);
@@ -134,5 +134,5 @@ test("the demo gives each setup stage its form and its offered action a confirm 
   assert.ok(p.setup.every((x) => x.form && Array.isArray(x.form.fields)));
   const html = productPageHtml(p, { chooseHref: () => "#" }, "setup");
   assert.match(html, /<ul class="setup guided">/);
-  assert.match(productPageHtml(p, { whenCard: { open: "decommission", draft: {} } }, "versions"), /Confirm: Decommission/);
+  assert.match(productPageHtml(p, { whenCard: { open: "decommission", draft: {} } }, "info"), /Confirm: Decommission/);
 });
