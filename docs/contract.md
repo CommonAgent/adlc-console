@@ -337,6 +337,30 @@ How the console reads these:
 - The product page's Features tab stays the matrix, the overview. The matrix no longer sits under
   the Requirements stage's Artifacts tab.
 
+Read by the console since lifecycle API 0.4.9 (additive): the skills of a stage's holder.
+
+```
+GET /v1/lifecycle/builds/{id}/stages/{stage}
+holder adds skills?: [{ name, description?, text }]     // text: the SKILL.md as written, in full
+         or skills_note?: <one sentence>                 // when the service cannot see them
+```
+
+How the console reads these:
+
+- A stage page has a **Skills** tab, after Artifacts, when its holder lists skills or the
+  service says why it cannot. Each skill is listed by name with its one-line description, and
+  the chosen one, the first at the start, opens its SKILL.md in full in the reader beside them.
+- A holder with `skills_note` shows that sentence on the tab, such as "Its skills are whatever
+  your coding harness has installed".
+- A holder that lists none (`skills: []`), a person, an outside tool and a service from before
+  0.4.9 show no Skills tab. The build's stages may leave skills out; the console reads them
+  from the stage workspace.
+
+The Artifacts reader, in the same change: below the summary, the artifact's files sit under a
+**Full text** heading that says how many there are, each as written, and an artifact's only file
+is open. A suite's summary names every test it gives; "and N more" is said only for tests the
+service counts but does not name.
+
 Read by the console since lifecycle API 0.4.8 (additive): the spec (stages.json 1.6.0,
 spec-v1). What Requirements hands back is the spec, the analysis of the product's functional
 requirements and capabilities; the agent's own files (the statement artifact) are made at Design.

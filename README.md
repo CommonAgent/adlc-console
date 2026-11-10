@@ -64,6 +64,13 @@ and what is still open. The Features tab shows the same requirements and
 scenarios under each feature. The agent's own files are made from the spec at
 Design.
 
+Each stage page has a Skills tab (lifecycle API 0.4.9) when the service lists
+the skills of the agent holding the stage: each skill by name with its one-line
+description, and the one you pick opened in full, its SKILL.md as written. For
+a coding harness you run yourself, the tab says its skills are whatever that
+harness has installed. In the Artifacts reader, each artifact's files sit under
+Full text, below its summary, and an artifact's only file is open.
+
 ## The Board
 
 Board, at the top of the rail, shows every build as a card in the column of

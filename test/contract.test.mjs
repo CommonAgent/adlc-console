@@ -301,8 +301,10 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.4.8, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage, starting from existing code or an as-built record, back_to_requirements, and the spec", () => {
-  assert.equal(SCHEMA.version, "0.4.8");
+test("the vendored schema is lifecycle API 0.4.9, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage, starting from existing code or an as-built record, back_to_requirements, the spec, and the holder's skills", () => {
+  assert.equal(SCHEMA.version, "0.4.9");
+  for (const k of ["skills", "skills_note"]) assert.ok(SCHEMA.$defs.Holder.properties[k], `Holder.${k}`);
+  assert.deepEqual(SCHEMA.$defs.Skill.required, ["name", "text"]);
   assert.ok(SCHEMA.$defs.Artifact.properties.kind.enum.includes("spec"));
   assert.deepEqual(SCHEMA.$defs.SpecSummary.required, ["product", "features", "open"]);
   assert.match(SCHEMA.$defs.Action.properties.name.description, /back_to_requirements/);

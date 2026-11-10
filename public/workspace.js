@@ -459,9 +459,9 @@ export function artifactBodyHtml(a, { stageName = (x) => x, feature = null } = {
         const others = count - mine.length;
         return `<p>${mine.length} of ${count} ${count === 1 ? "test" : "tests"} name ${esc(feature)}.</p>${mine.length ? `<ul class="fat">${mine.map((t) => `<li>${esc(t)}</li>`).join("")}${others > 0 ? `<li class="more">and ${others} ${others === 1 ? "test" : "tests"} for other things</li>` : ""}</ul>` : ""}`;
       }
-      const shown = tests.slice(0, 8);
-      const more = count - shown.length;
-      return `<p>${count} ${count === 1 ? "test" : "tests"}.</p>${shown.length ? `<ul>${shown.map((t) => `<li>${esc(t)}</li>`).join("")}${more > 0 ? `<li class="more">and ${more} more</li>` : ""}</ul>` : ""}`;
+      // Every test the suite names; "and N more" only for tests the service counts but does not name.
+      const more = count - tests.length;
+      return `<p>${count} ${count === 1 ? "test" : "tests"}.</p>${tests.length ? `<ul>${tests.map((t) => `<li>${esc(t)}</li>`).join("")}${more > 0 ? `<li class="more">and ${more} more</li>` : ""}</ul>` : ""}`;
     }
     case "programs": {
       const rows = list(s.scripts).filter(isObj).map((x) => {
@@ -588,7 +588,8 @@ export function artifactsTabHtml(ws, selId, ctx = {}) {
   const sel = all.find((a) => a.id === selId) ?? all.find((a) => a.id === defaultArtifact(ws)) ?? all[0];
   const meta = [stageName(sel.stage), str(sel.by), str(sel.version), sel.at && ctx.when ? ctx.when(sel.at) : ""].filter(Boolean).join(" · ");
   const said = sel.state && sel.state !== "made" ? `<p class="said">${esc(STATE_SAID[sel.state] ?? "")}</p>` : "";
-  const fl = list(sel.files).length ? `<div class="vfiles">${files(list(sel.files))}</div>` : "";
+  // Each file as written, under its own heading, so the full text is not missed below the summary; an artifact's only file is open.
+  const fl = list(sel.files).length ? `<section class="vfiles" aria-label="Full text"><h4 class="ft">Full text <span>${list(sel.files).length === 1 ? "1 file" : `${list(sel.files).length} files`}, as written</span></h4>${files(list(sel.files), true)}</section>` : "";
   const viewer = `<h3>${esc(sel.name)}</h3><div class="vm">${esc(meta)}${str(sel.digest) ? ` · <code>${esc(str(sel.digest).slice(0, 19))}</code>` : ""}</div>${said}${focusHtml(sel, ctx.feature, ctx.featureName)}${artifactBodyHtml(sel, { stageName, feature: ctx.feature ?? null })}${fl}`;
   const row = (a) => {
     const right = a.state === "made" || !a.state ? (str(a.version) ? `<span class="v">${esc(str(a.version))}</span>` : "") : `<span class="need ${esc(a.state)}">${esc(STATE_TAG[a.state] ?? a.state)}</span>`;
@@ -599,6 +600,37 @@ export function artifactsTabHtml(ws, selId, ctx = {}) {
   return `<div class="atab"><div class="viewer" id="reader">${viewer}</div><div class="alist"><p class="acount">${given.length} given · ${made} of ${outputs.length} made</p>
     <div class="grp">Given</div>${given.length ? given.map(row).join("") : `<p class="gw">${esc(ws.givenWords || "Nothing from an earlier stage.")}</p>`}
     <div class="grp">Outputs</div>${outputs.length ? outputs.map(row).join("") : `<p class="gw">Nothing yet.</p>`}</div></div>${ctx.featuresHtml ? `<section class="afeat" aria-label="Features"><div class="grp">${esc(ctx.featuresTitle ?? "Features in this build")}</div>${ctx.featuresHtml()}</section>` : ""}`;
+}
+
+// ---------- the holder's skills (lifecycle API 0.4.9) ----------
+
+/** The holder's skills, as the service lists them: each with a name and its SKILL.md. */
+export function skillsOf(holder) {
+  return list(holder?.skills).filter((x) => isObj(x) && str(x.name) && typeof x.text === "string");
+}
+
+/**
+ * Whether a stage page shows a Skills tab: its holder lists skills, or the
+ * service says in one sentence why it cannot see them. A holder that lists none
+ * of its own, a person, and a service from before 0.4.9 show nothing.
+ */
+export function hasSkills(holder) {
+  return skillsOf(holder).length > 0 || Boolean(str(holder?.skills_note));
+}
+
+/**
+ * The Skills tab: each skill of the stage's holder by name, with its one-line
+ * description, and the chosen one's SKILL.md in full in the reader beside
+ * them, the first when none is chosen. A holder whose skills the service cannot
+ * see shows the service's sentence instead.
+ */
+export function skillsTabHtml(holder, selName = null) {
+  const all = skillsOf(holder);
+  if (!all.length) return `<div class="atab none"><p class="gw">${esc(str(holder?.skills_note))}</p></div>`;
+  const sel = all.find((x) => x.name === selName) ?? all[0];
+  const row = (x) => `<button class="arow${x === sel ? " sel" : ""}" type="button" data-skill="${esc(x.name)}" aria-pressed="${x === sel}"><b>${esc(x.name)}</b>${str(x.description) ? `<small>${esc(str(x.description))}</small>` : ""}</button>`;
+  const viewer = `<h3>${esc(sel.name)}</h3><h4 class="ft">SKILL.md <span>as written</span></h4><pre class="skilltext">${esc(sel.text)}</pre>`;
+  return `<div class="atab skills"><div class="viewer" id="reader">${viewer}</div><div class="alist"><p class="acount">${all.length} ${all.length === 1 ? "skill" : "skills"}</p>${all.map(row).join("")}</div></div>`;
 }
 
 // ---------- the product page ----------
