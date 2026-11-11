@@ -3,7 +3,7 @@
 // order, each with the copy that stands now and the versions that made it;
 // the product page's Documents tab groups them (standing, this version's
 // proofs, occasional), reads the chosen one in full from the build that made
-// it, and offers Ask for a change, which is the stage's chat.
+// it, and sends a change to the version's own document tab.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -59,9 +59,10 @@ test("the Documents tab: three groups, the chosen document read in full from the
   assert.ok(!text.includes("Occasional records"), "no occasional record exists, so the group is not shown");
   assert.match(html, /<button class="drow made sel" type="button" data-doc="architecture" aria-pressed="true"><b>Architecture record<\/b><small>0.1.0/);
   assert.match(html, /<button class="drow not_made" type="button" data-doc="package" aria-pressed="false"><b>The package<\/b><small>not made yet<\/small>/);
-  // The reader: the design in full, its words, Ask for a change at Architecture's chat, and the version that made it.
+  // The reader: the design in full, its words, a way to the version's tab to ask for a change, and the version that made it.
   assert.match(html, /<h3>Architecture record<\/h3><div class="vm">Architecture and Design · solution architect · version 0.1.0/);
-  assert.match(html, /<a class="btn" href="#\/b\/b_palindrome_judge\/architecture\/chat">Ask for a change<\/a>/);
+  assert.match(html, /<a class="btn" href="#\/b\/b_palindrome_judge\/architecture\/artifacts">Open in version 0\.1\.0 to ask for a change<\/a>/);
+  assert.match(documentsHtml(a, { sel: "architecture", stageName, docHref: (b, s) => `#/b/${b}/d/${s}` }), /href="#\/b\/b_palindrome_judge\/d\/architecture">Open in version 0\.1\.0 to ask for a change/);
   assert.ok(text.includes("One step, a program: scripts/judge.mjs"), text);
   assert.match(html, /<h4 class="ft">Versions <span>made once<\/span><\/h4><ul><li><a href="#\/b\/b_palindrome_judge\/architecture\/artifacts"><b>0.1.0<\/b>.*<i>stands now<\/i>/);
   // A document's files are read from the build that made it, which may not be the newest.

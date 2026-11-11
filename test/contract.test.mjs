@@ -301,8 +301,9 @@ test("the checks notice a roles answer or evidence that breaks the contract", as
 const SCHEMA = JSON.parse(await readFile(join(HERE, "..", "standards", "lifecycle-api.schema.json"), "utf8"));
 const at = (b, id) => b.stages.find((s) => s.stage === id);
 
-test("the vendored schema is lifecycle API 0.4.12, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage, starting from existing code or an as-built record, back_to_requirements, the spec, the holder's skills, and feature runs, a product's documents and the security statement and architecture record in parts", () => {
-  assert.equal(SCHEMA.version, "0.4.12");
+test("the vendored schema is lifecycle API 0.4.13, with the stages operations, not_used, products, stage workspaces, chats, the boss, cadence, features, setup forms, confirm cards, features at every stage, starting from existing code or an as-built record, back_to_requirements, the spec, the holder's skills, and feature runs, a product's documents and the security statement and architecture record in parts", () => {
+  assert.equal(SCHEMA.version, "0.4.13");
+  assert.ok(SCHEMA.$defs.RuleCheck && SCHEMA.$defs.Artifact.properties.checks);
   assert.ok(SCHEMA.$defs.ArchitectureSummary && SCHEMA.$defs.SecuritySummary.properties.reaches && SCHEMA.$defs.DocumentsAnswer);
   assert.deepEqual(SCHEMA.$defs.FeatureRunCard.required, ["id", "feature", "name", "started", "at", "ended"]);
   assert.deepEqual(SCHEMA.$defs.FeatureRun.required, ["id", "feature", "name", "started", "at", "ended", "stages", "actions", "log", "timeline"]);

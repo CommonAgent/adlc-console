@@ -931,6 +931,38 @@ details.rfspec>ul:last-child{margin-bottom:8px}
 .ctabs .ct.w small,.ctabs .ct.w{color:var(--wait)}
 .ctabs .ctsep{width:1px;background:var(--line);margin:8px 6px 10px;flex:none}
 .docbody{padding:18px 22px 22px;min-width:0}
+.dfrom{margin:4px 0 0;font-size:13px;color:var(--muted)}
+.dask{border:1px solid var(--accent);border-radius:10px;padding:12px 14px;margin:0 0 18px;background:var(--panel)}
+.dask .dctx{margin:0 0 8px;font-size:13px;color:var(--muted)}
+.dsay{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.dsay textarea{width:100%;min-height:64px}
+.dreply{margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--bg)}
+.dreply p{margin:4px 0 0}
+.dearlier{margin-top:12px;font-size:13px}
+.dearlier summary{cursor:pointer;color:var(--muted);font-weight:600;font-family:var(--sans);font-size:13px;border:0;background:none;padding:0}
+.dearlier{border:0;background:none}
+.dearlier ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.dearlier em{font-style:normal;color:var(--muted);font-size:12px}
+.dearlier p{margin:2px 0 0}
+.docbody .dact .btn.on{border-color:var(--accent);color:var(--accent)}
+.dfrom code{font-family:var(--mono);font-size:12px;color:var(--fg)}
+.dfrom a{font-weight:600}
+.dchecks{border-top:1px solid var(--line);margin-top:20px;padding-top:14px}
+.dchecks h2{margin:0 0 8px;font-size:15px}
+.dchecks td.cres{width:120px;white-space:nowrap}
+.dchecks td.csec{width:170px;color:var(--muted);font-size:12.5px}
+.cr{display:inline-block;font-size:12px;font-weight:700;padding:1px 9px;border-radius:99px}
+.cr.met{background:var(--done-bg);color:var(--accent)}
+.cr.not_met{background:var(--bad-bg);color:var(--bad)}
+.cr.not_checked{background:var(--code);color:var(--muted)}
+@media (max-width:760px){.dchecks td.csec{display:none}}
+.ctabs .ct small.bad{background:var(--bad-bg);color:var(--bad)}
+#spine .rb .ctally{display:grid;gap:1px;margin-top:8px;font-size:12px;font-weight:400}
+#spine .rb .ctally .t{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:700}
+#spine .rb .ctally .row{display:flex;justify-content:space-between;color:var(--muted)}
+#spine .rb .ctally .row b{color:var(--fg)}
+#spine .rb .ctally .row b.ok{color:var(--accent)}
+#spine .rb .ctally .row b.bad{color:var(--bad)}
 .dhead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 .dstate{font-size:13px;font-weight:600;padding:2px 10px;border-radius:99px;background:var(--code);color:var(--muted)}
 .dlead{margin:6px 0 14px;color:var(--muted);max-width:80ch}
@@ -998,3 +1030,15 @@ details.rfspec>ul:last-child{margin-bottom:8px}
 .dhist li a:hover{border-color:var(--accent)}
 .dhist li a span{color:var(--muted);font-size:12px}
 .dhist li a i{margin-left:auto;font-style:normal;font-size:11px;color:var(--accent);font-weight:600}
+
+/* The spec, read as a document: sentences, examples as steps, ids kept as tooltips. */
+.spec .sreq{display:block;margin:5px 0}
+.spec .sreq .sx{color:var(--muted)}
+.spec .sreq .sx q{font-family:var(--mono);font-size:12.5px;color:var(--fg);quotes:"\201C" "\201D"}
+.spec .saccs{list-style:none;padding:0;display:grid;gap:10px}
+.spec .sacc{border-left:3px solid var(--line);padding:2px 0 2px 12px}
+.spec .sacc .stitle{display:block;font-weight:600;margin-bottom:4px}
+.spec .steps{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.spec .steps .kw{display:inline-block;min-width:44px;font-weight:600;color:var(--muted)}
+.spec .sif small{display:block;color:var(--muted)}
+.spec .snone{color:var(--muted);margin:12px 0 0}

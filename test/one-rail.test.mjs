@@ -28,7 +28,7 @@ test("a version made in one chain gets the same rail: its spec's features, each 
   assert.deepEqual(fs.map((f) => [f.id, f.name, f.line, f.mark, f.wait]), [["F1", "Judge a sentence", "Waiting on you at Code", "now", true]]);
   const html = spineHtml(b, steps(b, { defs }), { ...opts(b), features: fs, featSel: "F1", line: { text: "Waiting on you at Code", wait: true } });
   const text = visible(html);
-  assert.equal(text, "palindrome-judge 0.1.0 Waiting on you at Code Features 0 of 1 built F1 Judge a sentence Waiting on you at Code");
+  assert.equal(text, "palindrome-judge 0.1.0 Waiting on you at Code Common Agent 0.41.0 Met 4 Not met 0 Needs the running agent 1 Features 0 of 1 built F1 Judge a sentence Waiting on you at Code");
   for (const stage of ["Requirements", "Test", "Review", "Security review"]) assert.ok(!new RegExp(`class="rn">${stage}<`).test(html), `${stage} is not a line of the menu`);
   assert.match(html, /<a class="rs run now sel" href="#\/b\/b_palindrome_judge\/f\/F1" aria-current="page"/);
 });
@@ -89,7 +89,15 @@ test("the version's documents are tabs: one per group of stages that holds somet
   const html = docTabHtml(b, "design", { item: 0, stageName, itemHref: (n) => `#d/design/${n}`, chatHref: (s) => `#chat/${s}` });
   assert.match(html, /<div class="dsw" role="tablist" aria-label="Design"><a class="on" role="tab" aria-selected="true" href="#d\/design\/0"><svg/);
   assert.ok(!/<a [^>]*role="tab"[^>]*>[^]*?<small>/.test(html.split('<div class="dsw"')[1].split("</div>")[0]), "no status words inside a switcher button");
-  assert.match(html, /<p class="dact"><a class="btn" href="#chat\/architecture">Ask for a change<\/a><\/p>/);
+  assert.match(html, /<p class="dact"><button class="btn" type="button" data-doc-ask="architecture" aria-expanded="false">Ask for a change<\/button><\/p>/);
+  // Asking opens a box under the document: what a change does now, what to type, the reply, and one button to take the change it proposes.
+  const { docAskHtml } = await import("../public/workspace.js");
+  const open = docTabHtml(b, "design", { item: 0, stageName, ask: { stage: "architecture", holder: "Solution architect", context: "Architecture and Design was approved and the version is at Code. A change takes it back to Architecture and Design.", draft: "", reply: null, messages: [{ from: { kind: "person" }, text: "earlier" }] } });
+  assert.match(open, /aria-expanded="true">Ask for a change<\/button><\/p><section class="dask"/);
+  assert.match(visible(open), /Architecture and Design was approved and the version is at Code\. A change takes it back to Architecture and Design\. What should change, for Solution architect .* Earlier conversation, 1 message/);
+  const replied = docAskHtml({ stage: "architecture", holder: "Solution architect", reply: { from: { name: "Solution architect" }, text: "I can bind files to the org's bucket.", proposes: { action: "back_to_requirements", label: "Back to Requirements" } }, canConfirm: true, messages: [] });
+  assert.match(replied, /<b>Solution architect<\/b><p>I can bind files to the org&#39;s bucket\.<\/p><p class="dact"><button class="btn p" type="button" data-doc-confirm>Confirm: Back to Requirements<\/button>/);
+  assert.match(docAskHtml({ stage: "architecture", reply: { text: "x", proposes: { action: "a" } }, canConfirm: true, confirmed: true }), /Done: the change is on its way back/);
   const shown = docTabHtml(withEvidence, "security", { item: sec.items.length - 1, stageName });
   assert.match(shown, /<h1>SBOM<\/h1><p class="dsub">0 packages outside Node<\/p>/);
 });
@@ -117,4 +125,22 @@ test("the Security tab: before it runs, what it will write, who holds it, what i
   const arch = visible(architectureBodyHtml({ summary: { systems: ["files"], bindings: { files: { dev: { product: "local disk", provided_by: "platform" }, production: { product: "the org's bucket", provided_by: "customer" } } }, kind: "plugin-on-harness", limits: { cost: "10 USD per day" }, decisions: [{ decided: "a program counts", why: "no judgment needed" }] } }));
   assert.ok(arch.includes("Systems and what is bound to each System dev production files local disk platform default the org's bucket your choice"), arch);
   assert.ok(arch.includes("Decisions a program counts no judgment needed"), arch);
+});
+
+test("each document says which Common Agent rules its stage applied, in words; the tab says when one is not met; the version shows the tally; the full text is offered at the top", async () => {
+  const { checksTableHtml, checksTally, docTabsBarHtml, docTabHtml, sectionWords } = await import("../public/workspace.js");
+  const b = await getBuild("b_palindrome_judge");
+  assert.equal(sectionWords({ section: "12.6", rule: "2" }), "Section 12.6, rule 2");
+  assert.equal(sectionWords({ section: "9.10" }), "Section 9.10");
+  const sec = b.artifacts.find((a) => a.kind === "security");
+  const table = checksTableHtml(sec);
+  assert.ok(!/§|\br2\b/.test(table), "no section sign or rule shorthand");
+  assert.ok(visible(table).startsWith("Common Agent 0.41.0 met Section 12.4 Every permission asked for has a reason It asks for no permission: it reaches nothing. met Section 12.6, rule 2 No address in its scripts"), visible(table));
+  assert.match(table, /<span class="cr not_checked">not checked<\/span>/);
+  assert.deepEqual(checksTally(b), { met: 4, not_met: 0, not_checked: 1, standard: "common-agent", version: "0.41.0" });
+  const missed = { ...b, artifacts: b.artifacts.map((a) => (a.kind === "security" ? { ...a, checks: [...a.checks, { standard: "common-agent", version: "0.41.0", section: "12.4", asks: "Credentials named, never held", result: "not_met", detail: "A key in scripts/judge.mjs line 3." }] } : a)) };
+  assert.match(docTabsBarHtml(missed, { active: "design", tabHref: (t) => `#${t}` }), /<a class="ct" href="#security">Security<small class="bad">1 not met<\/small><\/a>/);
+  const html = docTabHtml(b, "security", { stageName, filesHtml: (fs) => `<files>${fs.map((f) => f.path).join(",")}</files>` });
+  assert.match(html, /<p class="dfrom">From <code>security-statement\.json<\/code> · <a href="#full-text" data-jump="full-text">Read the full text<\/a><\/p>/);
+  assert.ok(html.indexOf('class="dchecks"') < html.indexOf('id="full-text"'), "the checks come before the full text");
 });

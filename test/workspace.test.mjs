@@ -43,7 +43,7 @@ test("the spine is the every-build stages the build runs, done, now or next, and
   const html = spineHtml(b, spine, { sel: "code", href: (s) => `#/b/${b.id}/${s}`, productHref: "#/p/palindrome-judge" });
   assert.match(html, /<a class="rb" href="#\/p\/palindrome-judge"/);
   assert.match(html, /<a class="rs now sel" href="#\/b\/b_palindrome_judge\/code" aria-current="page"/);
-  assert.match(visible(html), /^palindrome-judge 0\.1\.0 ✓ Requirements .* 3 Code /);
+  assert.match(visible(html), /^palindrome-judge 0\.1\.0 Common Agent 0\.41\.0 Met 4 Not met 0 Needs the running agent 1 ✓ Requirements .* 3 Code /);
   assert.doesNotMatch(html, /Impact|Retract|Architecture|Monitor/);
 
   // A finished build opens at its last stage, and says where it ended.

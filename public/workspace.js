@@ -175,7 +175,9 @@ export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, pro
     return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${stepNumber(x)}. ${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(x.name)}</span></a>`;
   };
   const sub = isObj(line) && str(line.text) ? `<small class="${line.wait ? "w" : ""}">${esc(str(line.text))}</small>` : "";
-  const product = `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its documents, versions and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b>${sub}</a>`;
+  const tally = checksTally(build);
+  const tallyHtml = tally ? `<span class="ctally"><span class="t">${esc(tally.standard === "common-agent" ? "Common Agent" : tally.standard)} ${esc(tally.version)}</span><span class="row"><span>Met</span><b class="ok">${tally.met}</b></span><span class="row"><span>Not met</span><b class="${tally.not_met ? "bad" : ""}">${tally.not_met}</b></span><span class="row"><span>Needs the running agent</span><b>${tally.not_checked}</b></span></span>` : "";
+  const product = `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its documents, versions and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b>${sub}${tallyHtml}</a>`;
   const runs = featureRuns(build);
   // The old numbered list only for a caller that gives no way to open a feature.
   if (!(runs.length && runHref) && !featureHref) return `${product}<div class="spine">${spine.map(item).join("")}</div>`;
@@ -479,11 +481,59 @@ export function docTabs(build) {
 }
 
 /** The canvas's tab bar: the feature first, then the version's document tabs. ctx: { feature: { label, id, href }, active, tabHref(id) }. */
+// ---------- the Common Agent checks (lifecycle API 0.4.13) ----------
+
+const CHECK_WORD = { met: "met", not_met: "not met", not_checked: "not checked" };
+
+/** An artifact's Common Agent checks, the well-formed ones. */
+export const checksOf = (a) => list(a?.checks).filter((c) => isObj(c) && str(c.section) && ["met", "not_met", "not_checked"].includes(str(c.result)));
+
+/** "Section 12.6, rule 2", the way a person reads a citation. */
+export const sectionWords = (c) => `Section ${str(c.section)}${str(c.rule) ? `, rule ${str(c.rule)}` : ""}`;
+
+/** How many of a version's checks were met, not met and not checked, across its made artifacts. */
+export function checksTally(build) {
+  const all = list(build?.artifacts).filter((a) => isObj(a) && a.state === "made").flatMap(checksOf);
+  const n = (r) => all.filter((c) => c.result === r).length;
+  return all.length ? { met: n("met"), not_met: n("not_met"), not_checked: n("not_checked"), standard: str(all[0].standard), version: str(all[0].version) } : null;
+}
+
+/** The table at a document's foot: each rule its stage applied, its result, the section, what it asks and what the agent did. */
+export function checksTableHtml(a) {
+  const cs = checksOf(a);
+  if (!cs.length) return "";
+  const head = [str(cs[0].standard) === "common-agent" ? "Common Agent" : str(cs[0].standard), str(cs[0].version)].filter(Boolean).join(" ");
+  return `<section class="dchecks"><h2>${esc(head)}</h2><table class="dtable"><tbody>${cs.map((c) => `<tr><td class="cres"><span class="cr ${esc(c.result)}">${esc(CHECK_WORD[c.result])}</span></td><td class="csec">${esc(sectionWords(c))}</td><td><b>${esc(str(c.asks))}</b><small>${esc(str(c.detail))}</small></td></tr>`).join("")}</tbody></table></section>`;
+}
+
+/**
+ * The box under a document for asking its holder for a change: what a change
+ * does now (ctx.ask.context), what to type, the holder's reply and, when the
+ * reply proposes the build's own action, one button to take it; the earlier
+ * conversation folded beneath. ask: { stage, holder, context, draft, pending,
+ * error, reply, canConfirm, confirmed, messages }.
+ */
+export function docAskHtml(ask, ctx = {}) {
+  const when = ctx.when ?? ((x) => x);
+  const who = str(ask.holder) || "its holder";
+  const reply = isObj(ask.reply) ? ask.reply : null;
+  const prop = reply && isObj(reply.proposes) ? reply.proposes : null;
+  const confirm = prop ? (ask.confirmed ? `<p class="ddone"><span class="ok">✓</span> Done: the change is on its way back through ${esc(who)}.</p>` : ask.canConfirm ? `<p class="dact"><button class="btn p" type="button" data-doc-confirm>${esc(str(prop.words) || `Confirm: ${str(prop.label) || cap(str(prop.action).replace(/_/g, " "))}`)}</button></p>` : `<p class="hint">${esc(str(prop.when) || "The version does not offer that change right now.")}</p>`) : "";
+  const earlier = list(ask.messages).filter((m) => isObj(m) && m.from?.kind !== "system");
+  const history = earlier.length ? `<details class="dearlier"><summary>Earlier conversation, ${earlier.length} ${earlier.length === 1 ? "message" : "messages"}</summary><ul>${earlier.map((m) => `<li><b>${esc(m.from?.kind === "person" ? "You" : str(m.from?.name) || who)}</b>${m.at && when(m.at) ? ` <em>${esc(when(m.at))}</em>` : ""}<p>${esc(str(m.text))}</p></li>`).join("")}</ul></details>` : "";
+  return `<section class="dask" aria-label="Ask for a change">${str(ask.context) ? `<p class="dctx">${esc(str(ask.context))}</p>` : ""}
+    <form id="doc-say-form" class="dsay"><label class="sr" for="doc-say">What should change, for ${esc(who)}</label><textarea id="doc-say" rows="3" placeholder="Say what should change. ${esc(cap(who))} answers here.">${esc(str(ask.draft))}</textarea><button class="btn p" type="submit"${ask.pending ? " disabled" : ""}>${ask.pending ? "Sending…" : "Send"}</button></form>
+    ${str(ask.error) ? `<p class="err" role="alert">${esc(str(ask.error))}</p>` : ""}
+    ${reply ? `<div class="dreply"><b>${esc(str(reply.from?.name) || cap(who))}</b><p>${esc(str(reply.text))}</p>${confirm}</div>` : ""}${history}</section>`;
+}
+
 export function docTabsBarHtml(build, ctx = {}) {
   const tabs = docTabs(build);
   const f = ctx.feature;
   const first = f ? `<a class="ct${ctx.active === "feature" ? " on" : ""}" href="${esc(f.href)}"${ctx.active === "feature" ? ' aria-current="page"' : ""}>${esc(f.label)}${f.id ? `<i>${esc(f.id)}</i>` : ""}</a><span class="ctsep" aria-hidden="true"></span>` : "";
-  const rest = tabs.map((t) => `<a class="ct${ctx.active === t.id ? " on" : ""}${t.gate ? " w" : ""}" href="${esc(ctx.tabHref ? ctx.tabHref(t.id) : `#${t.id}`)}"${ctx.active === t.id ? ' aria-current="page"' : ""}>${esc(t.label)}${t.items.length > 1 ? `<small>${t.items.length}</small>` : ""}</a>`).join("");
+  // A tab with a Common Agent rule not met says so on the tab itself.
+  const missed = (t) => t.items.filter((x) => x.kind === "artifact").flatMap((x) => checksOf(x.artifact)).filter((c) => c.result === "not_met").length;
+  const rest = tabs.map((t) => `<a class="ct${ctx.active === t.id ? " on" : ""}${t.gate ? " w" : ""}" href="${esc(ctx.tabHref ? ctx.tabHref(t.id) : `#${t.id}`)}"${ctx.active === t.id ? ' aria-current="page"' : ""}>${esc(t.label)}${missed(t) ? `<small class="bad">${missed(t)} not met</small>` : t.items.length > 1 ? `<small>${t.items.length}</small>` : ""}</a>`).join("");
   return `<nav class="ctabs" aria-label="This version">${first}${rest}</nav>`;
 }
 
@@ -513,9 +563,12 @@ export function docTabHtml(build, tabId, ctx = {}) {
     const meta = [stageName(it.stage), str(a.by), str(a.version), a.at && when(a.at) ? when(a.at) : ""].filter(Boolean).join(" · ");
     const files = list(a.files);
     const hist = ctx.history ? list(ctx.history(a)) : [];
-    content = `<h1>${esc(it.name)}</h1>${said === "Made" ? "" : `<p class="dsub${t.gate === it.stage ? " w" : ""}">${esc(said)}</p>`}<div class="vm">${esc(meta)}</div>`
-      + (a.state === "made" ? `<p class="dact"><a class="btn" href="${esc(ctx.chatHref ? ctx.chatHref(it.stage) : "#")}">${a.kind === "security" ? "Ask the security reviewer" : "Ask for a change"}</a></p>${a.kind === "security" ? securityAfterHtml(a, list(build?.stages).find((x) => x?.stage === it.stage) ?? {}, ctx) : a.kind === "architecture" && Array.isArray(a.summary?.systems) ? architectureBodyHtml(a) : artifactBodyHtml(a, { stageName })}` : `<p class="gw">${esc(str(s.words) || `${stageName(it.stage)} makes it ${a.state === "next" ? "next" : "later"}.`)}</p>`)
-      + (files.length && ctx.filesHtml ? `<section class="vfiles" aria-label="Full text"><h4 class="ft">Full text <span>${files.length === 1 ? "1 file" : `${files.length} files`}, as written</span></h4>${ctx.filesHtml(files, true)}</section>` : "")
+    // The file the summary was read from, offered beside it: a person can always go to the full text.
+    const from = files.length && ctx.filesHtml ? `<p class="dfrom">From <code>${esc(str(files[0].path))}</code>${files.length > 1 ? ` and ${files.length - 1} more` : ""} · <a href="#full-text" data-jump="full-text">Read the full text</a></p>` : "";
+    content = `<h1>${esc(it.name)}</h1>${said === "Made" ? "" : `<p class="dsub${t.gate === it.stage ? " w" : ""}">${esc(said)}</p>`}<div class="vm">${esc(meta)}</div>${from}`
+      + (a.state === "made" ? `<p class="dact"><button class="btn${ctx.ask?.stage === it.stage ? " on" : ""}" type="button" data-doc-ask="${esc(it.stage)}" aria-expanded="${ctx.ask?.stage === it.stage}">${a.kind === "security" ? "Ask the security reviewer" : "Ask for a change"}</button></p>${ctx.ask?.stage === it.stage ? docAskHtml(ctx.ask, ctx) : ""}${a.kind === "security" ? securityAfterHtml(a, list(build?.stages).find((x) => x?.stage === it.stage) ?? {}, ctx) : a.kind === "architecture" && Array.isArray(a.summary?.systems) ? architectureBodyHtml(a) : artifactBodyHtml(a, { stageName })}` : `<p class="gw">${esc(str(s.words) || `${stageName(it.stage)} makes it ${a.state === "next" ? "next" : "later"}.`)}</p>`)
+      + (a.state === "made" ? checksTableHtml(a) : "")
+      + (files.length && ctx.filesHtml ? `<section class="vfiles" id="full-text" aria-label="Full text"><h4 class="ft">Full text <span>${files.length === 1 ? "1 file" : `${files.length} files`}, as written</span></h4>${ctx.filesHtml(files, true)}</section>` : "")
       + (hist.length ? `<section class="dhist"><h4 class="ft">Versions</h4><ul>${hist.map((h) => `<li><a href="${esc(str(h.href) || "#")}"><b>${esc(str(h.version))}</b>${h.at && when(h.at) ? `<span>${esc(when(h.at))}</span>` : ""}${h.current ? "<i>stands now</i>" : ""}</a></li>`).join("")}</ul></section>` : "");
   } else if (it?.kind === "evidence") {
     const e = it.evidence;
@@ -1602,7 +1655,7 @@ export function documentsHtml(answer, ctx = {}) {
     const history = hist.length ? `<section class="dhist"><h4 class="ft">Versions <span>${hist.length === 1 ? "made once" : `made ${hist.length} times`}</span></h4><ul>${hist.map((h) => `<li><a href="${esc(href(str(h.build), str(sel.stage), "artifacts"))}"><b>${esc(str(h.version))}</b>${h.at && when(h.at) ? `<span>${esc(when(h.at))}</span>` : ""}${h.build === c.build ? "<i>stands now</i>" : ""}</a></li>`).join("")}</ul></section>` : "";
     const fl = list(a.files).length ? `<section class="vfiles" aria-label="Full text"><h4 class="ft">Full text <span>${list(a.files).length === 1 ? "1 file" : `${list(a.files).length} files`}, as written</span></h4>${files(list(a.files), true, str(c.build))}</section>` : "";
     reader = `<h3>${esc(str(sel.name))}</h3><div class="vm">${esc(meta)}</div>
-      <p class="dact"><a class="btn" href="${esc(href(str(c.build), str(sel.stage), "chat"))}">Ask for a change</a><a class="linkbtn" href="${esc(href(str(c.build), str(sel.stage), "artifacts"))}">Open at ${esc(stageName(str(sel.stage)))}</a></p>
+      <p class="dact"><a class="btn" href="${esc(ctx.docHref ? ctx.docHref(str(c.build), str(sel.stage)) : href(str(c.build), str(sel.stage), "artifacts"))}">Open in version ${esc(str(c.version))} to ask for a change</a></p>
       ${a.kind === "architecture" && Array.isArray(a.summary?.systems) ? architectureBodyHtml(a) : a.kind === "security" ? securityAfterHtml(a, {}, {}) : artifactBodyHtml(a, { stageName })}${fl}${history}`;
   } else {
     reader = `<h3>${esc(str(sel.name))}</h3><div class="vm">${esc(stageName(str(sel.stage)))}</div><p class="gw">${esc(str(sel.words) || (sel.state === "not_used" ? "The product's lifecycle leaves this stage out." : "Nothing made yet."))}</p>`;
