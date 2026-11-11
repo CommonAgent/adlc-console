@@ -89,7 +89,15 @@ test("the version's documents are tabs: one per group of stages that holds somet
   const html = docTabHtml(b, "design", { item: 0, stageName, itemHref: (n) => `#d/design/${n}`, chatHref: (s) => `#chat/${s}` });
   assert.match(html, /<div class="dsw" role="tablist" aria-label="Design"><a class="on" role="tab" aria-selected="true" href="#d\/design\/0"><svg/);
   assert.ok(!/<a [^>]*role="tab"[^>]*>[^]*?<small>/.test(html.split('<div class="dsw"')[1].split("</div>")[0]), "no status words inside a switcher button");
-  assert.match(html, /<p class="dact"><a class="btn" href="#chat\/architecture">Ask for a change<\/a><\/p>/);
+  assert.match(html, /<p class="dact"><button class="btn" type="button" data-doc-ask="architecture" aria-expanded="false">Ask for a change<\/button><\/p>/);
+  // Asking opens a box under the document: what a change does now, what to type, the reply, and one button to take the change it proposes.
+  const { docAskHtml } = await import("../public/workspace.js");
+  const open = docTabHtml(b, "design", { item: 0, stageName, ask: { stage: "architecture", holder: "Solution architect", context: "Architecture and Design was approved and the version is at Code. A change takes it back to Architecture and Design.", draft: "", reply: null, messages: [{ from: { kind: "person" }, text: "earlier" }] } });
+  assert.match(open, /aria-expanded="true">Ask for a change<\/button><\/p><section class="dask"/);
+  assert.match(visible(open), /Architecture and Design was approved and the version is at Code\. A change takes it back to Architecture and Design\. What should change, for Solution architect .* Earlier conversation, 1 message/);
+  const replied = docAskHtml({ stage: "architecture", holder: "Solution architect", reply: { from: { name: "Solution architect" }, text: "I can bind files to the org's bucket.", proposes: { action: "back_to_requirements", label: "Back to Requirements" } }, canConfirm: true, messages: [] });
+  assert.match(replied, /<b>Solution architect<\/b><p>I can bind files to the org&#39;s bucket\.<\/p><p class="dact"><button class="btn p" type="button" data-doc-confirm>Confirm: Back to Requirements<\/button>/);
+  assert.match(docAskHtml({ stage: "architecture", reply: { text: "x", proposes: { action: "a" } }, canConfirm: true, confirmed: true }), /Done: the change is on its way back/);
   const shown = docTabHtml(withEvidence, "security", { item: sec.items.length - 1, stageName });
   assert.match(shown, /<h1>SBOM<\/h1><p class="dsub">0 packages outside Node<\/p>/);
 });

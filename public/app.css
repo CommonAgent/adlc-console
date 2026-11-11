@@ -932,6 +932,19 @@ details.rfspec>ul:last-child{margin-bottom:8px}
 .ctabs .ctsep{width:1px;background:var(--line);margin:8px 6px 10px;flex:none}
 .docbody{padding:18px 22px 22px;min-width:0}
 .dfrom{margin:4px 0 0;font-size:13px;color:var(--muted)}
+.dask{border:1px solid var(--accent);border-radius:10px;padding:12px 14px;margin:0 0 18px;background:var(--panel)}
+.dask .dctx{margin:0 0 8px;font-size:13px;color:var(--muted)}
+.dsay{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.dsay textarea{width:100%;min-height:64px}
+.dreply{margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--bg)}
+.dreply p{margin:4px 0 0}
+.dearlier{margin-top:12px;font-size:13px}
+.dearlier summary{cursor:pointer;color:var(--muted);font-weight:600;font-family:var(--sans);font-size:13px;border:0;background:none;padding:0}
+.dearlier{border:0;background:none}
+.dearlier ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.dearlier em{font-style:normal;color:var(--muted);font-size:12px}
+.dearlier p{margin:2px 0 0}
+.docbody .dact .btn.on{border-color:var(--accent);color:var(--accent)}
 .dfrom code{font-family:var(--mono);font-size:12px;color:var(--fg)}
 .dfrom a{font-weight:600}
 .dchecks{border-top:1px solid var(--line);margin-top:20px;padding-top:14px}

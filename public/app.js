@@ -43,7 +43,7 @@ const state = {
   // its chat with the stage's agent (null without the route), the artifact open on the right, the
   // composer's draft, the proposals confirmed, and whether Try it is open on the right.
   // The feature run open on its Test or Code page (lifecycle API 0.4.10), or null for the version's own.
-  roleDefs: [], stageSel: null, runSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, skill: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: null, chatScroll: null, drawnKey: null,
+  docAsk: null, roleDefs: [], stageSel: null, runSel: null, wsAnswer: null, chat: null, hasChat: false, art: null, skill: null, sayDraft: "", sayPending: false, sayError: "", confirmed: new Set(), tab: "chat", ptab: null, chatScroll: null, drawnKey: null,
   // The products (GET /products, null without the route) and the open product page.
   products: null, product: null,
   // The when-needed action being taken from the product page (0.4.2), and a role the Setup tab sent the
@@ -231,6 +231,7 @@ async function route() {
   // The rail is the version's features and the product's documents, for every version.
   try { await loadVersionData(); } catch (e) { if (e.needKey) return problem(e); }
   if (h.doc !== undefined) {
+    if (state.docSel !== h.doc || state.build?.id !== h.id) state.docAsk = null;
     state.docSel = h.doc; state.docItem = h.item; state.featSel = null; state.stageSel = null; state.runSel = null; state.error = "";
     return draw();
   }
@@ -891,7 +892,7 @@ function draw() {
   const frId = fr ? [fr.feature, fr.id].map((x) => String(x ?? "")).find((x) => x && frName.startsWith(`${x} `)) : "";
   const head = fr
     ? `<h1>${esc(frId ? frName.slice(frId.length + 1) : frName)}${frId ? `<span>${esc(frId)}</span>` : ""}</h1>${runStripHtml(fr, { sel: ws.stage, href: (s) => runHash(b.id, s, fr.id), stageName: (id) => def(id).name, holder: agent })}`
-    : `<h1>${esc(ws.name)}${x && !featureRuns(b).length ? `<span>${esc(stepLabel(x, spine))}</span>` : ""}</h1>`;
+    : `<h1>${esc(ws.name)}</h1>`;
   const st = stateOf({ state: ws.state });
   // A feature's page: Work first (what it was given and made), then Chat and Try it; no Artifacts or Skills of its own.
   if (fr && ["artifacts", "skills"].includes(state.tab)) state.tab = "work";
@@ -917,7 +918,7 @@ function draw() {
   else if (state.tab === "skills" && skills) body = skillsTabHtml(ws.holder, state.skill);
   else if (state.tab === "try") body = `<div class="stage trypane" id="trybody"></div>`;
   else body = `<div class="thread" id="thread">${chatHtml(msgs, { ...ctx, empty: talk ? `Nothing has been said here yet. Ask ${agent} about what it read or made.` : "Nothing has been said here yet." })}
-      ${ws.evidence.length ? `<div class="evid">${evidenceHtml(ws.evidence, { when, fileHtml: (f) => filesHtml([f], false) })}</div>` : ""}</div>${timeline(run ?? b)}`;
+      ${ws.evidence.length ? `<div class="evid">${evidenceHtml(ws.evidence, { when, fileHtml: (f) => filesHtml([f], false) })}</div>` : ""}</div>${run ? timeline(run) : ""}`;
   // Where the tab body was, kept across a redraw of the same stage, run and tab.
   const key = `${b.id}/${ws.stage}/${state.runSel ?? ""}/${state.tab}`;
   const keep = key === state.drawnKey ? getScroll() : null;
@@ -1009,6 +1010,58 @@ function withTabBar(active) {
 }
 
 // A document tab: the version's documents, each tab one or more stages' artifacts and evidence.
+// What asking for a change does now, said before the person types.
+function askContext(b, stage) {
+  const name = def(stage).name;
+  const s = stageOf(stage) ?? {};
+  const cur = currentStageOf(b);
+  const order = b.stages.map((x) => x.stage);
+  if (!cur && b.summary) return `This version has shipped. A change here starts the next version.`;
+  if (s.state === "done" && cur && order.indexOf(cur.stage) > order.indexOf(stage)) return `${name} was approved and the version is at ${def(cur.stage).name}. A change takes it back to ${name}.`;
+  if (s.state === "waiting_on_you") return `It waits on you at ${name}. A change goes back to its holder and returns to you.`;
+  return "";
+}
+
+// Opening the box: who it is addressed to, what a change does, and the stage's earlier conversation.
+async function openDocAsk(stage) {
+  const b = state.build;
+  if (state.docAsk?.stage === stage) { state.docAsk = null; return drawDoc(); }
+  const ws = stageWorkspace(b, stage, null, { defs: defs() });
+  state.docAsk = { stage, holder: holderName(ws.holder, stageOf(stage) ?? { stage }, def(stage), state.roleDefs) || "", context: askContext(b, stage), draft: "", pending: false, error: "", reply: null, confirmed: false, messages: [] };
+  drawDoc();
+  try {
+    const r = await api(`/products/${encodeURIComponent(productOf(b))}/stages/${encodeURIComponent(stage)}/messages`);
+    if (state.docAsk?.stage === stage) { state.docAsk.messages = Array.isArray(r?.messages) ? r.messages : []; drawDoc(); }
+  } catch (e) { if (e.needKey) return problem(e); }
+}
+
+async function sendDocAsk(text) {
+  const b = state.build;
+  const ask = state.docAsk;
+  if (!ask || !text.trim()) return;
+  ask.pending = true; ask.draft = text; ask.error = ""; drawDoc();
+  try {
+    const r = await api(`/products/${encodeURIComponent(productOf(b))}/stages/${encodeURIComponent(ask.stage)}/messages`, { method: "POST", body: { text, build: b.id }, own403: true });
+    if (state.docAsk !== ask) return;
+    ask.reply = r?.reply ?? null; ask.draft = ""; ask.confirmed = false;
+    ask.messages = [...ask.messages, r?.message, r?.reply].filter(Boolean);
+  } catch (e) {
+    if (e.needKey) return problem(e);
+    ask.error = e.message;
+  }
+  ask.pending = false;
+  drawDoc();
+}
+
+async function confirmDocAsk() {
+  const ask = state.docAsk;
+  const body = ask?.reply?.proposes ? confirmBody(state.build, ask.reply.proposes) : null;
+  if (!body) return;
+  await act(body.name, body.needs);
+  if (state.error === "" && state.docAsk === ask) ask.confirmed = true;
+  drawDoc();
+}
+
 function drawDoc() {
   const b = state.build;
   const stageName = (id) => def(id).name;
@@ -1032,6 +1085,7 @@ function drawDoc() {
     holderHref: state.status?.read_only ? null : `${lifecycleHash(buildProject(b))}${buildProject(b) ? "&" : "?"}edit=security-reviewer&at=security`,
     docHref: (t) => docHash(b.id, t),
     actionsHtml: (s) => actionsHtml(s),
+    ask: state.docAsk ? { ...state.docAsk, canConfirm: Boolean(state.docAsk.reply?.proposes && confirmBody(b, state.docAsk.reply.proposes)) } : null,
   });
   $("main").innerHTML = `<section class="thread-wrap work"><div class="whead"><div class="err" role="alert">${esc(state.error)}</div></div><div class="wbody" id="tabbody">${tab ? body : `<div class="docbody"><p class="gw">This version has no ${esc(state.docSel)} document.</p></div>`}</div></section>`;
   withTabBar(state.docSel);
@@ -1062,6 +1116,7 @@ function drawProduct() {
       // The product's documents (0.4.11), the landing tab; a document's files are read from the build that made it.
       documents: { offered: state.docs?.has === true && state.docs.name === state.product.name, answer: state.docs?.answer ?? null, error: state.docs?.error ?? "", sel: state.docs?.sel ?? null },
       stageHref: (id, stage, t) => `${hashFor(id, stage)}/${t}`,
+      docHref: (id, stage) => (docTabOf(stage) ? docHash(id, docTabOf(stage)) : `${hashFor(id, stage)}/artifacts`),
       filesHtml: (files, openOne = true, build = null) => filesHtml(files, openOne, build),
     }, state.ptab)
     : `<div class="err" role="alert">${esc(state.error)}</div><p class="does">Loading…</p>`;
@@ -1629,6 +1684,10 @@ document.addEventListener("click", async (e) => {
   if (featAll) return approveAll(featAll.dataset);
   const featList = t.closest("[data-feat-backfill]");
   if (featList) return listFeatures(featList.dataset.featBackfill);
+  // Ask for a change, under the document (and its confirm button).
+  const askBtn = t.closest("[data-doc-ask]");
+  if (askBtn) return openDocAsk(askBtn.dataset.docAsk);
+  if (t.closest("[data-doc-confirm]")) return confirmDocAsk();
   // Read the full text: the document's files, scrolled to, the first one open.
   const jump = t.closest("[data-jump]");
   if (jump) {
@@ -1764,6 +1823,7 @@ document.addEventListener("toggle", (e) => {
 
 document.addEventListener("input", (e) => {
   if (e.target.id === "say") state.sayDraft = e.target.value;
+  if (e.target.id === "doc-say" && state.docAsk) state.docAsk.draft = e.target.value;
   // What is typed in a confirm card or a setup card is kept, so a redraw does not lose it (0.4.4).
   const wf = e.target.closest?.("form[data-when-form]");
   if (wf && state.whenCard?.draft && e.target.name) state.whenCard.draft[e.target.name] = e.target.value;
@@ -1861,6 +1921,7 @@ document.addEventListener("submit", async (e) => {
   }
   if (f.id === "clone-form") return runLocalCheck($("clone").value);
   if (f.id === "say-form") return say($("say").value);
+  if (f.id === "doc-say-form") return sendDocAsk($("doc-say").value);
   if (f.id === "boss-form") return bossSay($("boss-say").value);
   if (f.dataset.setup) return saveSetup(f.dataset.setup, f);
   if (f.dataset.whenForm) return runWhen(f.dataset.whenForm, f);
