@@ -93,3 +93,28 @@ test("the version's documents are tabs: one per group of stages that holds somet
   const shown = docTabHtml(withEvidence, "security", { item: sec.items.length - 1, stageName });
   assert.match(shown, /<h1>SBOM<\/h1><p class="dsub">0 packages outside Node<\/p>/);
 });
+
+test("the Security tab: before it runs, what it will write, who holds it, what it reviews against and its evidence; after, each permission with its reason, and a refusal with its actions", async () => {
+  const { securityBeforeHtml, securityAfterHtml, architectureBodyHtml, docTabs } = await import("../public/workspace.js");
+  const b = await getBuild("b_palindrome_judge");
+  const before = { ...b, artifacts: b.artifacts.filter((a) => a.kind !== "security"), stages: b.stages.map((s) => (s.stage === "security" ? { ...s, state: "not_started", rounds: [] } : s)) };
+  assert.ok(docTabs(before).some((t) => t.id === "security"), "the tab is there before the stage has made anything");
+  const pre = visible(securityBeforeHtml(before, { def: (id) => defs.get(id), holderHref: "#hold", docHref: (t) => `#d/${t}` }));
+  assert.ok(pre.startsWith("Security review runs after Code It writes the security statement: what it may reach, what it may spend, what it must never do, and the reason for each. It is done when every permission asked for has a recorded reason."), pre);
+  assert.ok(pre.includes("Change who holds it") && pre.includes("Reviews against Design"), pre);
+  assert.ok(pre.includes("Reaches nothing") || pre.includes("Reaches"), pre);
+  // After: each reach with its access and reason; a missing reason is said, and the refusal carries the stage's actions.
+  const a = { id: "s", stage: "security", kind: "security", state: "made", summary: { reach: [], spend: "nothing", never: [], verdict: "Refused: network has no reason.", reaches: [{ system: "files", access: "write", reason: "its own records" }, { system: "network", access: "read", reason: "" }], spends: [{ limit: "nothing" }], never_does: [{ act: "hold a credential", reason: "none is needed" }], no_reason_recorded: ["network"] } };
+  const after = securityAfterHtml(a, { state: "refused", evidence: [{ format: "sarif", name: "Dependency scan", summary: "0 results" }] }, { actionsHtml: () => '<div class="acts"><button>Send back to Code</button></div>' });
+  const text = visible(after);
+  assert.ok(text.startsWith("✗ 2 permissions asked for, 1 with a reason."), text);
+  assert.match(after, /<td class="none">No reason recorded\.<\/td>/);
+  assert.ok(text.includes("Dependency scan SARIF 0 results"), text);
+  assert.match(after, /<section class="drefused"><h4>Refused at Security review<\/h4>.*Send back to Code/);
+  // Nothing reached is said in words, not an empty table.
+  assert.ok(visible(securityAfterHtml({ ...a, summary: { ...a.summary, reaches: [], no_reason_recorded: [], verdict: "passed" } }, {})).startsWith("✓ It asks for no permission: it reaches nothing."));
+  // The architecture record: systems by environment, limits, decisions with reasons.
+  const arch = visible(architectureBodyHtml({ summary: { systems: ["files"], bindings: { files: { dev: { product: "local disk", provided_by: "platform" }, production: { product: "the org's bucket", provided_by: "customer" } } }, kind: "plugin-on-harness", limits: { cost: "10 USD per day" }, decisions: [{ decided: "a program counts", why: "no judgment needed" }] } }));
+  assert.ok(arch.includes("Systems and what is bound to each System dev production files local disk platform default the org's bucket your choice"), arch);
+  assert.ok(arch.includes("Decisions a program counts no judgment needed"), arch);
+});
