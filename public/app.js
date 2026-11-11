@@ -418,6 +418,23 @@ async function listFeatures(buildId) {
   state.featListing = false; draw();
 }
 
+// Write the spec of a version built before specs (0.4.14): the spec writer writes it through
+// the model, so it may take a few minutes. Nothing else in the version changes.
+async function writeSpecNow() {
+  const b = state.build;
+  if (state.specWriting || !b) return;
+  state.specWriting = true; drawDoc();
+  try {
+    await api(buildPath(b.id, "/spec/backfill"), { method: "POST", body: {}, own403: true });
+    state.error = "";
+    state.build = (await api(buildPath(b.id))).build;
+  } catch (e) {
+    if (e.needKey) { state.specWriting = false; return problem(e); }
+    state.error = e.message;
+  }
+  state.specWriting = false; drawDoc();
+}
+
 // One feature's history, into the matrix that opened it.
 async function loadHistory(holder, name, id) {
   holder.history = null; holder.historyError = "";
@@ -1084,6 +1101,7 @@ function drawDoc() {
     holderName: (h) => holderName(h, stageOf("security") ?? { stage: "security" }, def("security"), state.roleDefs) || String(h.name ?? ""),
     holderHref: state.status?.read_only ? null : `${lifecycleHash(buildProject(b))}${buildProject(b) ? "&" : "?"}edit=security-reviewer&at=security`,
     docHref: (t) => docHash(b.id, t),
+    specWriting: state.specWriting,
     actionsHtml: (s) => actionsHtml(s),
     ask: state.docAsk ? { ...state.docAsk, canConfirm: Boolean(state.docAsk.reply?.proposes && confirmBody(b, state.docAsk.reply.proposes)) } : null,
   });
@@ -1684,6 +1702,8 @@ document.addEventListener("click", async (e) => {
   if (featAll) return approveAll(featAll.dataset);
   const featList = t.closest("[data-feat-backfill]");
   if (featList) return listFeatures(featList.dataset.featBackfill);
+  // 0.4.14: Write the spec now, for a version built before specs.
+  if (t.closest("[data-spec-backfill]")) return writeSpecNow();
   // Ask for a change, under the document (and its confirm button).
   const askBtn = t.closest("[data-doc-ask]");
   if (askBtn) return openDocAsk(askBtn.dataset.docAsk);
