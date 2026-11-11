@@ -1027,6 +1027,11 @@ function drawDoc() {
     gateHtml: (s) => { const ws = stageWorkspace(b, s, null, { defs: defs() }); return gateCardHtml(ws, b, stageCtx(ws)); },
     filesHtml: (files, openOne = true) => filesHtml(files, openOne),
     history,
+    def: (id) => def(id),
+    holderName: (h) => holderName(h, stageOf("security") ?? { stage: "security" }, def("security"), state.roleDefs) || String(h.name ?? ""),
+    holderHref: state.status?.read_only ? null : `${lifecycleHash(buildProject(b))}${buildProject(b) ? "&" : "?"}edit=security-reviewer&at=security`,
+    docHref: (t) => docHash(b.id, t),
+    actionsHtml: (s) => actionsHtml(s),
   });
   $("main").innerHTML = `<section class="thread-wrap work"><div class="whead"><div class="err" role="alert">${esc(state.error)}</div></div><div class="wbody" id="tabbody">${tab ? body : `<div class="docbody"><p class="gw">This version has no ${esc(state.docSel)} document.</p></div>`}</div></section>`;
   withTabBar(state.docSel);

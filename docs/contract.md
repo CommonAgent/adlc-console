@@ -638,3 +638,27 @@ and the project asked about, which the answer must echo.
 
 The contract is written in the plan, docs/adlc-console-plan.md in the
 AgentMesh repository, section "The contract, exactly". This copy follows it.
+
+Read by the console since lifecycle API 0.4.12 (additive; CommonAgent/adlc#151): the security
+statement and the architecture record, in parts.
+
+```
+security summary adds reaches?: [{ system, access, reason }], spends?: [{ limit, ceiling? }],
+  never_does?: [{ act, reason? }], no_reason_recorded?: [<words>], architecture_record?: present | absent
+architecture summary may be { systems, bindings?: { <system>: { <env>: { product, provided_by } } },
+  dependencies?, kind, limits?: { cost, speed, data, trust }, decisions: [{ decided, why }], egress?, questions? }
+```
+
+How the console reads these:
+
+- The **Security tab**, before Security review has made its statement, says what the stage writes
+  and when it is done (stages.json's hands back and done-when), who holds it with a link to change
+  that on the Lifecycle page, what it reviews against (the architecture record's systems and
+  limits, or that there is none) with a link to the Design tab, what it is given, and which outside
+  tool sends it evidence in which format. After, it shows whether every permission asked for has a
+  reason, each reach with its access and reason (a missing reason in red), the spend, what it must
+  never do with each reason, the evidence files with their summaries, and on a refusal the stage's
+  own actions. A summary in words alone is shown as before.
+- The **Design tab** shows an architecture record given in parts as a table of its systems by
+  environment (each binding marked your choice or a platform default), its kind, limits, decisions
+  with their reasons, dependencies and egress.

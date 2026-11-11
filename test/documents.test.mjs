@@ -60,7 +60,7 @@ test("the Documents tab: three groups, the chosen document read in full from the
   assert.match(html, /<button class="drow made sel" type="button" data-doc="architecture" aria-pressed="true"><b>Architecture record<\/b><small>0.1.0/);
   assert.match(html, /<button class="drow not_made" type="button" data-doc="package" aria-pressed="false"><b>The package<\/b><small>not made yet<\/small>/);
   // The reader: the design in full, its words, Ask for a change at Architecture's chat, and the version that made it.
-  assert.match(html, /<h3>Architecture record<\/h3><div class="vm">Architecture and Design · spec writer · version 0.1.0/);
+  assert.match(html, /<h3>Architecture record<\/h3><div class="vm">Architecture and Design · solution architect · version 0.1.0/);
   assert.match(html, /<a class="btn" href="#\/b\/b_palindrome_judge\/architecture\/chat">Ask for a change<\/a>/);
   assert.ok(text.includes("One step, a program: scripts/judge.mjs"), text);
   assert.match(html, /<h4 class="ft">Versions <span>made once<\/span><\/h4><ul><li><a href="#\/b\/b_palindrome_judge\/architecture\/artifacts"><b>0.1.0<\/b>.*<i>stands now<\/i>/);

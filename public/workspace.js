@@ -474,7 +474,8 @@ export function docTabs(build) {
     ]);
     const gate = t.stages.find((stage) => live.some((a) => a.stage === stage && a.name !== "stop") && stages.get(stage)?.state === "waiting_on_you") ?? null;
     return { ...t, items, gate };
-  }).filter((t) => t.items.length || t.gate);
+  }).map((t) => ({ ...t, items: [...t.items].sort((x, y) => (y.artifact?.kind === "architecture") - (x.artifact?.kind === "architecture")) }))
+    .filter((t) => t.items.length || t.gate || (t.id === "security" && !["not_used", "not_offered", "not_applicable", undefined].includes(stages.get("security")?.state)));
 }
 
 /** The canvas's tab bar: the feature first, then the version's document tabs. ctx: { feature: { label, id, href }, active, tabHref(id) }. */
@@ -499,6 +500,7 @@ export function docTabHtml(build, tabId, ctx = {}) {
   const when = ctx.when ?? ((x) => x);
   const t = docTabs(build).find((x) => x.id === tabId);
   if (!t) return `<div class="docbody"><p class="gw">This version has nothing here.</p></div>`;
+  if (tabId === "security" && !t.items.some((x) => x.kind === "artifact" && x.artifact.kind === "security" && x.artifact.state === "made")) return securityBeforeHtml(build, ctx);
   const gate = t.gate && ctx.gateHtml ? ctx.gateHtml(t.gate) : "";
   const n = Math.max(0, Math.min(Number(ctx.item) || 0, t.items.length - 1));
   const sw = t.items.length > 1 ? `<div class="dsw" role="tablist" aria-label="${esc(t.label)}">${t.items.map((x, i) => `<a class="${i === n ? "on" : ""}${x.later ? " later" : ""}" role="tab" aria-selected="${i === n}" href="${esc(ctx.itemHref ? ctx.itemHref(i) : `#${i}`)}">${iconSvg(x.icon)}<b>${esc(x.name)}</b></a>`).join("")}</div>` : "";
@@ -512,7 +514,7 @@ export function docTabHtml(build, tabId, ctx = {}) {
     const files = list(a.files);
     const hist = ctx.history ? list(ctx.history(a)) : [];
     content = `<h1>${esc(it.name)}</h1>${said === "Made" ? "" : `<p class="dsub${t.gate === it.stage ? " w" : ""}">${esc(said)}</p>`}<div class="vm">${esc(meta)}</div>`
-      + (a.state === "made" ? `<p class="dact"><a class="btn" href="${esc(ctx.chatHref ? ctx.chatHref(it.stage) : "#")}">Ask for a change</a></p>${artifactBodyHtml(a, { stageName })}` : `<p class="gw">${esc(str(s.words) || `${stageName(it.stage)} makes it ${a.state === "next" ? "next" : "later"}.`)}</p>`)
+      + (a.state === "made" ? `<p class="dact"><a class="btn" href="${esc(ctx.chatHref ? ctx.chatHref(it.stage) : "#")}">${a.kind === "security" ? "Ask the security reviewer" : "Ask for a change"}</a></p>${a.kind === "security" ? securityAfterHtml(a, list(build?.stages).find((x) => x?.stage === it.stage) ?? {}, ctx) : a.kind === "architecture" && Array.isArray(a.summary?.systems) ? architectureBodyHtml(a) : artifactBodyHtml(a, { stageName })}` : `<p class="gw">${esc(str(s.words) || `${stageName(it.stage)} makes it ${a.state === "next" ? "next" : "later"}.`)}</p>`)
       + (files.length && ctx.filesHtml ? `<section class="vfiles" aria-label="Full text"><h4 class="ft">Full text <span>${files.length === 1 ? "1 file" : `${files.length} files`}, as written</span></h4>${ctx.filesHtml(files, true)}</section>` : "")
       + (hist.length ? `<section class="dhist"><h4 class="ft">Versions</h4><ul>${hist.map((h) => `<li><a href="${esc(str(h.href) || "#")}"><b>${esc(str(h.version))}</b>${h.at && when(h.at) ? `<span>${esc(when(h.at))}</span>` : ""}${h.current ? "<i>stands now</i>" : ""}</a></li>`).join("")}</ul></section>` : "");
   } else if (it?.kind === "evidence") {
@@ -523,6 +525,82 @@ export function docTabHtml(build, tabId, ctx = {}) {
     content = `<p class="gw">Nothing made here yet.</p>`;
   }
   return `<div class="docbody">${gate ? `<div class="pin">${gate}</div>` : ""}${sw}${content}</div>`;
+}
+
+// ---------- the Security and Design tabs (lifecycle API 0.4.12) ----------
+
+const sec = (title, inner, extra = "") => `<section class="dsec"><h2>${esc(title)}${extra}</h2>${inner}</section>`;
+
+/**
+ * The Security tab before Security review has run: what the stage will
+ * write and when it is done, who holds it (changed on the Lifecycle page),
+ * what it reviews against (the architecture record, or that there is none),
+ * what it is given, and which outside tools send it evidence. ctx: { def,
+ * holderName, holderHref, docHref, stageName }.
+ */
+export function securityBeforeHtml(build, ctx = {}) {
+  const def = ctx.def ? ctx.def("security") : {};
+  const s = list(build?.stages).find((x) => x?.stage === "security") ?? {};
+  const word = { not_started: "runs after Code", working: "running now", waiting_on_you: "waits on you", not_bound: "nobody holds it", not_used: "not in this lifecycle", done: "done, but no statement was handed back" }[str(s.state)] ?? str(s.state).replace(/_/g, " ");
+  const arch = list(build?.artifacts).find((a) => isObj(a) && a.kind === "architecture" && a.state === "made" && isObj(a.summary) && Array.isArray(a.summary.systems));
+  const against = arch
+    ? `<div class="dbox"><dl><dt>Reaches</dt><dd>${esc(list(arch.summary.systems).join(", ") || "nothing")}</dd>${["cost", "speed", "data", "trust"].filter((k) => str(arch.summary.limits?.[k])).map((k) => `<dt>${esc(cap(k))}</dt><dd>${esc(str(arch.summary.limits[k]))}</dd>`).join("")}</dl></div>`
+    : `<div class="dbox"><p>No architecture record: this lifecycle does not make one yet, so the review reads the spec and the design.</p></div>`;
+  const holder = isObj(s.holder) ? s.holder : null;
+  const formats = list(holder?.evidence?.formats).map(str).filter(Boolean);
+  const evidence = formats.length
+    ? `<div class="dbox"><p>${esc(holderNameOf(holder, ctx))} sends ${esc(formats.map((f) => f.toUpperCase()).join(", "))}${str(holder.evidence?.where) ? ` from ${esc(str(holder.evidence.where))}` : ""}.</p></div>`
+    : `<div class="dbox"><p>No outside tool sends evidence to this stage. An outside tool holding it sends one file in a format the standard reads: SARIF, CycloneDX, SPDX, SLSA or in-toto.</p></div>`;
+  const job = [str(def.hands_back) ? `It writes the security statement: ${str(def.hands_back)}.` : "", str(def.done_when) ? `It is done when ${str(def.done_when)}.` : ""].filter(Boolean).join(" ");
+  return `<div class="docbody"><div class="dhead"><h1>Security review</h1><span class="dstate next">${esc(word)}</span></div>${job ? `<p class="dlead">${esc(job)}</p>` : ""}
+    <p class="dwho">Held by <b>${esc(holderNameOf(holder, ctx) || "nobody yet")}</b>${ctx.holderHref ? ` · <a href="${esc(ctx.holderHref)}">Change who holds it</a>` : ""}</p>
+    <div class="dgrid">${sec("Reviews against", against, ctx.docHref ? ` <a href="${esc(ctx.docHref("design"))}">Design</a>` : "")}${sec("Given", `<div class="dbox"><p>${esc(str(s.given) || str(def.given) || "Nothing yet.")}</p></div>`)}</div>
+    ${sec("Outside evidence", evidence)}</div>`;
+}
+
+const holderNameOf = (h, ctx) => (isObj(h) ? (ctx.holderName ? ctx.holderName(h) : str(h.name)) : "");
+
+/** The security statement in full: whether every permission has its reason, each reach with its access and reason, the spend, what it must never do, and the evidence outside tools sent. */
+export function securityAfterHtml(a, stage = {}, ctx = {}) {
+  const s = isObj(a?.summary) ? a.summary : {};
+  const reaches = Array.isArray(s.reaches) ? s.reaches.filter(isObj) : null;
+  const missing = list(s.no_reason_recorded).map(str);
+  const refused = stage.state === "refused" || /^refused/i.test(str(s.verdict));
+  const asked = reaches ? reaches.length : list(s.reach).length;
+  const withReason = reaches ? reaches.filter((r) => str(r.reason)).length : asked - missing.length;
+  const done = !asked && !missing.length ? `<p class="ddone"><span class="ok">✓</span> It asks for no permission: it reaches nothing.${s.architecture_record === "absent" ? " Reviewed against the spec and the design: there is no architecture record." : ""}</p>` : reaches || missing.length ? `<p class="ddone">${missing.length || withReason < asked ? `<span class="no">✗</span>` : `<span class="ok">✓</span>`} ${asked} ${asked === 1 ? "permission" : "permissions"} asked for, ${withReason} with a reason.${s.architecture_record === "absent" ? " Reviewed against the spec and the design: there is no architecture record." : ""}</p>` : "";
+  const reachHtml = reaches
+    ? `<table class="dtable"><thead><tr><th>System</th><th>Access</th><th>Reason</th></tr></thead><tbody>${reaches.map((r) => `<tr><td>${esc(str(r.system))}</td><td>${esc(str(r.access))}</td><td class="${str(r.reason) ? "" : "none"}">${esc(str(r.reason) || "No reason recorded.")}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="dbox"><ul>${list(s.reach).map((x) => `<li>${esc(str(x))}</li>`).join("")}</ul></div>`;
+  const spends = Array.isArray(s.spends) && s.spends.length ? s.spends.filter(isObj).map((x) => `${str(x.limit)}${str(x.ceiling) ? `: ${str(x.ceiling)}` : ""}`) : [str(s.spend) || "nothing"];
+  const never = Array.isArray(s.never_does) && s.never_does.length
+    ? `<ul class="dnever">${s.never_does.filter(isObj).map((x) => `<li>${esc(str(x.act))}${str(x.reason) ? `<small>${esc(str(x.reason))}</small>` : ""}</li>`).join("")}</ul>`
+    : `<ul class="dnever">${list(s.never).map((x) => `<li>${esc(str(x))}</li>`).join("")}</ul>`;
+  const ev = list(stage.evidence).filter(isObj);
+  const evidence = ev.length ? sec("Outside evidence", `<div class="dbox">${ev.map((e) => `<div class="dev"><div><b>${esc(str(e.name) || str(e.format))}</b><span class="fmt">${esc(str(e.format).toUpperCase())}</span><br><small>${esc(str(e.summary))}</small></div></div>`).join("")}</div>`) : "";
+  const spendHtml = sec("May spend", `<div class="dbox"><p>${esc(spends.join("; "))}</p></div>`);
+  return `${done}${asked ? sec("May reach", reachHtml) : ""}${evidence ? `<div class="dgrid">${spendHtml}${evidence}</div>` : spendHtml}${sec("Must never", `<div class="dbox">${never}</div>`)}${refused && ctx.actionsHtml ? `<section class="drefused"><h4>Refused at Security review</h4><p>${esc(str(s.verdict))}</p>${ctx.actionsHtml("security")}</section>` : ""}`;
+}
+
+/** The architecture record in full (0.4.12): its systems with what is bound to each per environment, its kind and limits, every decision with its reason, its dependencies and its egress. */
+export function architectureBodyHtml(a) {
+  const s = isObj(a?.summary) ? a.summary : {};
+  const systems = list(s.systems).map(str);
+  const envs = [...new Set(systems.flatMap((sys) => Object.keys(isObj(s.bindings?.[sys]) ? s.bindings[sys] : {})))];
+  const order = ["dev", "test", "production"];
+  envs.sort((x, y) => (order.indexOf(x) + 1 || 9) - (order.indexOf(y) + 1 || 9));
+  const bind = (sys, env) => { const b = s.bindings?.[sys]?.[env]; return isObj(b) ? `${esc(str(b.product))}<small>${b.provided_by === "customer" ? "your choice" : "platform default"}</small>` : `<span class="none">not bound</span>`; };
+  const table = systems.length ? `<table class="dtable"><thead><tr><th>System</th>${envs.map((e) => `<th>${esc(e)}</th>`).join("")}</tr></thead><tbody>${systems.map((sys) => `<tr><td>${esc(sys)}</td>${envs.map((e) => `<td>${bind(sys, e)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : `<div class="dbox"><p>It reaches no system.</p></div>`;
+  const limits = ["cost", "speed", "data", "trust"].filter((k) => str(s.limits?.[k]));
+  const decisions = list(s.decisions).filter(isObj);
+  const deps = list(s.dependencies).filter(isObj);
+  const egress = list(s.egress).filter(isObj);
+  return `${str(s.kind) ? `<p class="dwho">Kind: <b>${esc(str(s.kind))}</b>${Number(s.questions) ? ` · <span class="w">${s.questions} ${s.questions === 1 ? "question" : "questions"} still open</span>` : ""}</p>` : ""}
+    ${sec("Systems and what is bound to each", table)}
+    ${limits.length ? sec("Limits", `<div class="dbox"><dl>${limits.map((k) => `<dt>${esc(cap(k))}</dt><dd>${esc(str(s.limits[k]))}</dd>`).join("")}</dl></div>`) : ""}
+    ${decisions.length ? sec("Decisions", `<div class="dbox"><ul class="dnever">${decisions.map((d) => `<li>${esc(str(d.decided))}<small>${esc(str(d.why))}</small></li>`).join("")}</ul></div>`) : ""}
+    ${deps.length ? sec("Depends on", `<div class="dbox"><ul class="dnever">${deps.map((d) => `<li>${esc(str(d.name))}<small>${esc(str(d.why))}</small></li>`).join("")}</ul></div>`) : ""}
+    ${egress.length ? sec("Egress", `<div class="dbox"><dl>${egress.map((e) => `<dt>${esc(str(e.environment))}</dt><dd>${list(e.destinations).filter(isObj).length ? esc(list(e.destinations).map((d) => `${str(d.what)} (${str(d.why)})`).join("; ")) : "nothing beyond its systems"}${e.enforced ? "" : " · runs open"}</dd>`).join("")}</dl></div>`) : ""}`;
 }
 
 /** Where a feature run is, in words: the service's summary, else its stage and state. */
@@ -1525,7 +1603,7 @@ export function documentsHtml(answer, ctx = {}) {
     const fl = list(a.files).length ? `<section class="vfiles" aria-label="Full text"><h4 class="ft">Full text <span>${list(a.files).length === 1 ? "1 file" : `${list(a.files).length} files`}, as written</span></h4>${files(list(a.files), true, str(c.build))}</section>` : "";
     reader = `<h3>${esc(str(sel.name))}</h3><div class="vm">${esc(meta)}</div>
       <p class="dact"><a class="btn" href="${esc(href(str(c.build), str(sel.stage), "chat"))}">Ask for a change</a><a class="linkbtn" href="${esc(href(str(c.build), str(sel.stage), "artifacts"))}">Open at ${esc(stageName(str(sel.stage)))}</a></p>
-      ${artifactBodyHtml(a, { stageName })}${fl}${history}`;
+      ${a.kind === "architecture" && Array.isArray(a.summary?.systems) ? architectureBodyHtml(a) : a.kind === "security" ? securityAfterHtml(a, {}, {}) : artifactBodyHtml(a, { stageName })}${fl}${history}`;
   } else {
     reader = `<h3>${esc(str(sel.name))}</h3><div class="vm">${esc(stageName(str(sel.stage)))}</div><p class="gw">${esc(str(sel.words) || (sel.state === "not_used" ? "The product's lifecycle leaves this stage out." : "Nothing made yet."))}</p>`;
   }
