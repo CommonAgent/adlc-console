@@ -662,3 +662,21 @@ How the console reads these:
 - The **Design tab** shows an architecture record given in parts as a table of its systems by
   environment (each binding marked your choice or a platform default), its kind, limits, decisions
   with their reasons, dependencies and egress.
+
+Read by the console since lifecycle API 0.4.13 (additive): each artifact's Common Agent checks.
+
+```
+artifact adds checks?: [{ standard, version, section, rule?, asks, result: met | not_met | not_checked, detail }]
+```
+
+How the console reads these:
+
+- A made document's tab ends its summary with a table headed by the standard and its version
+  ("Common Agent 0.41.0"): each check's result (met, not met, not checked), its citation written
+  out ("Section 12.6, rule 2"), what the rule asks, and what this agent did.
+- A tab with a check not met says how many on the tab ("Security · 1 not met").
+- Under the version's name in the menu, the tally across its made documents: met, not met, and
+  needs the running agent (not checked).
+- Every document with files says, under its name, the file its summary was read from, with
+  "Read the full text", which scrolls to the files and opens the first. The full text stays at the
+  foot of the document, after the checks.

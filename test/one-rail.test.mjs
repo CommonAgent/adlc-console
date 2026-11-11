@@ -28,7 +28,7 @@ test("a version made in one chain gets the same rail: its spec's features, each 
   assert.deepEqual(fs.map((f) => [f.id, f.name, f.line, f.mark, f.wait]), [["F1", "Judge a sentence", "Waiting on you at Code", "now", true]]);
   const html = spineHtml(b, steps(b, { defs }), { ...opts(b), features: fs, featSel: "F1", line: { text: "Waiting on you at Code", wait: true } });
   const text = visible(html);
-  assert.equal(text, "palindrome-judge 0.1.0 Waiting on you at Code Features 0 of 1 built F1 Judge a sentence Waiting on you at Code");
+  assert.equal(text, "palindrome-judge 0.1.0 Waiting on you at Code Common Agent 0.41.0 Met 4 Not met 0 Needs the running agent 1 Features 0 of 1 built F1 Judge a sentence Waiting on you at Code");
   for (const stage of ["Requirements", "Test", "Review", "Security review"]) assert.ok(!new RegExp(`class="rn">${stage}<`).test(html), `${stage} is not a line of the menu`);
   assert.match(html, /<a class="rs run now sel" href="#\/b\/b_palindrome_judge\/f\/F1" aria-current="page"/);
 });
@@ -117,4 +117,22 @@ test("the Security tab: before it runs, what it will write, who holds it, what i
   const arch = visible(architectureBodyHtml({ summary: { systems: ["files"], bindings: { files: { dev: { product: "local disk", provided_by: "platform" }, production: { product: "the org's bucket", provided_by: "customer" } } }, kind: "plugin-on-harness", limits: { cost: "10 USD per day" }, decisions: [{ decided: "a program counts", why: "no judgment needed" }] } }));
   assert.ok(arch.includes("Systems and what is bound to each System dev production files local disk platform default the org's bucket your choice"), arch);
   assert.ok(arch.includes("Decisions a program counts no judgment needed"), arch);
+});
+
+test("each document says which Common Agent rules its stage applied, in words; the tab says when one is not met; the version shows the tally; the full text is offered at the top", async () => {
+  const { checksTableHtml, checksTally, docTabsBarHtml, docTabHtml, sectionWords } = await import("../public/workspace.js");
+  const b = await getBuild("b_palindrome_judge");
+  assert.equal(sectionWords({ section: "12.6", rule: "2" }), "Section 12.6, rule 2");
+  assert.equal(sectionWords({ section: "9.10" }), "Section 9.10");
+  const sec = b.artifacts.find((a) => a.kind === "security");
+  const table = checksTableHtml(sec);
+  assert.ok(!/§|\br2\b/.test(table), "no section sign or rule shorthand");
+  assert.ok(visible(table).startsWith("Common Agent 0.41.0 met Section 12.4 Every permission asked for has a reason It asks for no permission: it reaches nothing. met Section 12.6, rule 2 No address in its scripts"), visible(table));
+  assert.match(table, /<span class="cr not_checked">not checked<\/span>/);
+  assert.deepEqual(checksTally(b), { met: 4, not_met: 0, not_checked: 1, standard: "common-agent", version: "0.41.0" });
+  const missed = { ...b, artifacts: b.artifacts.map((a) => (a.kind === "security" ? { ...a, checks: [...a.checks, { standard: "common-agent", version: "0.41.0", section: "12.4", asks: "Credentials named, never held", result: "not_met", detail: "A key in scripts/judge.mjs line 3." }] } : a)) };
+  assert.match(docTabsBarHtml(missed, { active: "design", tabHref: (t) => `#${t}` }), /<a class="ct" href="#security">Security<small class="bad">1 not met<\/small><\/a>/);
+  const html = docTabHtml(b, "security", { stageName, filesHtml: (fs) => `<files>${fs.map((f) => f.path).join(",")}</files>` });
+  assert.match(html, /<p class="dfrom">From <code>security-statement\.json<\/code> · <a href="#full-text" data-jump="full-text">Read the full text<\/a><\/p>/);
+  assert.ok(html.indexOf('class="dchecks"') < html.indexOf('id="full-text"'), "the checks come before the full text");
 });

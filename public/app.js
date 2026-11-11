@@ -1629,6 +1629,14 @@ document.addEventListener("click", async (e) => {
   if (featAll) return approveAll(featAll.dataset);
   const featList = t.closest("[data-feat-backfill]");
   if (featList) return listFeatures(featList.dataset.featBackfill);
+  // Read the full text: the document's files, scrolled to, the first one open.
+  const jump = t.closest("[data-jump]");
+  if (jump) {
+    e.preventDefault();
+    const at = document.getElementById(jump.dataset.jump);
+    if (at) { const d = at.querySelector("details[data-file]"); if (d && !d.open) { d.open = true; loadFile(d); } at.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    return;
+  }
   // A document chosen on the product's Documents tab (0.4.11).
   const docRow = t.closest("[data-doc]");
   if (docRow && state.view === "product" && state.docs) { state.docs.sel = docRow.dataset.doc; return drawProduct(); }
