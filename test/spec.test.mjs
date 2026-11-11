@@ -59,27 +59,31 @@ test("a spec artifact in the console's shape is one the lifecycle API's check ac
   assert.equal(ARTIFACT_STAGE.spec, "requirements");
 });
 
-test("the spec shows each feature with its requirements (shall, kind, exact words in code) and its Gherkin scenarios", () => {
+test("the spec reads as a document: each feature's requirements as sentences, its fixed values in words, its examples as steps, ids kept as tooltips", () => {
   const html = specHtml(SUMMARY);
   const v = visible(html);
   assert.match(v, /^hn-reader 0\.2\.0 free Reads the top stories of Hacker News and hands back their titles\./);
-  assert.match(v, /F1 Read the top stories in Read as built, B1 Hands back the titles of the top stories\. Requirements F1\.R1 The agent shall hand back at most 30 titles\. limit 30 F1\.R2 The agent shall stop at a line matching the stop pattern\. pattern \^-- end --\$ Acceptance F1\.A1 Scenario: forty stories Given 40 top stories When it reads them Then it hands back 30 titles/);
-  // The exact words are in code style, byte for byte; the Gherkin keeps its lines.
-  assert.match(html, /<code>\^-- end --\$<\/code>/);
-  assert.match(html, /<code>I read only what is public\.<\/code>/);
-  assert.match(html, /<pre class="gherkin">Scenario: forty stories\n {2}Given 40 top stories\n/);
+  assert.match(v, /F1 Read the top stories in Read as built, B1 Hands back the titles of the top stories\. What it must do The agent shall hand back at most 30 titles\. The limit is 30 \. The agent shall stop at a line matching the stop pattern\. The pattern is \^-- end --\$ \. Example forty stories Given 40 top stories When it reads them Then it hands back 30 titles/);
+  // The fixed values keep their exact bytes; an id or kind is a tooltip, never printed in the line; an example reads as steps.
+  assert.match(html, /<q>\^-- end --\$<\/q>/);
+  assert.match(html, /<li class="sreq" data-req="F1\.R1" title="F1\.R1 · limit">/);
+  assert.doesNotMatch(visible(html), /F1\.R1|F1\.A1|\bI1\b|\bC1\b/);
+  assert.match(v, /Exactly I read only what is public\. Example asked to sign in/);
+  assert.match(html, /<b class="stitle">forty stories<\/b><ol class="steps"><li><span class="kw">Given<\/span> 40 top stories<\/li>/);
+  // Gherkin that does not read as steps is shown as written.
+  assert.match(specHtml({ features: [{ id: "F9", name: "x", acceptance: [{ id: "F9.A1", gherkin: "Feature: odd\n  Background: y" }] }] }), /<pre class="gherkin">Feature: odd/);
   // A feature the reader is opened at is marked.
   assert.match(specHtml(SUMMARY, { feature: "F2" }), /<section class="sfe at" data-spec-feature="F2">/);
 });
 
-test("the spec shows the interfaces with keep marked, then the constraints, systems, settings and what is still open", () => {
+test("the spec says how the agent is called and whether that must be kept, then the constraints, systems, settings and what is still open, in sentences", () => {
   const v = visible(specHtml(SUMMARY));
-  assert.match(v, /Interfaces 2 I1 command read-news --limit <n> Keep exactly I2 file out\/stories\.json May change/);
-  assert.match(v, /Constraints 1 C1 \(performance\): The agent shall finish within 60 seconds\. Systems 1 Hacker News API \(read\): https:\/\/hacker-news\.firebaseio\.com\/v0, for the stories\. Settings 1 limit \(integer, default 30, 1 to 100\): how many titles it hands back\. Still open 1 Should it follow a story's link\?$/);
-  assert.match(interfacesHtml(SUMMARY.interfaces), /<li class="sif keep">/);
+  assert.match(v, /How it is called Called as read-news --limit <n> , a command\. It must be kept exactly as it is\. Called as out\/stories\.json , a file\. It may change\./);
+  assert.match(v, /Constraints The agent shall finish within 60 seconds\. Systems Hacker News API \(read\): https:\/\/hacker-news\.firebaseio\.com\/v0, for the stories\. Settings limit \(integer, default 30, 1 to 100\): how many titles it hands back\. Still open Should it follow a story's link\?/);
+  assert.match(interfacesHtml(SUMMARY.interfaces), /<li class="sif keep" title="I1">/);
   // Nothing is drawn for a part the service did not give, and nothing open says so.
   const bare = visible(specHtml({ product: "a 0.1.0", features: SUMMARY.features.slice(1), open: [] }));
-  assert.doesNotMatch(bare, /Interfaces|Constraints|Systems|Settings/);
+  assert.doesNotMatch(bare, /How it is called|Constraints|Systems|Settings/);
   assert.match(bare, /Nothing is still open\.$/);
 });
 
@@ -93,7 +97,7 @@ test("the spec is read as words, never raw JSON, and HTML in it is escaped", () 
 
 test("the Artifacts reader draws a spec artifact from its SpecSummary", () => {
   const v = visible(artifactBodyHtml(SPEC));
-  assert.match(v, /F1 Read the top stories .* F2 Refuse a login .* Interfaces 2/);
+  assert.match(v, /F1 Read the top stories .* F2 Refuse a login .* How it is called/);
   const ws = { stage: "requirements", name: "Requirements", given: [], outputs: [SPEC], handedBack: {} };
   assert.match(visible(artifactsTabHtml(ws, "spec", { stageName: (s) => defs.get(s)?.name ?? s })), /^Spec Requirements · spec writer · v2 hn-reader 0\.2\.0/);
 });
@@ -110,7 +114,7 @@ test("the Features tab shows, under each feature the spec holds, its requirement
   const m = { product: "hn-reader", build: "b1", version: "0.2.0", features: [row("F1"), row("F3")] };
   const html = requirementsFeaturesHtml(m, { spec: SUMMARY });
   assert.match(html, /<details class="rfspec"><summary>2 requirements · 1 scenario<\/summary>/);
-  assert.match(visible(html), /F1 Name F1 Approved Read Does F1\. 2 requirements · 1 scenario Requirements F1\.R1 The agent shall hand back at most 30 titles\./);
+  assert.match(visible(html), /F1 Name F1 Approved Read Does F1\. 2 requirements · 1 scenario What it must do The agent shall hand back at most 30 titles\./);
   // A feature the spec does not hold has nothing folded under it, and without a spec nothing changes.
   assert.equal((html.match(/rfspec/g) ?? []).length, 1);
   assert.doesNotMatch(requirementsFeaturesHtml(m, {}), /rfspec/);
@@ -140,7 +144,7 @@ test("the demo's Requirements hands back a spec, and its agent's own files are m
   const req = stageWorkspace(b, "requirements", await get(`/v1/lifecycle/builds/${pj.id}/stages/requirements`), { defs });
   const spec = specOf(req.outputs);
   assert.equal(spec.name, "Spec");
-  assert.match(visible(specHtml(spec.summary)), /F1 Judge a sentence .* F1\.A1 Scenario: a palindrome with spaces and capitals/);
+  assert.match(visible(specHtml(spec.summary)), /F1 Judge a sentence .* Exactly yes or no \. .* Examples a palindrome with spaces and capitals Given the sentence "Never odd or even" When it is judged/);
   const agent = b.artifacts.find((a) => a.kind === "statement");
   assert.equal(agent.stage, "architecture");
   assert.equal(agent.name, "The agent's own files");
