@@ -15,7 +15,7 @@ import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
 import { specOf, specTabHtml } from "./spec.js";
-import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel, runWorkHtml, featureRegion, versionFeatures, featurePageHtml, currentStage, docTabs, docTabOf, docTabsBarHtml, docTabHtml } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel, runWorkHtml, featureRegion, versionFeatures, featurePageHtml, currentStage, docTabs, docTabOf, docTabsBarHtml, docTabHtml, architectureOf, checkedDocuments, architectureTabHtml, conformanceTabHtml } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -921,6 +921,9 @@ function draw() {
       ...(spec ? [{ id: "spec", label: "Spec" }] : []),
       { id: "chat", label: "Chat", count: msgs.filter((m) => m?.from?.kind !== "system").length },
       { id: "artifacts", label: "Artifacts", count: artifactCount(ws) ?? undefined },
+      // The architecture record and the Common Agent checks, each on a tab of its own, for the whole version.
+      ...(architectureOf(b) ? [{ id: "architecture", label: "Architecture" }] : []),
+      ...(checkedDocuments(b).length ? [{ id: "conformance", label: "Common Agent", count: checkedDocuments(b).length }] : []),
       ...(skills ? [{ id: "skills", label: "Skills", count: skillsOf(ws.holder).length || undefined }] : []),
       ...(canTry ? [{ id: "try", label: "Try it" }] : []),
     ];
@@ -932,6 +935,8 @@ function draw() {
   else if (state.tab === "features" && reqFeat) body = requirementsFeaturesHtml(state.bfeat.answer, { pending: state.featPending, allPending: state.featAllPending, listing: state.featListing, spec: spec?.summary ?? null });
   else if (state.tab === "spec" && spec) body = specTabHtml(spec, { when });
   else if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list, openOne = false) => filesHtml(list, openOne), feature: state.featFocus, featureName: focusName, featuresTitle: "Features at this stage", featuresHtml: slice ? () => stageFeaturesHtml(slice) : null });
+  else if (state.tab === "architecture") body = architectureTabHtml(b);
+  else if (state.tab === "conformance") body = conformanceTabHtml(b);
   else if (state.tab === "skills" && skills) body = skillsTabHtml(ws.holder, state.skill);
   else if (state.tab === "try") body = `<div class="stage trypane" id="trybody"></div>`;
   else body = `<div class="thread" id="thread">${chatHtml(msgs, { ...ctx, empty: talk ? `Nothing has been said here yet. Ask ${agent} about what it read or made.` : "Nothing has been said here yet." })}
