@@ -565,8 +565,13 @@ export function docTabHtml(build, tabId, ctx = {}) {
     const hist = ctx.history ? list(ctx.history(a)) : [];
     // The file the summary was read from, offered beside it: a person can always go to the full text.
     const from = files.length && ctx.filesHtml ? `<p class="dfrom">From <code>${esc(str(files[0].path))}</code>${files.length > 1 ? ` and ${files.length - 1} more` : ""} · <a href="#full-text" data-jump="full-text">Read the full text</a></p>` : "";
-    content = `<h1>${esc(it.name)}</h1>${said === "Made" ? "" : `<p class="dsub${t.gate === it.stage ? " w" : ""}">${esc(said)}</p>`}<div class="vm">${esc(meta)}</div>${from}`
-      + (a.state === "made" ? `<p class="dact"><button class="btn${ctx.ask?.stage === it.stage ? " on" : ""}" type="button" data-doc-ask="${esc(it.stage)}" aria-expanded="${ctx.ask?.stage === it.stage}">${a.kind === "security" ? "Ask the security reviewer" : "Ask for a change"}</button></p>${ctx.ask?.stage === it.stage ? docAskHtml(ctx.ask, ctx) : ""}${a.kind === "security" ? securityAfterHtml(a, list(build?.stages).find((x) => x?.stage === it.stage) ?? {}, ctx) : a.kind === "architecture" && Array.isArray(a.summary?.systems) ? architectureBodyHtml(a) : artifactBodyHtml(a, { stageName })}` : `<p class="gw">${esc(str(s.words) || `${stageName(it.stage)} makes it ${a.state === "next" ? "next" : "later"}.`)}</p>`)
+    // Not made, the words are said once, under the name, and not again below it.
+    const notMade = str(s.words) || `${stageName(it.stage)} makes it ${a.state === "next" ? "next" : "later"}.`;
+    // A spec written after its version was built (0.4.14) says so; one that can be written now offers it.
+    const after = isObj(a.written_after) && str(a.written_after.words) ? `<p class="dfrom">${esc(str(a.written_after.words))}</p>` : "";
+    content = `<h1>${esc(it.name)}</h1>${said === "Made" ? "" : `<p class="dsub${t.gate === it.stage ? " w" : ""}">${esc(said)}</p>`}<div class="vm">${esc(meta)}</div>${after}${from}`
+      + (a.state !== "made" && isObj(a.backfill) ? specBackfillHtml(a.backfill, ctx) : "")
+      + (a.state === "made" ? `<p class="dact"><button class="btn${ctx.ask?.stage === it.stage ? " on" : ""}" type="button" data-doc-ask="${esc(it.stage)}" aria-expanded="${ctx.ask?.stage === it.stage}">${a.kind === "security" ? "Ask the security reviewer" : "Ask for a change"}</button></p>${ctx.ask?.stage === it.stage ? docAskHtml(ctx.ask, ctx) : ""}${a.kind === "security" ? securityAfterHtml(a, list(build?.stages).find((x) => x?.stage === it.stage) ?? {}, ctx) : a.kind === "architecture" && Array.isArray(a.summary?.systems) ? architectureBodyHtml(a) : artifactBodyHtml(a, { stageName })}` : notMade === said ? "" : `<p class="gw">${esc(notMade)}</p>`)
       + (a.state === "made" ? checksTableHtml(a) : "")
       + (files.length && ctx.filesHtml ? `<section class="vfiles" id="full-text" aria-label="Full text"><h4 class="ft">Full text <span>${files.length === 1 ? "1 file" : `${files.length} files`}, as written</span></h4>${ctx.filesHtml(files, true)}</section>` : "")
       + (hist.length ? `<section class="dhist"><h4 class="ft">Versions</h4><ul>${hist.map((h) => `<li><a href="${esc(str(h.href) || "#")}"><b>${esc(str(h.version))}</b>${h.at && when(h.at) ? `<span>${esc(when(h.at))}</span>` : ""}${h.current ? "<i>stands now</i>" : ""}</a></li>`).join("")}</ul></section>` : "");
@@ -578,6 +583,19 @@ export function docTabHtml(build, tabId, ctx = {}) {
     content = `<p class="gw">Nothing made here yet.</p>`;
   }
   return `<div class="docbody">${gate ? `<div class="pin">${gate}</div>` : ""}${sw}${content}</div>`;
+}
+
+/**
+ * The spec of a version built before specs, written now (lifecycle API
+ * 0.4.14): the agent's own files it was built from, one button, and what the
+ * button does or why it is not offered. ctx: { docHref, specWriting }.
+ */
+export function specBackfillHtml(bf, ctx = {}) {
+  const own = ctx.docHref ? `<p class="dfrom"><a href="${esc(ctx.docHref("design"))}">The agent's own files</a></p>` : "";
+  const busy = Boolean(ctx.specWriting);
+  const button = bf.offered || busy ? `<p class="dact"><button class="btn p" type="button" data-spec-backfill${busy ? " disabled" : ""}>${busy ? "Writing…" : "Write the spec now"}</button></p>` : "";
+  const hint = busy ? "The spec writer is reading what it was asked and its own files. This can take a few minutes." : str(bf.words);
+  return `${own}${button}${hint ? `<p class="hint">${esc(hint)}</p>` : ""}`;
 }
 
 // ---------- the Security and Design tabs (lifecycle API 0.4.12) ----------

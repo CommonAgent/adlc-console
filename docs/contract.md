@@ -680,3 +680,18 @@ How the console reads these:
 - Every document with files says, under its name, the file its summary was read from, with
   "Read the full text", which scrolls to the files and opens the first. The full text stays at the
   foot of the document, after the checks.
+
+Read by the console since lifecycle API 0.4.14 (additive): the spec of a version built before specs.
+
+```
+artifact adds backfill?: { offered, words }        // on a spec that is not_made
+artifact adds written_after?: { at, words }        // on a made spec written after its version
+POST /api/v1/lifecycle/builds/<id>/spec/backfill   // { words, artifact }, waits as long as a chat
+```
+
+How the console reads these:
+
+- A Spec tab whose version was built before specs says so once, under the name, links to the
+  agent's own files on the Design tab, and offers **Write the spec now** with what it does. While
+  the spec writer writes, the button reads "Writing…" and says it can take a few minutes.
+- A spec written after its version says so under its name, in the service's words.

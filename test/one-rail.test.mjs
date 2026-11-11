@@ -144,3 +144,24 @@ test("each document says which Common Agent rules its stage applied, in words; t
   assert.match(html, /<p class="dfrom">From <code>security-statement\.json<\/code> · <a href="#full-text" data-jump="full-text">Read the full text<\/a><\/p>/);
   assert.ok(html.indexOf('class="dchecks"') < html.indexOf('id="full-text"'), "the checks come before the full text");
 });
+
+test("0.4.14: a spec not made because its version was built before specs says so once, links to the agent's own files, and offers Write the spec now", async () => {
+  const { docTabHtml, specBackfillHtml } = await import("../public/workspace.js");
+  const b = await getBuild("b_palindrome_judge");
+  const words = "This version was built before the spec writer wrote specs, so it has none. What it was asked to do is in the agent's own files.";
+  const bf = { offered: true, words: "The spec writer writes this version's spec from what it was asked, its earlier draft and its own files. Nothing else in the version changes." };
+  const old = { ...b, artifacts: b.artifacts.map((a) => (a.kind === "spec" ? { id: a.id, stage: a.stage, name: a.name, by: a.by, kind: "spec", state: "not_made", summary: { words }, backfill: bf } : a)) };
+  const html = docTabHtml(old, "spec", { item: 0, stageName, docHref: (t) => `#d/${t}` });
+  assert.equal(visible(html).split("built before the spec writer wrote specs, so it has none").length - 1, 1, "the words are said once");
+  assert.match(html, /<a href="#d\/design">The agent's own files<\/a>/);
+  assert.match(html, /<button class="btn p" type="button" data-spec-backfill>Write the spec now<\/button>/);
+  assert.match(visible(html), /Nothing else in the version changes\./);
+  // While it is written, and when it is not offered.
+  assert.match(specBackfillHtml(bf, { specWriting: true }), /data-spec-backfill disabled>Writing…<\/button>[^]*can take a few minutes/);
+  assert.doesNotMatch(specBackfillHtml({ offered: false, words: "The spec writer is writing it now." }), /<button/);
+  // Written after: it says so under its name.
+  const made = b.artifacts.find((a) => a.kind === "spec");
+  const written = { ...b, artifacts: b.artifacts.map((a) => (a.kind === "spec" ? { ...made, version: "written after", written_after: { at: "2026-11-11T10:00:00-07:00", words: "Written after version 0.1.0 was built, from what it was asked, the earlier spec writer's draft and its own files." } } : a)) };
+  assert.match(visible(docTabHtml(written, "spec", { item: 0, stageName })), /Written after version 0\.1\.0 was built, from what it was asked/);
+  assert.doesNotMatch(docTabHtml(written, "spec", { item: 0, stageName }), /data-spec-backfill/);
+});
