@@ -506,6 +506,35 @@ export function checksTableHtml(a) {
   return `<section class="dchecks"><h2>${esc(head)}</h2><table class="dtable"><tbody>${cs.map((c) => `<tr><td class="cres"><span class="cr ${esc(c.result)}">${esc(CHECK_WORD[c.result])}</span></td><td class="csec">${esc(sectionWords(c))}</td><td><b>${esc(str(c.asks))}</b><small>${esc(str(c.detail))}</small></td></tr>`).join("")}</tbody></table></section>`;
 }
 
+/** The version's architecture record: the newest one made, with the systems it names, or null. */
+export const architectureOf = (build) => list(build?.artifacts).filter((a) => isObj(a) && a.kind === "architecture" && a.state === "made" && isObj(a.summary) && Array.isArray(a.summary.systems)).at(-1) ?? null;
+
+/** The made documents of a version that carry Common Agent checks, in the order the stages made them. */
+export const checkedDocuments = (build) => list(build?.artifacts).filter((a) => isObj(a) && a.state === "made" && checksOf(a).length);
+
+/**
+ * The Architecture tab: the architecture record on a tab of its own, not among the Design's
+ * files (the ADLC one-builder plan, step 6): its systems, bindings, kind, limits and decisions.
+ */
+export function architectureTabHtml(build) {
+  const a = architectureOf(build);
+  if (!a) return `<p class="gw">No architecture record yet. The builder writes it from the spec you approved.</p>`;
+  return `<section class="archtab"><p class="gw">${esc(str(a.name) || "The architecture record")}${str(a.version) ? `, version ${esc(str(a.version))}` : ""}.</p>${architectureBodyHtml(a)}</section>`;
+}
+
+/**
+ * The Common Agent tab: every rule of the Common Agent standard the stages applied, on a tab of
+ * its own (the ADLC one-builder plan, step 6): the tally for the version, then each document's
+ * table, under the document's name.
+ */
+export function conformanceTabHtml(build) {
+  const docs = checkedDocuments(build);
+  if (!docs.length) return `<p class="gw">No Common Agent checks yet. Each stage that applies the standard says here which rules it applied.</p>`;
+  const t = checksTally(build);
+  const tally = t ? `<p class="ctally"><b>${t.met}</b> met, <b>${t.not_met}</b> not met, <b>${t.not_checked}</b> not checked${t.version ? `, against Common Agent ${esc(t.version)}` : ""}.</p>` : "";
+  return `<section class="conftab">${tally}${docs.map((a) => `<h3>${esc(str(a.name) || str(a.kind))}</h3>${checksTableHtml(a)}`).join("")}</section>`;
+}
+
 /**
  * The box under a document for asking its holder for a change: what a change
  * does now (ctx.ask.context), what to type, the holder's reply and, when the
@@ -780,7 +809,11 @@ export function actionButtonsHtml(list, { labels = {}, pending = null, asking = 
       const long = /words|text|long|reason|why|comment/i.test(n.kind);
       // A need the service marks optional may be left empty, and is then not sent.
       const req = n.optional === true ? "" : " required";
-      return `<label for="${id}">${esc(n.label)}${n.optional === true ? " <span>Optional</span>" : ""}</label>${long ? `<textarea id="${id}" name="${esc(n.name)}"${req}></textarea>` : `<input type="text" id="${id}" name="${esc(n.name)}"${req} autocomplete="off">`}`;
+      // A choice (0.4.4), such as the stage send_back (0.5.0) reopens: one of its options, its default chosen first.
+      const field = n.kind === "choice"
+        ? `<select id="${id}" name="${esc(n.name)}"${req}>${words(n.options).map((o) => `<option value="${esc(o)}"${o === str(n.default) ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>`
+        : long ? `<textarea id="${id}" name="${esc(n.name)}"${req}></textarea>` : `<input type="text" id="${id}" name="${esc(n.name)}"${req} autocomplete="off">`;
+      return `<label for="${id}">${esc(n.label)}${n.optional === true ? " <span>Optional</span>" : ""}</label>${field}`;
     }).join("")}<div class="acts tight"><button class="btn p" type="submit">${esc(ask.label)}</button><button class="btn" type="button" data-cancel>Cancel</button></div></form>`;
   }
   return h;
