@@ -666,7 +666,7 @@ How the console reads these:
 Read by the console since lifecycle API 0.4.13 (additive): each artifact's Common Agent checks.
 
 ```
-artifact adds checks?: [{ standard, version, section, rule?, asks, result: met | not_met | not_checked, detail }]
+artifact adds checks?: [RuleCheck]   // RuleCheck: { standard, version, section, rule?, asks, result: met | not_met | not_checked, detail }
 ```
 
 How the console reads these:
