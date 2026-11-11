@@ -10,14 +10,22 @@
 </head>
 <body>
 <div class="app" id="app">
-  <div class="top"><span><b>adlc console</b> · <span id="svc">…</span></span><span id="who"></span></div>
+  <div class="top">
+    <span><b>adlc console</b> · <span id="svc">…</span></span>
+    <nav class="topnav" aria-label="The factory">
+      <a id="products" href="#/products">Products</a>
+      <a id="board" href="#/board">Board</a>
+      <a id="dashboard" href="#/dashboard">Dashboard</a>
+      <a id="analytics" href="#/analytics" hidden>Analytics</a>
+      <a id="lifecycle" href="#/lifecycle">Lifecycle</a>
+      <a id="people" href="#/people" hidden>People</a>
+    </nav>
+    <a class="askboss" id="askboss" href="#" hidden>Ask the boss</a>
+    <span id="who"></span>
+  </div>
   <nav class="rail" id="rail" aria-label="Lifecycles and builds">
     <div id="spine" hidden></div>
     <div id="railhome">
-    <a class="b boardl" id="board" href="#/board"><span class="n">Board</span><span class="s">every build by phase</span></a>
-    <a class="b boardl" id="dashboard" href="#/dashboard"><span class="n">Dashboard</span><span class="s">stage times, waiting</span></a>
-    <a class="b boardl" id="analytics" href="#/analytics" hidden><span class="n">Analytics</span><span class="s">builds over time</span></a>
-    <a class="b boardl" id="people" href="#/people" hidden><span class="n">People</span><span class="s">teams and roles</span></a>
     <div id="lifecycles"></div>
     <h2>Builds</h2>
     <div id="builds"></div>

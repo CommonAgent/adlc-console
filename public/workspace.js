@@ -168,27 +168,361 @@ export function stepHeader(build, spine) {
 }
 
 /** The product at the top of the menu, then its build's stages: selecting one opens it. */
-export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, productHref = "#", onProduct = false, runSel = null, runHref = null, runsHref = "#", stageName = (x) => x } = {}) {
+export function spineHtml(build, spine, { sel = null, href = (s) => `#${s}`, productHref = "#", onProduct = false, runSel = null, runHref = null, runsHref = "#", stageName = (x) => x, features = null, featSel = null, featureHref = null, docs = null, line = null, when = (x) => x } = {}) {
   const item = (x) => {
     const on = x.stage === sel;
     const dot = x.mark === "done" ? "✓" : stepNumber(x);
     return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${stepNumber(x)}. ${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(x.name)}</span></a>`;
   };
-  const product = `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its versions, run plan and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b></a>`;
+  const sub = isObj(line) && str(line.text) ? `<small class="${line.wait ? "w" : ""}">${esc(str(line.text))}</small>` : "";
+  const product = `<a class="rb${onProduct ? " on" : ""}" href="${esc(productHref)}"${onProduct ? ' aria-current="page"' : ""} title="The product: its documents, versions and activity"><b>${esc(productOf(build))} ${build.version ? `<span>${esc(build.version)}</span>` : ""}</b>${sub}</a>`;
   const runs = featureRuns(build);
-  if (!runs.length || !runHref) return `${product}<div class="spine">${spine.map(item).join("")}</div>`;
-  // The version's features between its steps (0.4.10): the steps before the runs' stages, then a line per
-  // feature where the runs' stages were, the open one showing its own stages, then the steps after.
-  const held = runStageIds(build);
+  // The old numbered list only for a caller that gives no way to open a feature.
+  if (!(runs.length && runHref) && !featureHref) return `${product}<div class="spine">${spine.map(item).join("")}</div>`;
+  // Every version is three groups, none numbered: Spec, its documents; Features, a line per feature (each
+  // run of its own when its features run on their own, else each feature its spec names); and Ship, the
+  // steps after the features, folded to one line until one of them is reached or chosen. Stage names are
+  // never the menu: they show inside a feature, as the strip under its name.
+  const region = featureRegion(build);
   const order = list(build.stages).map((s) => str(s?.stage));
-  const first = order.findIndex((id) => held.has(id));
-  const before = spine.filter((x) => order.indexOf(x.stage) < first);
-  const after = spine.filter((x) => !before.includes(x));
-  const done = runs.filter((r) => r.ended === true).length;
-  const onAll = Boolean(sel) && held.has(sel) && !runSel;
-  const head = `<a class="rg${onAll ? " sel" : ""}" href="${esc(runsHref)}"${onAll ? ' aria-current="page"' : ""} title="Every feature of this version at once">Features <small>${done} of ${runs.length} done</small></a>`;
-  const items = runs.map((fr) => featureItemHtml(fr, { on: fr.id === runSel, sel, runHref, stageName })).join("");
-  return `${product}<div class="spine">${before.map(item).join("")}<div class="rfeat">${head}${items}</div>${after.map(item).join("")}</div>`;
+  const first = order.findIndex((id) => region.has(id));
+  const last = order.reduce((at, id, i) => (region.has(id) ? i : at), -1);
+  const before = first < 0 ? spine : spine.filter((x) => order.indexOf(x.stage) < first);
+  const after = first < 0 ? [] : spine.filter((x) => order.indexOf(x.stage) > last);
+  const plain = (x) => {
+    const on = x.stage === sel;
+    return `<a class="rs ${x.mark}${on ? " sel" : ""}" href="${esc(href(x.stage))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${x.name}: ${x.line}${x.count ? `; ${x.count}` : ""}`)}"><span class="dot" aria-hidden="true">${x.mark === "done" ? "✓" : ""}</span><span class="rn">${esc(x.name)}</span></a>`;
+  };
+  // Spec: the product's standing documents when the service lists them (0.4.11), else what the steps before the features made.
+  const docRow = (on, to, name, mark, sm) => `<a class="rs doc ${mark}${on ? " sel" : ""}" href="${esc(to)}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${name}: ${sm}`)}"><span class="dot" aria-hidden="true">${mark === "done" ? "✓" : ""}</span><span class="rn">${esc(name)}</span>${sm ? `<small>${esc(sm)}</small>` : ""}</a>`;
+  const standing = list(docs?.documents).filter((d) => isObj(d) && d.state === "made" && documentGroup(d) === "standing");
+  const specRows = standing.length
+    ? standing.map((d) => docRow(d.stage === sel, `${href(str(d.stage))}/${d.stage === "requirements" && ["spec", "statement"].includes(str(d.current?.artifact?.kind)) ? "spec" : "artifacts"}`, str(d.name), "done", documentLine(d, { when })))
+    : (first < 0 ? order : order.slice(0, first)).map((id) => {
+      const x = before.find((y) => y.stage === id);
+      const d = documentOf(build, id);
+      if (!x && !d) return "";
+      return docRow(id === sel, d ? `${href(id)}/${d.tab}` : href(id), d ? d.name : x.name, x ? x.mark : "done", x ? x.line : str(d.version ?? ""));
+    }).filter(Boolean);
+  const spec = specRows.length ? `<a class="rg" href="${esc(`${productHref}/documents`)}" title="Every document of this product">Spec <small>all documents</small></a>${specRows.join("")}` : "";
+  // Features: the runs, or the features the version lists, or one line for the version's work.
+  let items; let count;
+  if (runs.length && runHref) {
+    items = runs.map((fr) => featureItemHtml(fr, { on: fr.id === runSel, runHref, stageName })).join("");
+    count = `${runs.filter((r) => r.ended === true).length} of ${runs.length} done`;
+  } else {
+    const fs = list(features);
+    items = fs.map((f) => {
+      const on = Boolean(f.id) && f.id === featSel;
+      const dot = f.mark === "done" ? "✓" : f.id && f.id.length <= 3 ? f.id : "•";
+      return `<a class="rs run ${f.mark}${f.tone ? ` ${f.tone}` : ""}${on ? " sel" : ""}" href="${esc(f.href ?? featureHref(f))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${f.name}: ${f.line}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(f.name)}</span><small class="${f.wait ? "w" : f.tone === "gap" ? "bad" : ""}">${esc(f.line)}</small></a>`;
+    }).join("");
+    const built = fs.filter((f) => f.mark === "done").length;
+    count = fs.length && fs.some((f) => f.id) ? `${built} of ${fs.length} ${build.summary && !region.size ? "done" : "built"}` : "";
+  }
+  const onAll = Boolean(sel) && region.has(sel) && !runSel;
+  const feats = `<a class="rg${onAll ? " sel" : ""}" href="${esc(runsHref)}"${onAll ? ' aria-current="page"' : ""} title="Every feature of this version at once">Features${count ? ` <small>${count}</small>` : ""}</a>${items}`;
+  // Ship: folded until reached; once every step of it is done, one line with where the version ended.
+  const names = after.map((x) => x.name);
+  const joined = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] ?? "";
+  const allDone = after.length && after.every((x) => x.mark === "done") && !after.some((x) => x.stage === sel);
+  const reached = !allDone && after.some((x) => x.mark !== "next" || x.stage === sel);
+  let ship = "";
+  if (allDone) ship = `<h3 class="rg">Ship</h3><a class="rs doc done ship" href="${esc(href(after.at(-1).stage))}" aria-label="${esc(`Shipped: ${joined}`)}"><span class="dot" aria-hidden="true">✓</span><span class="rn">${esc((str(build.summary) || "Shipped").replace(` · ${productOf(build)} ${str(build.version)}`, ""))}</span><small>${esc(joined)}</small></a>`;
+  else if (reached) ship = `<h3 class="rg">Ship</h3>${after.map(plain).join("")}`;
+  else if (after.length) ship = `<h3 class="rg">Ship <small>after the features</small></h3><a class="rs next ship" href="${esc(href(after[0].stage))}" aria-label="${esc(`Ship, after the features: ${names.join(", ")}`)}"><span class="dot" aria-hidden="true"></span><span class="rn">${esc(joined)}</span></a>`;
+  // The menu is the features alone: the version's documents are tabs in the canvas (docTabsBarHtml).
+  void spec; void ship;
+  return `${product}<div class="spine grouped"><div class="rfeat">${feats}</div></div>`;
+}
+
+/**
+ * The gate at the top of a feature's page: the run's own, with its actions
+ * (ctx.actionsHtml is already the run's), its pull request standing in where
+ * its stage names none; a run that ended shows where it ended, in the
+ * service's words, with its pull request.
+ */
+export function runGateHtml(fr, ws, build, ctx = {}) {
+  const pr = isObj(fr?.pull_request) ? fr.pull_request : null;
+  const where = ws?.where ?? (pr ? { kind: "pull_request", ...pr } : null);
+  const url = where?.kind === "pull_request" ? safeUrl(where.url) : null;
+  const link = url ? `<a class="pr" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(prShort(url))}</a>` : "";
+  if (fr?.ended === true) {
+    return `<div class="gcard feat done" id="gate"><div class="row"><h4>${esc(str(fr.at?.summary) || "Done")}</h4>${link}</div></div>`;
+  }
+  const g = ws?.gate;
+  if (!g) return "";
+  if (g.state === "answered" || ws.stage === "requirements") return gateCardHtml({ ...ws, where }, build, ctx);
+  // Three lines: the verdict, one sentence, the buttons. Done-when and the clone check wait behind a disclosure.
+  const check = where?.kind === "pull_request" && isObj(where.check) ? where.check : null;
+  const acts = ctx.actionsHtml ? ctx.actionsHtml(ws.stage) : "";
+  const who = words(g.who_may).length ? words(g.who_may).join(", ") : str(g.who_may);
+  const may = !acts && (ws.whoWords || who) ? `<p class="whomay" role="note">${esc(ws.whoWords || `${cap(who)} may answer this gate.`)}</p>` : "";
+  const title = str(check?.title) || (acts ? "Waiting on you" : "Waiting at this gate");
+  const more = [ws.doneWhen ? `<p class="dw"><span>Done when</span> ${esc(doneWhenWords(ws.doneWhen))}</p>` : "", acts && url && ctx.checkHtml ? ctx.checkHtml() : ""].filter(Boolean);
+  const details = more.length ? `<details class="more"${ctx.cloneOpen ? " open" : ""}><summary>${esc(acts && url && ctx.checkHtml ? "Done when, and running its check in your clone" : "Done when")}</summary>${more.join("")}</details>` : "";
+  return `<div class="gcard feat${acts ? " gate" : ""}" id="gate"><div class="row"><h4>${esc(title)}</h4>${link}</div>${str(check?.words) ? `<p>${esc(check.words)}</p>` : ""}${acts}${may}${details}</div>`;
+}
+
+/** What a stage's document is called in the menu, by the kind of artifact it made. */
+const DOC_NAME = { statement: "Spec", architecture: "Design", suite: "Suite", programs: "Code", findings: "Review", security: "Security review", package: "Package", run_plan: "Run plan" };
+
+/** The document a stage made, as the menu lists it: its name and the tab that opens it, or null when it made none. */
+export function documentOf(build, stageId) {
+  const a = list(build?.artifacts).filter((x) => isObj(x) && x.stage === stageId && x.state === "made").at(-1);
+  if (!a) return null;
+  const name = stageId === "architecture" ? "Design" : DOC_NAME[str(a.kind)] ?? str(a.name) ?? "";
+  return { id: str(a.id), name, kind: str(a.kind), version: str(a.version), tab: stageId === "requirements" && ["statement", "spec"].includes(a.kind) ? "spec" : "artifacts" };
+}
+
+/**
+ * A feature's Work tab: what it was given (the version's spec at this
+ * feature, and its design, each opening that document) and what it made
+ * (what the run handed back, the first file open). ctx: { href(stage, tab),
+ * filesHtml(files, openOne), stageName, feature }.
+ */
+export function runWorkHtml(fr, ws, build, ctx = {}) {
+  const href = ctx.href ?? ((s, t) => `#${s}/${t}`);
+  const files = ctx.filesHtml ?? (() => "");
+  const feat = str(fr?.feature) || str(fr?.id);
+  const given = list(build?.stages).map((s) => str(s?.stage)).map((id) => [id, documentOf(build, id)]).filter(([, d]) => d && ["statement", "architecture"].includes(d.kind))
+    .map(([id, d]) => {
+      const spec = d.kind === "statement";
+      const words = spec ? `The spec's feature ${feat}: what this feature does, and what it refuses.` : `The design: how the agent is put together, read for this feature.`;
+      return `<a class="gi" href="${esc(href(id, d.tab))}"><b>${esc(spec && feat ? `${d.name}, feature ${feat}` : d.name)}</b><small>${esc(words)}</small></a>`;
+    });
+  const hb = ws?.handedBack ?? {};
+  const said = words(hb.words);
+  const made = list(hb.files).filter(isObj);
+  const stageWords = ctx.stageName ? ctx.stageName(str(ws?.stage)) : str(ws?.stage);
+  return `<div class="fwork"><section class="given" aria-label="Given"><h5>Given</h5>${given.length ? given.join("") : `<p class="gw">${esc(ws?.givenWords || "Nothing from an earlier stage.")}</p>`}</section>
+    <section class="made" aria-label="Made"><h5>Made at ${esc(stageWords)}</h5>${said.map((x) => `<p class="gw">${esc(x)}</p>`).join("")}${made.length ? files(made, true) : said.length ? "" : `<p class="gw">Nothing handed back yet.</p>`}</section></div>`;
+}
+
+/** The strip under a feature's name: its own stages in order, each done, now or next, the page's marked. */
+export function runStripHtml(fr, { sel = null, href = (s) => `#${s}`, stageName = (x) => x, holder = "" } = {}) {
+  const at = isObj(fr?.at) ? fr.at : {};
+  const tone = { waiting_on_you: "waiting on you", working: "working", refused: "refused", stopped: "stopped" };
+  const steps = list(fr?.stages).filter((s) => isObj(s) && str(s.stage)).map((s) => {
+    const mark = s.state === "done" ? "done" : s.stage === str(at.stage) && fr.ended !== true ? "now" : "next";
+    const on = s.stage === sel;
+    // The stage it is at names who holds it, so the page says so once.
+    const word = mark === "done" ? "done" : mark === "now" ? `${tone[str(at.state)] ?? "now"}${holder ? ` · ${holder}` : ""}` : "next";
+    return `<a class="fs ${mark}${on ? " sel" : ""}" href="${esc(href(s.stage))}"${on ? ' aria-current="page"' : ""}>${esc(stageName(s.stage))}<small>${esc(word)}</small></a>`;
+  });
+  return `<nav class="fstrip" aria-label="This feature's stages">${steps.join('<span class="arrow" aria-hidden="true">→</span>')}</nav>`;
+}
+
+/** The stages a version's features are made at: the runs' own (Test and Code) when they run on their own, else Test, Code, Review and Security review as the version uses them. */
+export function featureRegion(build) {
+  const held = runStageIds(build);
+  if (held.size) return held;
+  const off = ["not_used", "not_offered", "not_applicable"];
+  return new Set(list(build?.stages).filter((s) => isObj(s) && ["test", "code", "review", "security"].includes(str(s.stage)) && !off.includes(str(s.state))).map((s) => str(s.stage)));
+}
+
+const CELL_ORDER = [["spec", "Spec"], ["tests", "Tests"], ["code", "Code"], ["review", "Review"], ["docs", "Docs"]];
+
+/** Where the version is in its features' stages, or null when it is before or past them. */
+function regionAt(build, defs) {
+  const region = featureRegion(build);
+  const s = currentStage(build, defs);
+  return s && region.has(s.stage) ? s : null;
+}
+
+/**
+ * The features of a version that does not run them on their own, one line
+ * each, for the menu: from the build's features answer (0.4.3), else from its
+ * spec's features (0.4.8), else one line for the version's work. While the
+ * version is at its features' stages each line says where it is; after, what
+ * each feature has (tests, code) and lacks. Each: { id, name, does, line,
+ * mark: done | now | next | gap, tone, wait, cells, pending, tests, state }.
+ */
+export function versionFeatures(build, answer = null, { defs = new Map(), stageName = (x) => x } = {}) {
+  const fromAnswer = list(answer?.features).filter((x) => isObj(x) && str(x.id));
+  const withFeatures = list(build?.artifacts).filter((a) => isObj(a) && ["spec", "statement"].includes(a.kind) && a.state === "made" && list(a.summary?.features).length);
+  const spec = withFeatures.filter((a) => a.kind === "spec").at(-1) ?? withFeatures.at(-1);
+  const fromSpec = list(spec?.summary?.features).filter((x) => isObj(x) && str(x.id));
+  const at = regionAt(build, defs);
+  const region = featureRegion(build);
+  const past = !at && list(build?.stages).some((s) => region.has(str(s?.stage)) && s.state === "done");
+  const stateWords = { waiting_on_you: "Waiting on you", working: "Working", stopped: "Stopped", refused: "Refused", not_started: "Next" };
+  const now = at ? { line: `${stateWords[at.state] ?? cap(str(at.state).replace(/_/g, " "))} at ${stageName(at.stage)}`, mark: "now", wait: at.state === "waiting_on_you", tone: at.state === "working" ? "work" : ["stopped", "refused"].includes(at.state) ? "bad" : "" } : null;
+  const fromCells = (c) => {
+    const t = c?.tests?.state;
+    const k = c?.code?.state;
+    if (t === "done" && k === "done") return { line: "Tests and code done", mark: "done" };
+    if (t === "failing" || k === "failing") return { line: "Tests failing", mark: "gap", tone: "gap" };
+    if (t !== "done" && k !== "done") return { line: "No tests, no code", mark: "gap", tone: "gap" };
+    return { line: t === "done" ? "Tests done, no code" : "Code done, no tests", mark: "gap", tone: "gap" };
+  };
+  const rows = (fromAnswer.length ? fromAnswer : fromSpec).map((x) => {
+    const cells = isObj(x.cells) ? x.cells : null;
+    const where = now ?? (cells && (past || build?.summary) ? fromCells(cells) : past ? { line: `Built in ${str(build?.version)}`, mark: "done" } : { line: x.state === "proposed" ? "Proposed" : "Not started", mark: "next" });
+    return { id: str(x.id), name: str(x.name) || str(x.id), does: str(x.does), state: str(x.state), cells, pending: isObj(x.pending) ? x.pending : null, tests: Array.isArray(x.tests) ? x.tests : null, from: x.from ?? null, tone: "", wait: false, ...where };
+  });
+  if (rows.length) return rows;
+  return [{ id: "", name: "This version's work", does: str(build?.does), cells: null, pending: null, tests: null, tone: "", wait: false, ...(now ?? (past ? { line: `Built in ${str(build?.version)}`, mark: "done" } : { line: "Not started", mark: "next" })) }];
+}
+
+/**
+ * A feature's page for a version that does not run its features on their
+ * own: its name over a strip (the feature's cells when the service gives
+ * them, else the version's features' stages), then one card: the version's
+ * gate when the feature is the version's only one (ctx.gateHtml()), a note
+ * pointing at the Features page when one OK covers several, the approve
+ * buttons for a feature listed after the build, or where it ended; then Work.
+ * ctx: { features, defs, stageName, holder, stageHref(stage, tab), featuresHref,
+ * gateHtml, pending, canTry, error }.
+ */
+export function featurePageHtml(f, build, ctx = {}) {
+  const stageName = ctx.stageName ?? ((x) => x);
+  const href = ctx.stageHref ?? ((s, t) => `#${s}/${t}`);
+  const defs = ctx.defs ?? new Map();
+  const at = regionAt(build, defs);
+  const region = featureRegion(build);
+  const cellWord = (k, c) => {
+    const st = str(c?.state);
+    if (k === "spec" && st === "missing") return ["gap", "not written down"];
+    if (k === "tests" && st === "done" && Array.isArray(c?.tests)) return ["done", String(c.tests.length)];
+    return [st === "done" ? "done" : st === "missing" || st === "failing" ? "gap" : "", st || "next"];
+  };
+  const chips = f.cells
+    ? CELL_ORDER.filter(([k]) => isObj(f.cells[k])).map(([k, label]) => { const [cls, w] = cellWord(k, f.cells[k]); return `<span class="fs ${cls}">${esc(label)}<small>${esc(w)}</small></span>`; })
+    : list(build?.stages).filter((s) => region.has(str(s?.stage))).map((s) => {
+      const mark = s.state === "done" ? "done" : at && at.stage === s.stage ? "now" : "";
+      const w = mark === "done" ? "done" : mark === "now" ? `${{ waiting_on_you: "waiting on you", working: "working" }[s.state] ?? str(s.state).replace(/_/g, " ")}${ctx.holder ? ` · ${ctx.holder}` : ""}` : "next";
+      return `<a class="fs ${mark}" href="${esc(href(s.stage, "chat"))}">${esc(stageName(s.stage))}<small>${esc(w)}</small></a>`;
+    });
+  const strip = chips.length ? `<nav class="fstrip" aria-label="This feature's stages">${chips.join('<span class="arrow" aria-hidden="true">→</span>')}</nav>` : "";
+  // One card: the version's gate when this is its only feature; else a note, the approve buttons, or where it ended.
+  const many = list(ctx.features).filter((x) => x.id).length > 1;
+  let card = "";
+  if (at && ctx.gateHtml) {
+    card = many
+      ? `<div class="gcard feat" id="gate"><div class="row"><h4>${esc(`${at.state === "waiting_on_you" ? "Waiting on you" : "Working"} at ${stageName(at.stage)}`)}</h4></div><p>One OK covers every feature of this version.</p><div class="acts"><a class="btn p" href="${esc(ctx.featuresHref ?? "#")}">Open the Features page</a></div></div>`
+      : ctx.gateHtml();
+  } else if (f.pending && ["open", "asked", "not_now"].includes(str(f.pending.state)) && f.pending.you_may_approve) {
+    const p = f.pending;
+    const data = (d) => `data-feat="${esc(d)}" data-feat-id="${esc(f.id)}" data-feat-proposal="${esc(str(p.proposal))}" data-feat-build="${esc(str(f.from?.build) || str(build?.id))}" data-feat-message="${esc(str(f.from?.message))}"`;
+    const busy = ctx.pending != null;
+    const shipped = Boolean(build?.summary);
+    card = `<div class="gcard feat${shipped ? " ok" : ""}" id="gate"><div class="row"><h4>${esc(shipped ? `Built in ${str(build.version)} and shipped` : "Proposed")}</h4></div><p>${esc(shipped ? "Listed after the build, so the spec never named it. Approve it to make it part of the spec." : "Approve it to build it in this version.")}</p><div class="acts"><button class="btn p" type="button" ${data("approve")}${busy ? " disabled" : ""}>Approve feature</button>${p.state === "not_now" ? "" : `<button class="btn" type="button" ${data("not_now")}${busy ? " disabled" : ""}>Not now</button>`}</div></div>`;
+  } else if (f.mark === "done") {
+    card = `<div class="gcard feat done" id="gate"><div class="row"><h4>${esc(`Built in ${str(build?.version)}${build?.summary ? " and shipped" : ""}`)}</h4></div></div>`;
+  }
+  // Work: what it was given (the spec at this feature, the design) and what it made (its tests, the code).
+  const givenWords = (id, d) => (d.kind === "architecture" ? "How the agent is put together." : id === "architecture" ? "The agent's own files: descriptor, runtime requirements, skills." : "What this feature does, and what it refuses.");
+  const given = ["requirements", "architecture"].map((id) => [id, documentOf(build, id)]).filter(([, d]) => d)
+    .map(([id, d]) => `<a class="gi" href="${esc(ctx.docHref ? ctx.docHref(id) : href(id, d.tab))}"><b>${esc(id === "requirements" && f.id ? `${d.name}, feature ${f.id}` : d.name)}</b><small>${esc(givenWords(id, d))}</small></a>`);
+  const tests = (f.tests ?? (Array.isArray(f.cells?.tests?.tests) ? f.cells.tests.tests : [])).map(str).filter(Boolean);
+  const code = documentOf(build, "code");
+  const made = [
+    ...tests.map((t) => `<a class="gi" href="${esc(href("test", "artifacts"))}"><code>${esc(`test: ${t}`)}</code></a>`),
+    code ? `<a class="gi" href="${esc(href("code", "artifacts"))}"><code>The code</code><small>${esc(tests.length ? "what these tests pass against" : "the version's programs")}</small></a>` : "",
+  ].filter(Boolean);
+  const work = `<div class="fwork"><section class="given" aria-label="Given"><h5>Given</h5>${given.length ? given.join("") : `<p class="gw">Nothing written down yet.</p>`}</section><section class="made" aria-label="Made"><h5>Made</h5>${made.length ? made.join("") : `<p class="gw">Nothing made yet.</p>`}</section></div>`;
+  const chatAt = at?.stage ?? [...region].at(-1) ?? "requirements";
+  const tabs = `<p class="flinks"><a href="${esc(href(chatAt, "chat"))}">Chat about it</a>${ctx.canTry ? `<a href="${esc(href(chatAt, "try"))}">Try it</a>` : ""}</p>`;
+  return `<section class="thread-wrap work"><div class="whead"><div class="hd"><div><h1>${esc(f.name)}${f.id ? `<span>${esc(f.id)}</span>` : ""}</h1>${f.does ? `<p class="sub">${esc(f.does)}</p>` : ""}${strip}</div></div><div class="err" role="alert">${esc(ctx.error ?? "")}</div>${card ? `<div class="pin">${card}</div>` : ""}${tabs}</div><div class="wbody tab-work" id="tabbody">${work}</div></section>`;
+}
+
+// ---------- the version's documents as tabs ----------
+
+/** The canvas's document tabs: each a group of stages, in stages.json's order, shown when it holds an artifact, evidence or a gate. */
+export const DOC_TAB_DEFS = [
+  { id: "spec", label: "Spec", stages: ["reverse-engineering", "requirements"] },
+  { id: "design", label: "Design", stages: ["architecture", "impact", "source"] },
+  { id: "review", label: "Review", stages: ["review"] },
+  { id: "security", label: "Security", stages: ["security"] },
+  { id: "package", label: "Package", stages: ["package", "release"] },
+  { id: "deploy", label: "Deploy", stages: ["deploy", "conformance", "acceptance"] },
+  { id: "docs", label: "Docs", stages: ["docs", "publish"] },
+  { id: "operate", label: "Operate", stages: ["monitor", "eval", "incident", "cost", "update", "reconfigure", "rollback", "retract", "decommission"] },
+];
+
+/** The document tab a stage's artifacts sit in, or null for a stage the features hold (Test, Code). */
+export const docTabOf = (stage) => DOC_TAB_DEFS.find((t) => t.stages.includes(str(stage)))?.id ?? null;
+
+const ICONS = {
+  doc: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/>',
+  layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
+  shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  scan: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>',
+  box: '<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>',
+  seal: '<circle cx="12" cy="9" r="5"/><path d="M9 13l-2 8 5-3 5 3-2-8"/>',
+  map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+};
+const ICON_OF_KIND = { spec: "doc", statement: "doc", as_built: "doc", agentdoc: "doc", architecture: "layers", findings: "list", security: "shield", package: "box", build_record: "seal", attestation: "seal", run_plan: "map" };
+const iconSvg = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] ?? ICONS.doc}</svg>`;
+
+/**
+ * The version's document tabs: each with its artifacts (what the build made,
+ * or will make next or later, at the tab's stages, in their order) and the
+ * evidence outside tools sent there, and the stage whose gate is open, if
+ * any. Only tabs that hold something are given.
+ */
+export function docTabs(build) {
+  const arts = list(build?.artifacts).filter((a) => isObj(a) && str(a.id) && ["made", "next", "later", "not_made"].includes(str(a.state)));
+  const stages = new Map(list(build?.stages).filter(isObj).map((s) => [str(s.stage), s]));
+  const live = list(build?.actions).filter((a) => isObj(a) && !str(a.run));
+  return DOC_TAB_DEFS.map((t) => {
+    const items = t.stages.flatMap((stage) => [
+      ...arts.filter((a) => a.stage === stage).map((a) => ({ kind: "artifact", stage, artifact: a, name: str(a.name), icon: ICON_OF_KIND[str(a.kind)] ?? "doc", later: ["next", "later"].includes(str(a.state)) })),
+      ...list(stages.get(stage)?.evidence).filter(isObj).map((e, i) => ({ kind: "evidence", stage, evidence: e, name: str(e.name) || str(e.format) || `Evidence ${i + 1}`, icon: "scan", later: false })),
+    ]);
+    const gate = t.stages.find((stage) => live.some((a) => a.stage === stage && a.name !== "stop") && stages.get(stage)?.state === "waiting_on_you") ?? null;
+    return { ...t, items, gate };
+  }).filter((t) => t.items.length || t.gate);
+}
+
+/** The canvas's tab bar: the feature first, then the version's document tabs. ctx: { feature: { label, id, href }, active, tabHref(id) }. */
+export function docTabsBarHtml(build, ctx = {}) {
+  const tabs = docTabs(build);
+  const f = ctx.feature;
+  const first = f ? `<a class="ct${ctx.active === "feature" ? " on" : ""}" href="${esc(f.href)}"${ctx.active === "feature" ? ' aria-current="page"' : ""}>${esc(f.label)}${f.id ? `<i>${esc(f.id)}</i>` : ""}</a><span class="ctsep" aria-hidden="true"></span>` : "";
+  const rest = tabs.map((t) => `<a class="ct${ctx.active === t.id ? " on" : ""}${t.gate ? " w" : ""}" href="${esc(ctx.tabHref ? ctx.tabHref(t.id) : `#${t.id}`)}"${ctx.active === t.id ? ' aria-current="page"' : ""}>${esc(t.label)}${t.items.length > 1 ? `<small>${t.items.length}</small>` : ""}</a>`).join("");
+  return `<nav class="ctabs" aria-label="This version">${first}${rest}</nav>`;
+}
+
+/**
+ * One document tab: the gate when one of its stages waits on you, a switcher
+ * of its artifacts (an icon and the name each) when it holds more than one,
+ * then the chosen one in full: its name, a line saying where it stands, who
+ * made it, Ask for a change (the stage's chat), what it says and its files.
+ * ctx: { item, stageName, when, itemHref(n), chatHref(stage), gateHtml(stage),
+ * filesHtml(files, openOne), history(artifact) }.
+ */
+export function docTabHtml(build, tabId, ctx = {}) {
+  const stageName = ctx.stageName ?? ((x) => x);
+  const when = ctx.when ?? ((x) => x);
+  const t = docTabs(build).find((x) => x.id === tabId);
+  if (!t) return `<div class="docbody"><p class="gw">This version has nothing here.</p></div>`;
+  const gate = t.gate && ctx.gateHtml ? ctx.gateHtml(t.gate) : "";
+  const n = Math.max(0, Math.min(Number(ctx.item) || 0, t.items.length - 1));
+  const sw = t.items.length > 1 ? `<div class="dsw" role="tablist" aria-label="${esc(t.label)}">${t.items.map((x, i) => `<a class="${i === n ? "on" : ""}${x.later ? " later" : ""}" role="tab" aria-selected="${i === n}" href="${esc(ctx.itemHref ? ctx.itemHref(i) : `#${i}`)}">${iconSvg(x.icon)}<b>${esc(x.name)}</b></a>`).join("")}</div>` : "";
+  const it = t.items[n];
+  let content = "";
+  if (it?.kind === "artifact") {
+    const a = it.artifact;
+    const s = isObj(a.summary) ? a.summary : {};
+    const said = str(s.verdict) || (a.state === "made" ? "Made" : a.state === "next" ? "Made next" : a.state === "later" ? "Made later" : str(s.words) || "Not made");
+    const meta = [stageName(it.stage), str(a.by), str(a.version), a.at && when(a.at) ? when(a.at) : ""].filter(Boolean).join(" · ");
+    const files = list(a.files);
+    const hist = ctx.history ? list(ctx.history(a)) : [];
+    content = `<h1>${esc(it.name)}</h1>${said === "Made" ? "" : `<p class="dsub${t.gate === it.stage ? " w" : ""}">${esc(said)}</p>`}<div class="vm">${esc(meta)}</div>`
+      + (a.state === "made" ? `<p class="dact"><a class="btn" href="${esc(ctx.chatHref ? ctx.chatHref(it.stage) : "#")}">Ask for a change</a></p>${artifactBodyHtml(a, { stageName })}` : `<p class="gw">${esc(str(s.words) || `${stageName(it.stage)} makes it ${a.state === "next" ? "next" : "later"}.`)}</p>`)
+      + (files.length && ctx.filesHtml ? `<section class="vfiles" aria-label="Full text"><h4 class="ft">Full text <span>${files.length === 1 ? "1 file" : `${files.length} files`}, as written</span></h4>${ctx.filesHtml(files, true)}</section>` : "")
+      + (hist.length ? `<section class="dhist"><h4 class="ft">Versions</h4><ul>${hist.map((h) => `<li><a href="${esc(str(h.href) || "#")}"><b>${esc(str(h.version))}</b>${h.at && when(h.at) ? `<span>${esc(when(h.at))}</span>` : ""}${h.current ? "<i>stands now</i>" : ""}</a></li>`).join("")}</ul></section>` : "");
+  } else if (it?.kind === "evidence") {
+    const e = it.evidence;
+    const meta = [stageName(it.stage), str(e.format), e.at && when(e.at) ? when(e.at) : ""].filter(Boolean).join(" · ");
+    content = `<h1>${esc(it.name)}</h1><p class="dsub">${esc(str(e.summary))}</p><div class="vm">${esc(meta)}</div>${isObj(e.file) && ctx.filesHtml ? ctx.filesHtml([e.file], true) : ""}`;
+  } else {
+    content = `<p class="gw">Nothing made here yet.</p>`;
+  }
+  return `<div class="docbody">${gate ? `<div class="pin">${gate}</div>` : ""}${sw}${content}</div>`;
 }
 
 /** Where a feature run is, in words: the service's summary, else its stage and state. */
@@ -196,8 +530,8 @@ export function runLine(fr, stageName = (x) => x) {
   return productLine({ latest: { at: fr?.at, version: null } }, { stageName });
 }
 
-/** One feature in the rail: its id in the dot, its name, where it is; opened, its own stages under it. */
-function featureItemHtml(fr, { on, sel, runHref, stageName }) {
+/** One feature in the rail: its id in the dot, its name, where it is. Its stages are the feature page's strip, not the menu's. */
+function featureItemHtml(fr, { on, runHref, stageName }) {
   const at = isObj(fr.at) ? fr.at : {};
   const l = runLine(fr, stageName);
   const mark = fr.ended === true || at.state === "done" ? "done" : at.state === "not_started" ? "next" : "now";
@@ -205,12 +539,7 @@ function featureItemHtml(fr, { on, sel, runHref, stageName }) {
   const name = str(fr.name) || str(fr.id);
   const id = [fr.feature, fr.id].map(str).find((x) => x && name.startsWith(`${x} `));
   const dot = mark === "done" ? "✓" : id && id.length <= 3 ? id : "•";
-  const subs = on ? list(fr.stages).filter((s) => isObj(s) && str(s.stage)).map((s) => {
-    const sm = s.state === "done" ? "done" : s.stage === str(at.stage) && fr.ended !== true ? "now" : "next";
-    const son = s.stage === sel;
-    return `<a class="rs sub ${sm}${son ? " sel" : ""}" href="${esc(runHref(s.stage, fr.id))}"${son ? ' aria-current="page"' : ""}><span class="dot" aria-hidden="true">${sm === "done" ? "✓" : ""}</span><span class="rn">${esc(stageName(s.stage))}</span></a>`;
-  }).join("") : "";
-  return `<a class="rs run ${mark}${tone}${on ? " sel" : ""}" href="${esc(runHref(str(at.stage), fr.id))}"${on ? ' aria-current="true"' : ""} aria-label="${esc(`${name}: ${l.text}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(id ? name.slice(id.length + 1) : name)}</span><small class="${l.wait ? "w" : ""}">${esc(l.text)}</small></a>${subs}`;
+  return `<a class="rs run ${mark}${tone}${on ? " sel" : ""}" href="${esc(runHref(str(at.stage), fr.id))}"${on ? ' aria-current="page"' : ""} aria-label="${esc(`${name}: ${l.text}`)}"><span class="dot" aria-hidden="true">${esc(dot)}</span><span class="rn">${esc(id ? name.slice(id.length + 1) : name)}</span><small class="${l.wait ? "w" : ""}">${esc(l.text)}</small></a>`;
 }
 
 /** What another product waits on, from the products answer's latest build: "Waiting on you at Code". */
@@ -763,6 +1092,7 @@ export function productFromBuilds(name, builds, latest = null) {
 }
 
 export const PRODUCT_TABS = [
+  { id: "documents", label: "Documents" },
   { id: "boss", label: "Boss" },
   { id: "versions", label: "Versions" },
   { id: "features", label: "Features" },
@@ -1147,6 +1477,61 @@ export function bossBuildsToRead(messages) {
 }
 
 /** The product page: its name and its when-needed actions, then tabs for the boss, its versions, its setup, its run plan and its activity. ctx.boss: { offered, messages, ... } when the service has the boss. */
+// ---------- a product's documents (lifecycle API 0.4.11) ----------
+
+/** Which group a document sits in: standing (a setup stage's, or the spec and the AgentDoc, read as one document that evolves), a version's proofs, or occasional. */
+export function documentGroup(d) {
+  if (d?.cadence === "when_needed") return "occasional";
+  if (d?.cadence === "setup" || ["requirements", "docs"].includes(str(d?.stage))) return "standing";
+  return "proofs";
+}
+const DOC_GROUPS = [["standing", "Standing documents"], ["proofs", "This version's proofs"], ["occasional", "Occasional records"]];
+
+/** The line beside a document's name: its version, carried or not, or why there is none. */
+export function documentLine(d, { when = (x) => x } = {}) {
+  const c = isObj(d?.current) ? d.current : null;
+  if (d?.state === "made" && c) return c.carried ? `unchanged since ${str(c.version)}` : `${str(c.version)}${c.artifact?.at && when(c.artifact.at) ? ` · ${when(c.artifact.at)}` : ""}`;
+  if (d?.state === "not_used") return "not in this lifecycle";
+  return "not made yet";
+}
+
+/**
+ * The Documents tab: the product's documents in three groups on the left, the
+ * chosen one read in full on the right, with the versions that made it and
+ * the way to ask for a change (the stage's chat). ctx: { sel, stageName, when,
+ * stageHref(build, stage, tab), filesHtml(files, openOne) }.
+ */
+export function documentsHtml(answer, ctx = {}) {
+  const docs = list(answer?.documents).filter((d) => isObj(d) && str(d.stage));
+  const stageName = ctx.stageName ?? ((x) => x);
+  const when = ctx.when ?? ((x) => x);
+  const href = ctx.stageHref ?? ((b, s, t) => `#/b/${encodeURIComponent(b)}/${s}/${t}`);
+  const files = ctx.filesHtml ?? (() => "");
+  if (!docs.length) return `<div class="docs none"><p class="gw">This product has no documents yet.</p></div>`;
+  const made = docs.filter((d) => d.state === "made");
+  const sel = docs.find((d) => d.stage === ctx.sel) ?? made[0] ?? docs[0];
+  const groups = DOC_GROUPS.map(([id, title]) => {
+    const rows = docs.filter((d) => documentGroup(d) === id && (id !== "occasional" || d.state === "made"));
+    if (!rows.length) return "";
+    return `<div class="grp">${esc(title)}</div>${rows.map((d) => `<button class="drow ${esc(d.state)}${d === sel ? " sel" : ""}" type="button" data-doc="${esc(d.stage)}" aria-pressed="${d === sel}"><b>${esc(str(d.name))}</b><small>${esc(documentLine(d, { when }))}</small></button>`).join("")}`;
+  }).join("");
+  const c = isObj(sel.current) ? sel.current : null;
+  const a = c && isObj(c.artifact) ? c.artifact : null;
+  let reader;
+  if (a) {
+    const meta = [`${stageName(str(sel.stage))} · ${str(a.by)}`, `version ${str(c.version)}`, c.carried ? "carried forward unchanged" : "", a.at && when(a.at) ? when(a.at) : ""].filter(Boolean).join(" · ");
+    const hist = list(sel.history).filter(isObj);
+    const history = hist.length ? `<section class="dhist"><h4 class="ft">Versions <span>${hist.length === 1 ? "made once" : `made ${hist.length} times`}</span></h4><ul>${hist.map((h) => `<li><a href="${esc(href(str(h.build), str(sel.stage), "artifacts"))}"><b>${esc(str(h.version))}</b>${h.at && when(h.at) ? `<span>${esc(when(h.at))}</span>` : ""}${h.build === c.build ? "<i>stands now</i>" : ""}</a></li>`).join("")}</ul></section>` : "";
+    const fl = list(a.files).length ? `<section class="vfiles" aria-label="Full text"><h4 class="ft">Full text <span>${list(a.files).length === 1 ? "1 file" : `${list(a.files).length} files`}, as written</span></h4>${files(list(a.files), true, str(c.build))}</section>` : "";
+    reader = `<h3>${esc(str(sel.name))}</h3><div class="vm">${esc(meta)}</div>
+      <p class="dact"><a class="btn" href="${esc(href(str(c.build), str(sel.stage), "chat"))}">Ask for a change</a><a class="linkbtn" href="${esc(href(str(c.build), str(sel.stage), "artifacts"))}">Open at ${esc(stageName(str(sel.stage)))}</a></p>
+      ${artifactBodyHtml(a, { stageName })}${fl}${history}`;
+  } else {
+    reader = `<h3>${esc(str(sel.name))}</h3><div class="vm">${esc(stageName(str(sel.stage)))}</div><p class="gw">${esc(str(sel.words) || (sel.state === "not_used" ? "The product's lifecycle leaves this stage out." : "Nothing made yet."))}</p>`;
+  }
+  return `<div class="docs"><div class="dlist">${groups}</div><div class="viewer dview" id="reader">${reader}</div></div>`;
+}
+
 export function productPageHtml(p, ctx = {}, tab = null) {
   const stageName = ctx.stageName ?? ((x) => x);
   const when = ctx.when ?? ((x) => x);
@@ -1167,18 +1552,22 @@ export function productPageHtml(p, ctx = {}, tab = null) {
   // The Features tab (0.4.3): the matrix for a version, and the history of the feature picked.
   const feats = isObj(ctx.features) && ctx.features.offered ? ctx.features : null;
   const todo = setupToDo(p?.setup);
+  // The Documents tab (0.4.11): the product's standing documents, the landing tab when the service answers them.
+  const docs = isObj(ctx.documents) && ctx.documents.offered ? ctx.documents : null;
   const tabs = PRODUCT_TABS.map((t) => ({
     ...t,
+    ...(t.id === "documents" && !docs ? { disabled: true, title: "This service does not list the product's documents" } : {}),
     ...(t.id === "boss" && !boss ? { disabled: true, title: "This service has no boss" } : {}),
     ...(t.id === "setup" && !hasSetup ? { disabled: true, title: "This service does not say how the product is set up" } : {}),
     ...(t.id === "features" && !feats ? { disabled: true, title: "This service keeps no feature list" } : {}),
-    count: t.id === "features" && feats?.answer ? list(feats.answer.features).length : t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : t.id === "setup" && todo ? todo : undefined,
+    count: t.id === "documents" && docs?.answer ? list(docs.answer.documents).filter((d) => d?.state === "made").length || undefined : t.id === "features" && feats?.answer ? list(feats.answer.features).length : t.id === "versions" ? builds.length : t.id === "activity" ? list(p?.activity).length : t.id === "setup" && todo ? todo : undefined,
   }));
-  const want = tab ?? (boss ? "boss" : "versions");
+  const want = tab ?? (docs ? "documents" : boss ? "boss" : "versions");
   const on = tabs.some((t) => t.id === want && !t.disabled) ? want : "versions";
   // Info (which version runs, the lifecycle the build follows, the when-needed actions) is a tab, so it never takes room above the others.
   const info = `${runningHtml(p)}${ctx.extra ?? ""}${whenNeededHtml(p?.when_needed, { stageName, pending: ctx.whenPending ?? null, source: p?.source ?? null })}${whenCardHtml(p, ctx, stageName)}`;
-  const body = on === "boss" ? `<div class="thread" id="thread">${bossChatHtml(boss.messages, { ...ctx, ...boss, stageName, when })}</div>`
+  const body = on === "documents" ? (docs.answer ? documentsHtml(docs.answer, { sel: docs.sel, stageName, when, stageHref: ctx.stageHref, filesHtml: ctx.filesHtml }) : `<p class="gw">${esc(docs.error || "Loading…")}</p>`)
+    : on === "boss" ? `<div class="thread" id="thread">${bossChatHtml(boss.messages, { ...ctx, ...boss, stageName, when })}</div>`
     : on === "setup" ? setupHtml(p.setup, { stageName, roleName: ctx.roleName, chooseHref: ctx.chooseHref, ...(isObj(ctx.setup) ? ctx.setup : {}), readOnly: !ctx.chooseHref, bossOffered: Boolean(boss) })
     : on === "features" ? featuresMatrixHtml(feats.answer, { ...feats, when, filter: true })
     : on === "plan" ? (plan || `<p class="gw">No run plan yet. Deploy makes it.</p>`)

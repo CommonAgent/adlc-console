@@ -358,13 +358,30 @@ body adds run?: <feature_runs[].id>                         // sent whenever the
 
 How the console reads these:
 
-- The **left menu** is the version's work: its steps before the runs' stages (Requirements, and
-  whatever else it runs before Test), then **Features**, a line per feature run where the runs'
-  stages were, then its steps after (Package and on). Each feature shows where it is, in the
-  service's words, and opens its run at that stage; the open one shows its own Test and Code under
-  it. The Features heading opens every run at once, the version's own page at those stages (below).
-  The runs' stages are the features' steps, not the version's: the version's steps count on
-  without them, and while any run is open the product's line is the version's `summary`.
+- Every version gets the same menu, whether or not its features run on their own; stage names are
+  never the menu. A version made in one chain lists its features from `GET /builds/:id/features`,
+  else from its spec's `features`, else one line for the version's work; each line says where the
+  version is while it is at its features' stages (Test, Code, Review, Security review), and after,
+  what the feature has and lacks ("Tests and code done", "No tests, no code"). A feature opens its
+  page at `#/b/<id>/f/<feature>`: its strip (the features answer's cells, else the version's
+  features' stages), one card (the version's gate when it is the only feature; a note pointing at
+  the Features page when one OK covers several; Approve feature for one listed after the build),
+  and its Work. Opening a version with no stage named opens the feature it is at, or its first.
+- The **left menu** is the version line and its features, nothing else: no stage names, no documents, no other products. A version whose features run on their own lists each run where it is; any other lists its features as above.
+- The version's documents are **tabs across the top of the canvas**, after the selected feature's tab: Spec, Design, Review, Security, Package, Deploy, Docs and Operate, each a group of stages (Spec: Reverse engineering and Requirements; Package: Package and Release; Deploy: Deploy, Conformance and Acceptance; and so on), shown only when it holds an artifact, evidence or an open gate, with a count when it holds more than one. A tab (`#/b/<id>/d/<tab>[/<n>]`) opens with the gate of a stage of it that waits on you, then a switcher of its artifacts (an icon and the name each; evidence from outside tools after the stage's own artifacts; ones not made yet dashed), then the chosen one in full: its name, a line saying where it stands, who made it, Ask for a change (the stage's chat), what it says, its files and its versions. A version waiting at a document's stage opens at that tab.
+- A **feature's page** is headed by the feature's name, over a strip of its own stages (Test → Code,
+  each done, now or next, the page's marked; the stage it is at names who holds it). Its gate is
+  the run's own, in three lines: the check's verdict with the pull request beside it, the check's
+  words, and its own actions, labeled without the run's id, Stop drawn quietly; done-when and the
+  clone check wait behind a disclosure. A feature that ended shows where it ended, in the service's
+  words, with its pull request. No other feature appears on it.
+- A feature's page opens at **Work**: what it was given (the version's spec at this feature, and
+  its design, each opening that document) and what the run handed back at this stage, the first
+  file open. Then Chat and Try it; it has no Artifacts or Skills tab of its own.
+- The factory's pages (Products, Board, Dashboard, Analytics, Lifecycle, People) are in the top
+  bar, with Ask the boss beside them while a product is open. **Products** (`#/products`) is a card
+  per product with where its latest version is, from `GET /products` when the service answers it,
+  else from the build list.
 - The **Board** gives each feature run a card of its own beside its version's, in the column of
   the run's own stage: the feature's name, the version, where it is and who it waits on. A run
   that ended goes to Done. While any of its runs is open, the version's card shows the service's
@@ -380,6 +397,33 @@ How the console reads these:
   file asked for at `runs/<run id>/<path>`, and its own timeline. Closing the row goes back to
   the version's own view, where the timeline names each run's bars.
 - A service with no `feature_runs` is drawn exactly as before.
+
+Read by the console since lifecycle API 0.4.11 (additive; CommonAgent/adlc#150): a product's documents.
+
+```
+GET /v1/lifecycle/products/{name}/documents
+  -> { product, documents: [{ stage, name,              // the stage's asset as stages.json names it: "Spec", "Architecture record"
+                              cadence,                  // every_build | setup | when_needed
+                              state,                    // made | not_made | not_used
+                              current: { build, version, artifact: Artifact, carried } | null,   // the copy that stands now; carried: a newer version did not remake it
+                              history: [{ build, version, artifact, at? }],                       // every version that made one, newest first
+                              words? }] }               // why there is none
+```
+
+How the console reads these:
+
+- The product page lands on its **Documents** tab when the service answers the route. The left
+  column is three groups: standing documents (a setup stage's, and the Spec and the AgentDoc,
+  which every version remakes but a person reads as one document that evolves), this version's
+  proofs (the suite, the code, the findings, the security statement, the package, the records and
+  verdicts), and occasional records (a when-needed stage's, listed only when one exists). Each
+  row is the document's name and its version, "unchanged since 0.1.0" when it carried, "not made
+  yet", or "not in this lifecycle".
+- The chosen document is read in full on the right, from the copy that stands: its summary by
+  kind, its files as written (read from the build that made it), and the versions that made one,
+  each opening that build's stage. **Ask for a change** opens the stage's chat on that build: a
+  document changes through its holder, never by typing into it here. A service without the route
+  has the tab disabled and the page lands on the boss, as before.
 
 Read by the console since lifecycle API 0.4.9 (additive): the skills of a stage's holder.
 

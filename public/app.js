@@ -15,7 +15,7 @@ import { meWords, whoMayHtml, peoplePageHtml } from "./people.js";
 import { newBuildHtml, newBuildBody } from "./start.js";
 import { featureDecision, cellTarget, requirementsFeaturesHtml, stageFeaturesHtml, approveAllRequest } from "./features.js";
 import { specOf, specTabHtml } from "./spec.js";
-import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml } from "./workspace.js";
+import { stepLabel, steps, spineHtml, stageWorkspace, gateCardHtml, chatHtml, composerHtml, artifactsTabHtml, artifactCount, tabsHtml, fallbackChat, messagesOffered, confirmBody, stepStages, openingStage, productOf, productLine, productPageHtml, productFromBuilds, holderName, canTalkTo, bossBuildsToRead, whenNeededAction, setupHolder, buildSourceHtml, STAGE_ZERO, actionButtonsHtml, actionKey, hasSkills, skillsOf, skillsTabHtml, featureRuns, runStageIds, runBuild, featureRunsHtml, runGateHtml, runStripHtml, runLabel, runWorkHtml, featureRegion, versionFeatures, featurePageHtml, currentStage, docTabs, docTabOf, docTabsBarHtml, docTabHtml } from "./workspace.js";
 
 // A stage's state as the pill beside its name.
 const CLS = { done: "done", waiting_on_you: "wait", working: "work", refused: "bad", not_bound: "unb" };
@@ -143,22 +143,27 @@ function parseHash() {
   const parts = raw.split("/").map(decodeURIComponent);
   if (parts[0] === "new") return { view: "new" };
   if (parts[0] === "board") return { view: "board" };
+  if (parts[0] === "products") return { view: "products" };
   if (parts[0] === "dashboard") return { view: "dashboard" };
   if (parts[0] === "people") return { view: "people" };
   // The Roles page is now part of the Lifecycle page; an old link still lands there.
   if (parts[0] === "roles") return { view: "lifecycle", project: (parts[1] ?? "").trim() };
   // #/b/<id>/<stage>/<tab> opens a stage at one of its tabs; #/p/<name>/<tab> a product page at one of its tabs.
   // #/b/<id>/<stage>/run/<run>[/<tab>] opens one feature run at that stage (0.4.10).
+  if (parts[0] === "b" && parts[1] && parts[2] === "d") return { view: "build", id: parts[1], doc: parts[3] ?? "", item: Number(parts[4] ?? 0) || 0, sel: null, run: null, tab: null };
+  if (parts[0] === "b" && parts[1] && parts[2] === "f") return { view: "build", id: parts[1], feature: parts[3] ?? "", sel: null, run: null, tab: null };
   if (parts[0] === "b" && parts[1]) {
     const run = parts[3] === "run" ? parts[4] || null : null;
     const tab = run ? parts[5] : parts[3];
-    return { view: "build", id: parts[1], sel: parts[2] || null, run, tab: ["chat", "artifacts", "skills", "try", "features", "spec"].includes(tab) ? tab : null };
+    return { view: "build", id: parts[1], sel: parts[2] || null, run, tab: ["chat", "artifacts", "skills", "try", "features", "spec", "work"].includes(tab) ? tab : null };
   }
-  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["boss", "versions", "features", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
+  if (parts[0] === "p" && parts[1]) return { view: "product", name: parts[1], tab: ["documents", "boss", "versions", "features", "setup", "plan", "activity"].includes(parts[2]) ? parts[2] : null };
   return { view: "build", id: null, sel: null };
 }
 function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 const hashFor = (id, sel) => `#/b/${encodeURIComponent(id)}${sel ? `/${encodeURIComponent(sel)}` : ""}`;
+const docHash = (id, tab, n = 0) => `${hashFor(id)}/d/${encodeURIComponent(tab)}${n ? `/${n}` : ""}`;
+const featureHash = (id, feature) => `${hashFor(id)}/f/${encodeURIComponent(feature)}`;
 const runHash = (id, sel, run) => `${hashFor(id, sel)}${run ? `/run/${encodeURIComponent(run)}` : ""}`;
 const productHash = (name) => `#/p/${encodeURIComponent(name)}`;
 
@@ -178,6 +183,13 @@ async function route() {
     return;
   }
   if (h.view === "new" && state.status?.source !== "file") { state.view = "new"; drawRail(); return drawNew(); }
+  // The Products page: every product, where its latest version is.
+  if (h.view === "products" && state.status?.source !== "file") {
+    state.view = "products"; drawRail(); drawProducts();
+    try { await refreshBuilds(); await loadProducts(); } catch (e) { return problem(e); }
+    if (state.view === "products") { drawRail(); drawProducts(); }
+    return;
+  }
   if (h.view === "board" && state.status?.source !== "file") {
     state.view = "board"; drawRail(); drawBoard();
     // Drawn at once from the list in hand, then again from a fresh one.
@@ -216,6 +228,41 @@ async function route() {
   if (!(await openBuild(id))) return;
   // Whether the service has a boss, asked once, so the menu can offer it.
   if (state.boss.has === null) { try { await loadBoss(productOf(state.build)); } catch (e) { if (e.needKey) return problem(e); } }
+  // The rail is the version's features and the product's documents, for every version.
+  try { await loadVersionData(); } catch (e) { if (e.needKey) return problem(e); }
+  if (h.doc !== undefined) {
+    state.docSel = h.doc; state.docItem = h.item; state.featSel = null; state.stageSel = null; state.runSel = null; state.error = "";
+    return draw();
+  }
+  state.docSel = null;
+  if (h.feature !== undefined) {
+    state.featSel = h.feature; state.lastFeat = h.feature; state.stageSel = null; state.runSel = null; state.error = "";
+    return draw();
+  }
+  state.featSel = null;
+  if (!h.sel && !h.run && !h.tab) {
+    const b = state.build;
+    const region = featureRegion(b);
+    const at = openingStage(b, defs());
+    if (at && region.has(at)) {
+      const runs = featureRuns(b);
+      if (runs.length) {
+        const r = runs.find((x) => x.at?.state === "waiting_on_you") ?? runs.find((x) => x.ended !== true) ?? runs[0];
+        return go(runHash(b.id, String(r.at?.stage || at), r.id));
+      }
+      const fs = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName: (id) => def(id).name });
+      const f = fs.find((x) => x.id && x.mark === "now") ?? fs.find((x) => x.id);
+      if (f) return go(featureHash(b.id, f.id));
+    } else if (at && docTabOf(at) && !stepStages(b, defs()).every((s) => s.state === "done")) {
+      return go(docHash(b.id, docTabOf(at)));
+    } else if (!at || !featureRuns(b).length) {
+      // A finished version opens at its first feature.
+      const fs = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName: (id) => def(id).name });
+      const done = !at || stepStages(b, defs()).every((s) => s.state === "done");
+      const f = done ? fs.find((x) => x.id) : null;
+      if (f) return go(featureHash(b.id, f.id));
+    }
+  }
   // Opening a build opens the stage it is at now. An old link to Try it opens it beside that stage.
   if (h.sel === "try") state.tab = "try";
   if (h.tab) state.tab = h.tab;
@@ -229,7 +276,9 @@ async function route() {
   }
   // A feature run opened at its stage (0.4.10); any other link is the version's own view.
   const run = h.run && runStageIds(state.build).has(stage) && featureRuns(state.build).some((r) => r.id === h.run) ? h.run : null;
-  if (run !== state.runSel) { state.runSel = run; state.art = null; state.featFocus = null; state.asking = null; if (!h.tab && state.tab === "skills") state.tab = "chat"; }
+  // A feature's page opens at its Work; the version's pages have no Work tab.
+  if (run !== state.runSel) { state.runSel = run; state.art = null; state.featFocus = null; state.asking = null; if (!h.tab) state.tab = run ? "work" : ["skills", "work"].includes(state.tab) ? "chat" : state.tab; }
+  else if (!h.tab && !run && state.tab === "work") state.tab = "chat";
   // A Features cell opened this stage: its artifact, at its feature.
   if (state.openAt && state.openAt.build === state.build.id && state.openAt.stage === stage) {
     state.art = state.openAt.artifact; state.featFocus = state.openAt.feature; state.tab = "artifacts";
@@ -237,6 +286,16 @@ async function route() {
   state.openAt = null;
   if (state.tab === "try") await loadTries();
   draw();
+}
+
+// A version's features (0.4.3) and its product's documents (0.4.11), read once per build and product.
+async function loadVersionData() {
+  const b = state.build;
+  if (!b) return;
+  if (state.bfeat.build !== b.id) {
+    try { state.bfeat = { ...state.bfeat, build: b.id, answer: await api(buildPath(b.id, "/features")) }; } catch (e) { if (e.needKey) throw e; state.bfeat = { build: b.id, answer: null, sel: null, history: null, historyError: "" }; }
+  }
+  if (state.docs?.name !== productOf(b)) await loadDocuments(productOf(b));
 }
 
 async function openBuild(id) {
@@ -287,7 +346,23 @@ async function openProduct(name) {
   state.product = p && typeof p === "object" && Array.isArray(p.builds) ? p : productFromBuilds(name, state.builds, state.build && productOf(state.build) === name ? state.build : null);
   try { await loadBoss(name); } catch (e) { if (e.needKey) return problem(e); }
   try { await loadFeatures(name); } catch (e) { if (e.needKey) return problem(e); }
+  try { await loadDocuments(name); } catch (e) { if (e.needKey) return problem(e); }
   if (state.view === "product") draw();
+}
+
+// The product's documents (0.4.11). A service without the route (404, 405 or 501) lists none: the tab is shown disabled.
+async function loadDocuments(name) {
+  const d0 = state.docs ?? { has: null, name: null, answer: null, error: "", sel: null };
+  if (d0.name !== name) state.docs = { has: d0.has, name, answer: null, error: "", sel: null };
+  else state.docs = d0;
+  try {
+    state.docs.answer = await api(`/products/${encodeURIComponent(name)}/documents`);
+    state.docs.has = true; state.docs.error = "";
+  } catch (e) {
+    if (e.needKey) throw e;
+    if (!messagesOffered(e.status ?? 0)) { state.docs.has = false; return; }
+    state.docs.error = e.message;
+  }
 }
 
 // The product's features matrix (0.4.3), for the version chosen. A service without the route (404, 405
@@ -365,7 +440,7 @@ async function answerFeature(d) {
     await api(go1.path, { method: "POST", body: go1.body, own403: true });
     state.error = ""; state.boss.error = "";
     if (onProduct) { await loadBoss(state.boss.name); await loadFeatures(state.product?.name ?? state.boss.name); }
-    else { await loadStage(); state.build = (await api(buildPath(state.build.id))).build; }
+    else { await loadStage(); state.build = (await api(buildPath(state.build.id))).build; state.bfeat.build = null; await loadVersionData(); }
   } catch (e) {
     state.featPending = null;
     if (e.needKey) return problem(e);
@@ -618,6 +693,23 @@ function drawRail() {
   spine.hidden = !open;
   $("railhome").hidden = open;
   if (open) spine.innerHTML = buildMenuHtml();
+  // The top bar: the factory's pages, and Ask the boss while a product is open.
+  const prods = $("products");
+  prods.hidden = state.status?.source === "file";
+  prods.classList.toggle("on", state.view === "products");
+  if (state.view === "products") prods.setAttribute("aria-current", "page"); else prods.removeAttribute("aria-current");
+  const lcl = $("lifecycle");
+  lcl.hidden = Boolean(state.status?.read_only);
+  lcl.href = lifecycleHash(state.view === "lifecycle" ? state.project ?? "" : buildProject(state.build));
+  lcl.classList.toggle("on", state.view === "lifecycle");
+  if (state.view === "lifecycle") lcl.setAttribute("aria-current", "page"); else lcl.removeAttribute("aria-current");
+  const ask = $("askboss");
+  const mine = state.build ? productOf(state.build) : "";
+  const onBoss = state.view === "product" && (state.ptab ?? "boss") === "boss" && state.boss.has === true;
+  ask.hidden = !(open && mine && state.boss.has !== false);
+  ask.href = mine ? `${productHash(mine)}/boss` : "#";
+  ask.classList.toggle("on", onBoss);
+  if (onBoss) ask.setAttribute("aria-current", "page"); else ask.removeAttribute("aria-current");
   const board = $("board");
   board.hidden = state.status?.source === "file";
   board.classList.toggle("on", state.view === "board");
@@ -657,6 +749,7 @@ function drawRail() {
 }
 
 const defs = () => state.byId;
+const currentStageOf = (b) => currentStage(b, defs());
 const stepsNow = () => steps(state.build, { defs: defs(), roleDefs: state.roleDefs, when });
 const buildProject = (b) => {
   const lc = b?.lifecycle;
@@ -670,41 +763,23 @@ function buildMenuHtml() {
   const spine = stepsNow();
   const mine = productOf(b);
   const stageName = (id) => def(id).name;
-  let others = "";
-  let archived = 0;
-  if (Array.isArray(state.products)) {
-    others = state.products.filter((p) => p?.name && p.name !== mine).map((p) => {
-      const l = productLine(p, { stageName });
-      const id = p.latest?.build;
-      return `<a class="ob" href="${esc(id ? hashFor(id) : productHash(p.name))}"><b>${esc(p.name)}</b><small class="${l.wait ? "w" : ""}">${esc(l.text)}</small></a>`;
-    }).join("");
-  } else {
-    // No products route: each other build in the list stands for its product.
-    const rest = state.builds.filter((x) => (x.product || x.name) !== mine);
-    archived = rest.filter((x) => x.archived).length;
-    others = rest.filter((x) => state.showArchived || !x.archived).map((x) => {
-      const l = railLine(x);
-      return `<a class="ob${x.archived ? " ar" : ""}" href="${hashFor(x.id)}" title="${esc(x.does)}"><b>${esc(x.name)}</b><small class="${l.wait ? "w" : ""}${l.paused ? " p" : ""}">${x.archived ? "Archived · " : ""}${esc(l.text)}</small></a>`;
-    }).join("");
-  }
-  const page = (href, name) => `<a href="${esc(href)}">${esc(name)}</a>`;
-  const pages = [
-    page("#/board", "Board"), page("#/dashboard", "Dashboard"),
-    state.analytics ? page("#/analytics", "Analytics") : "",
-    state.status?.read_only ? "" : page(lifecycleHash(buildProject(b)), "Lifecycle"),
-    state.hasPeople ? page("#/people", "People") : "",
-  ].filter(Boolean).join("");
-  // The boss sits at the top: the default place to talk about the product.
+  // The other products are not listed here: the menu is this product's work. The Board and Dashboard hold them all.
+  // The factory's pages and Ask the boss are in the top bar; the menu is the product alone.
   const onBoss = state.view === "product" && (state.ptab ?? "boss") === "boss" && state.boss.has === true;
-  const ask = state.boss.has === false ? "" : `<a class="askboss${onBoss ? " on" : ""}" href="${esc(`${productHash(mine)}/boss`)}"${onBoss ? ' aria-current="page"' : ""}>Ask the boss</a>`;
   // The version's features in the rail (0.4.10): each opens its run where it is; the heading opens every run at once.
   const held = runStageIds(b);
   const allAt = [openingStage(b, defs()), ...held].find((s) => s && held.has(s));
-  return `${ask}${spineHtml(b, spine, { sel: state.view === "build" ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" && !onBoss, runSel: state.view === "build" ? state.runSel : null, runHref: (s, r) => runHash(b.id, s, r), runsHref: allAt ? hashFor(b.id, allAt) : hashFor(b.id), stageName })}
-    ${others || archived ? `<h2>Other products</h2>${others}` : ""}
-    ${archived ? `<button class="linkbtn archt" id="archt" type="button" aria-pressed="${state.showArchived}">${state.showArchived ? "Hide archived" : `Show archived (${archived})`}</button>` : ""}
-    ${state.status?.read_only ? "" : `<button class="newb" id="new2" type="button">New build</button>`}
-    <h2>Factory</h2><div class="pages">${pages}</div>`;
+  // Every other version: its features from its features answer or its spec, each opening its page; the heading opens the version at its features' stage.
+  const region = featureRegion(b);
+  const regionAt = [openingStage(b, defs()), ...region].find((s) => s && region.has(s));
+  const feats = held.size ? null : versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName });
+  const featureHref = (f) => (f.id ? featureHash(b.id, f.id) : hashFor(b.id, regionAt ?? openingStage(b, defs())));
+  const listed = state.builds.find((x) => x.id === b.id);
+  const line0 = listed ? railLine(listed) : null;
+  const tail = ` · ${mine} ${b.version ?? ""}`;
+  const line = line0 ? { ...line0, text: line0.text.endsWith(tail) ? line0.text.slice(0, -tail.length) : line0.text } : null;
+  return `${spineHtml(b, spine, { sel: state.view === "build" && !state.featSel ? state.stageSel : null, href: (s) => hashFor(b.id, s), productHref: productHash(mine), onProduct: state.view === "product" && !onBoss, runSel: state.view === "build" ? state.runSel : null, runHref: (s, r) => runHash(b.id, s, r), runsHref: allAt ? hashFor(b.id, allAt) : regionAt ? hashFor(b.id, regionAt) : hashFor(b.id), stageName, features: feats, featSel: state.view === "build" ? state.featSel : null, featureHref, docs: state.docs?.name === mine ? state.docs.answer : null, line, when })}
+    ${state.status?.read_only ? "" : `<button class="newb" id="new2" type="button">New build</button>`}`;
 }
 
 // The rail's Lifecycles: the organization's, then each project this page knows of.
@@ -778,6 +853,8 @@ function draw() {
   if (!state.build) return;
   if (state.view === "product") return drawProduct();
   if (state.view !== "build") return;
+  if (state.docSel !== null && state.docSel !== undefined) return drawDoc();
+  if (state.featSel !== null && state.featSel !== undefined) return drawFeature();
   const b = state.build;
   const ws = currentWs();
   const ctx = stageCtx(ws);
@@ -802,24 +879,39 @@ function draw() {
   const chat = state.hasChat && !run;
   const talk = chat && canTalkTo(ws.holder);
   const msgs = chat && Array.isArray(state.chat) ? state.chat : fallbackChat(run ?? b, ws.stage, { defs: defs(), roleDefs: state.roleDefs });
-  // At Test and Code of a version whose features are made in runs of their own, a row for each run takes the gate's place.
-  const gate = runStageIds(b).has(ws.stage)
-    ? featureRunsHtml(b, ws.stage, { sel: state.runSel, href: (r) => runHash(b.id, ws.stage, r), stageName: (id) => def(id).name, actionsHtml: (r, labels) => actionsHtml(ws.stage, { run: r, labels }), checkHtml: localCheckHtml, cloneOpen: state.cloneOpen })
-    : gateCardHtml(ws, b, ctx);
+  // A feature's page: its own gate alone. At the version's Test and Code, a row for each run takes the gate's place.
+  const fr = run?.run ?? null;
+  const gate = fr
+    ? runGateHtml(fr, ws, run, { ...ctx, actionsHtml: (s) => actionsHtml(s, { run: fr.id, labels: Object.fromEntries((fr.actions ?? []).map((a) => [a.name, runLabel(a, fr)])) }) })
+    : runStageIds(b).has(ws.stage)
+      ? featureRunsHtml(b, ws.stage, { sel: state.runSel, href: (r) => runHash(b.id, ws.stage, r), stageName: (id) => def(id).name, actionsHtml: (r, labels) => actionsHtml(ws.stage, { run: r, labels }), checkHtml: localCheckHtml, cloneOpen: state.cloneOpen })
+      : gateCardHtml(ws, b, ctx);
+  // The page's heading: the feature's name over its own stages, or the stage's name and its step.
+  const frName = fr ? String(fr.name || fr.id || "") : "";
+  const frId = fr ? [fr.feature, fr.id].map((x) => String(x ?? "")).find((x) => x && frName.startsWith(`${x} `)) : "";
+  const head = fr
+    ? `<h1>${esc(frId ? frName.slice(frId.length + 1) : frName)}${frId ? `<span>${esc(frId)}</span>` : ""}</h1>${runStripHtml(fr, { sel: ws.stage, href: (s) => runHash(b.id, s, fr.id), stageName: (id) => def(id).name, holder: agent })}`
+    : `<h1>${esc(ws.name)}${x && !featureRuns(b).length ? `<span>${esc(stepLabel(x, spine))}</span>` : ""}</h1>`;
   const st = stateOf({ state: ws.state });
-  const tabs = [
-    ...(reqFeat ? [{ id: "features", label: "Features", count: Array.isArray(state.bfeat.answer.features) ? state.bfeat.answer.features.length : undefined }] : []),
-    ...(spec ? [{ id: "spec", label: "Spec" }] : []),
-    { id: "chat", label: "Chat", count: msgs.filter((m) => m?.from?.kind !== "system").length },
-    { id: "artifacts", label: "Artifacts", count: artifactCount(ws) ?? undefined },
-    ...(skills ? [{ id: "skills", label: "Skills", count: skillsOf(ws.holder).length || undefined }] : []),
-    ...(canTry ? [{ id: "try", label: "Try it" }] : []),
-  ];
+  // A feature's page: Work first (what it was given and made), then Chat and Try it; no Artifacts or Skills of its own.
+  if (fr && ["artifacts", "skills"].includes(state.tab)) state.tab = "work";
+  if (!fr && state.tab === "work") state.tab = "chat";
+  const tabs = fr
+    ? [{ id: "work", label: "Work", count: (ws.handedBack?.files ?? []).length || undefined }, { id: "chat", label: "Chat", count: msgs.filter((m) => m?.from?.kind !== "system").length }, ...(canTry ? [{ id: "try", label: "Try it" }] : [])]
+    : [
+      ...(reqFeat ? [{ id: "features", label: "Features", count: Array.isArray(state.bfeat.answer.features) ? state.bfeat.answer.features.length : undefined }] : []),
+      ...(spec ? [{ id: "spec", label: "Spec" }] : []),
+      { id: "chat", label: "Chat", count: msgs.filter((m) => m?.from?.kind !== "system").length },
+      { id: "artifacts", label: "Artifacts", count: artifactCount(ws) ?? undefined },
+      ...(skills ? [{ id: "skills", label: "Skills", count: skillsOf(ws.holder).length || undefined }] : []),
+      ...(canTry ? [{ id: "try", label: "Try it" }] : []),
+    ];
   let body;
   const focusName = state.featFocus ? (state.bfeat.answer?.features ?? state.feat.answer?.features ?? []).find((x) => x.id === state.featFocus)?.name ?? "" : "";
   // Each stage's features (0.4.5) in its Artifacts tab, one short line per feature; Requirements has its own Features tab.
   const slice = ws.stage !== "requirements" && ws.features ? ws.features : null;
-  if (state.tab === "features" && reqFeat) body = requirementsFeaturesHtml(state.bfeat.answer, { pending: state.featPending, allPending: state.featAllPending, listing: state.featListing, spec: spec?.summary ?? null });
+  if (fr && state.tab === "work") body = runWorkHtml(fr, ws, b, { href: (s, t) => (docTabOf(s) ? docHash(b.id, docTabOf(s)) : `${hashFor(b.id, s)}/${t}`), filesHtml: (list, openOne = true) => filesHtml(list, openOne), stageName: (id) => def(id).name });
+  else if (state.tab === "features" && reqFeat) body = requirementsFeaturesHtml(state.bfeat.answer, { pending: state.featPending, allPending: state.featAllPending, listing: state.featListing, spec: spec?.summary ?? null });
   else if (state.tab === "spec" && spec) body = specTabHtml(spec, { when });
   else if (state.tab === "artifacts") body = artifactsTabHtml(ws, state.art, { stageName: (id) => def(id).name, when, filesHtml: (list, openOne = false) => filesHtml(list, openOne), feature: state.featFocus, featureName: focusName, featuresTitle: "Features at this stage", featuresHtml: slice ? () => stageFeaturesHtml(slice) : null });
   else if (state.tab === "skills" && skills) body = skillsTabHtml(ws.holder, state.skill);
@@ -834,7 +926,7 @@ function draw() {
   $("main").innerHTML = `
     <section class="thread-wrap work">
       <div class="whead">
-        <div class="hd"><div><h1>${esc(ws.name)}${run ? `<span>${esc(String(run.run?.name || run.run?.id || ""))}</span>` : x ? `<span>${esc(stepLabel(x, spine))}</span>` : ""}</h1><p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p></div></div>
+        <div class="hd"><div>${head}${fr ? "" : `<p class="sub"><span class="pill ${CLS[st] ?? ""}">${esc(WORD[st])}</span>${who ? ` Held by ${who}` : ""}</p>`}</div></div>
         <div class="err" role="alert">${esc(state.error)}</div>
         ${b.paused ? `<p class="pausedwhy">Paused ${esc(when(b.paused.at))}. ${esc(b.paused.why)}</p>` : ""}
         ${ws.stage === STAGE_ZERO ? buildSourceHtml(b.source) : ""}
@@ -844,6 +936,8 @@ function draw() {
       <div class="wbody tab-${esc(state.tab)}" id="tabbody" role="tabpanel">${body}</div>
       ${state.tab === "chat" ? (talk ? composerHtml(agent, { draft: state.sayDraft, pending: state.sayPending, error: state.sayError }) : chat && ws.holder ? `<div class="compose quiet"><p class="hint">${esc(`${agent || "A person"} holds this stage. There is no agent here to talk to.`)}</p></div>` : "") : ""}
     </section>`;
+  if (run) state.lastRun = state.runSel;
+  withTabBar(run ? "feature" : null);
   $("stage").innerHTML = "";
   // The bars placed through the CSSOM: the page's policy takes no style attribute.
   for (const i of document.querySelectorAll(".timeline .track i")) { i.style.left = `${i.dataset.l}%`; i.style.width = `${i.dataset.w}%`; }
@@ -857,6 +951,87 @@ function draw() {
   } else if (!phone()) setScroll(0);
   state.drawnKey = key;
   if (b.stages.some((y) => y.state === "working") || featureRuns(b).some((r) => r.at?.state === "working")) schedule();
+}
+
+// A feature's page, for a version that does not run its features on their own: the feature, its strip,
+// one card (the version's gate when the feature is its only one), and its Work.
+function drawFeature() {
+  const b = state.build;
+  const stageName = (id) => def(id).name;
+  const feats = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName });
+  const f = feats.find((x) => x.id === state.featSel);
+  layout("thread");
+  $("app").classList.add("noarts");
+  if (!f) {
+    $("main").innerHTML = `<section class="thread-wrap work"><div class="whead"><div class="hd"><div><h1>No such feature</h1><p class="sub">${esc(`${productOf(b)} ${b.version} lists no feature ${state.featSel}.`)}</p></div></div></div></section>`;
+    $("stage").innerHTML = "";
+    return;
+  }
+  const region = featureRegion(b);
+  const at = currentStageOf(b);
+  const atRegion = at && region.has(at.stage) ? at : null;
+  const ws = atRegion ? stageWorkspace(b, atRegion.stage, null, { defs: defs() }) : null;
+  const holder = ws ? holderName(ws.holder, stageOf(ws.stage) ?? { stage: ws.stage }, def(ws.stage), state.roleDefs) : "";
+  $("main").innerHTML = featurePageHtml(f, b, {
+    features: feats, defs: defs(), stageName, holder, error: state.error,
+    stageHref: (s, t) => `${hashFor(b.id, s)}/${t}`,
+    docHref: (s) => (docTabOf(s) ? docHash(b.id, docTabOf(s)) : `${hashFor(b.id, s)}/artifacts`),
+    featuresHref: atRegion ? hashFor(b.id, atRegion.stage) : hashFor(b.id),
+    gateHtml: ws ? () => runGateHtml({}, ws, b, stageCtx(ws)) : null,
+    pending: state.featPending,
+    canTry: state.status?.can_try !== false && (Boolean(prStage()) || installed()),
+  });
+  withTabBar("feature");
+  $("stage").innerHTML = "";
+  if (b.stages.some((y) => y.state === "working")) schedule();
+}
+
+// The canvas's tab bar, put at the top of the page's header: the feature, then the version's documents.
+function tabBarFeature() {
+  const b = state.build;
+  const stageName = (id) => def(id).name;
+  const runs = featureRuns(b);
+  if (runs.length) {
+    const r = runs.find((x) => x.id === state.runSel) ?? runs.find((x) => x.id === state.lastRun) ?? runs.find((x) => x.at?.state === "waiting_on_you") ?? runs[0];
+    const name = String(r.name || r.id);
+    const id = [r.feature, r.id].map((x) => String(x ?? "")).find((x) => x && name.startsWith(`${x} `)) ?? "";
+    return { label: id ? name.slice(id.length + 1) : name, id, href: runHash(b.id, String(r.at?.stage || "code"), r.id) };
+  }
+  const fs = versionFeatures(b, state.bfeat.build === b.id ? state.bfeat.answer : null, { defs: defs(), stageName });
+  const f = fs.find((x) => x.id && x.id === (state.featSel ?? state.lastFeat)) ?? fs.find((x) => x.id) ?? fs[0];
+  if (!f) return null;
+  return { label: f.name, id: f.id, href: f.id ? featureHash(b.id, f.id) : hashFor(b.id, openingStage(b, defs())) };
+}
+function withTabBar(active) {
+  const head = document.querySelector("#main .whead");
+  if (!head || !state.build) return;
+  head.insertAdjacentHTML("afterbegin", docTabsBarHtml(state.build, { feature: tabBarFeature(), active, tabHref: (t) => docHash(state.build.id, t) }));
+}
+
+// A document tab: the version's documents, each tab one or more stages' artifacts and evidence.
+function drawDoc() {
+  const b = state.build;
+  const stageName = (id) => def(id).name;
+  layout("thread");
+  $("app").classList.add("noarts");
+  const tab = docTabs(b).find((t) => t.id === state.docSel);
+  const docs = state.docs?.name === productOf(b) ? state.docs.answer : null;
+  const history = (a) => {
+    const d = (docs?.documents ?? []).find((x) => x.stage === a.stage && x.current?.artifact?.id === a.id);
+    return d ? (d.history ?? []).map((h) => ({ version: h.version, at: h.at, href: hashFor(h.build), current: h.build === d.current.build })) : [];
+  };
+  const body = docTabHtml(b, state.docSel, {
+    item: state.docItem, stageName, when,
+    itemHref: (n) => docHash(b.id, state.docSel, n),
+    chatHref: (s) => `${hashFor(b.id, s)}/chat`,
+    gateHtml: (s) => { const ws = stageWorkspace(b, s, null, { defs: defs() }); return gateCardHtml(ws, b, stageCtx(ws)); },
+    filesHtml: (files, openOne = true) => filesHtml(files, openOne),
+    history,
+  });
+  $("main").innerHTML = `<section class="thread-wrap work"><div class="whead"><div class="err" role="alert">${esc(state.error)}</div></div><div class="wbody" id="tabbody">${tab ? body : `<div class="docbody"><p class="gw">This version has no ${esc(state.docSel)} document.</p></div>`}</div></section>`;
+  withTabBar(state.docSel);
+  $("stage").innerHTML = "";
+  for (const det of document.querySelectorAll("#tabbody details[open][data-file]")) loadFile(det);
 }
 
 // The product page: tabs for its versions, run plan and activity.
@@ -879,9 +1054,14 @@ function drawProduct() {
       setup: state.setupUi,
       whenCard: state.whenCard,
       features: { offered: state.feat.has === true && state.feat.name === state.product.name, answer: state.feat.answer, error: state.feat.error, selected: state.feat.sel, history: state.feat.history, historyError: state.feat.historyError, stageName: (id) => def(id).name },
+      // The product's documents (0.4.11), the landing tab; a document's files are read from the build that made it.
+      documents: { offered: state.docs?.has === true && state.docs.name === state.product.name, answer: state.docs?.answer ?? null, error: state.docs?.error ?? "", sel: state.docs?.sel ?? null },
+      stageHref: (id, stage, t) => `${hashFor(id, stage)}/${t}`,
+      filesHtml: (files, openOne = true, build = null) => filesHtml(files, openOne, build),
     }, state.ptab)
     : `<div class="err" role="alert">${esc(state.error)}</div><p class="does">Loading…</p>`;
   $("stage").innerHTML = "";
+  for (const det of document.querySelectorAll("#tabbody details[open][data-file]")) loadFile(det);
   const onBoss = Boolean(boss) && (state.ptab ?? "boss") === "boss";
   // The boss's conversation opens at its newest message, and stays where it was across a redraw.
   if (onBoss) { if (keep !== null) setScroll(keep); else if (!phone()) setScroll(1e9); }
@@ -934,12 +1114,14 @@ function buttonsHtml(list, { labels = {} } = {}) {
 }
 
 // A feature run's file (0.4.10) is asked for at runs/<run id>/<its path> (get), and shown at its own path.
-function filesHtml(list, openOne = true) {
+function filesHtml(list, openOne = true, build = null) {
+  // A document's file (0.4.11) is read from the build that made it, which may not be the one open.
+  const bid = build || state.build.id;
   return `<div class="files">${list.map((f, i) => {
-    const key = `${state.build.id}\n${f.get ?? f.path}`;
+    const key = `${bid}\n${f.get ?? f.path}`;
     const got = state.files.get(key);
     const open = openOne && list.length === 1 && i === 0;
-    return `<details data-file="${esc(f.get ?? f.path)}"${open ? " open" : ""}><summary><b>${esc(f.path)}</b><span>${esc(size(f.size))}</span></summary><pre>${got === undefined ? "Loading…" : esc(got)}</pre></details>`;
+    return `<details data-file="${esc(f.get ?? f.path)}"${build ? ` data-build="${esc(build)}"` : ""}${open ? " open" : ""}><summary><b>${esc(f.path)}</b><span>${esc(size(f.size))}</span></summary><pre>${got === undefined ? "Loading…" : esc(got)}</pre></details>`;
   }).join("")}</div>`;
 }
 
@@ -1074,6 +1256,21 @@ function drawBoard() {
   if (state.builds.some((b) => !b.archived && (b.at?.state === "working" || (b.feature_runs ?? []).some((c) => c?.at?.state === "working")))) schedule();
 }
 
+// The Products page: one card per product, from the products answer when the service has one,
+// else from the build list, each with where its latest version is.
+function drawProducts() {
+  drawTop();
+  layout("solo");
+  const stageName = (id) => def(id).name;
+  const items = Array.isArray(state.products)
+    ? state.products.filter((p) => p?.name).map((p) => ({ name: p.name, version: p.latest?.version, href: p.latest?.build ? hashFor(p.latest.build) : productHash(p.name), line: productLine(p, { stageName }) }))
+    : [...new Map(state.builds.filter((b) => !b.archived).map((b) => [b.product || b.name, b])).values()].map((b) => ({ name: b.product || b.name, version: b.version, href: hashFor(b.id), line: railLine(b) }));
+  $("main").innerHTML = `<div class="err" role="alert">${esc(state.error)}</div><h1>Products</h1>${items.length
+    ? `<div class="products">${items.map((p) => `<a class="pc" href="${esc(p.href)}"><b>${esc(p.name)}${p.version ? `<span>${esc(String(p.version))}</span>` : ""}</b><small class="${p.line.wait ? "w" : ""}">${esc(p.line.text)}</small></a>`).join("")}</div>`
+    : `<p class="does">No products yet. Start one with New build.</p>`}`;
+  $("stage").innerHTML = "";
+}
+
 // The Dashboard: median time per stage, send-backs per stage, and what is
 // waiting now, read from the build list and each build's record.
 function drawDashboard() {
@@ -1174,12 +1371,13 @@ async function refreshBuilds() {
 
 async function loadFile(det) {
   const path = det.dataset.file;
-  const key = `${state.build.id}\n${path}`;
+  const bid = det.dataset.build || state.build.id;
+  const key = `${bid}\n${path}`;
   if (state.files.has(key)) return;
   state.files.set(key, "Loading…");
   let body;
   try {
-    body = await call(`/api/v1/lifecycle${buildPath(state.build.id, `/files?path=${encodeURIComponent(path)}`)}`, { text: true });
+    body = await call(`/api/v1/lifecycle${buildPath(bid, `/files?path=${encodeURIComponent(path)}`)}`, { text: true });
     if (body.includes("\u0000")) body = "This file is not text, so it is not shown here.";
   } catch (e) {
     state.files.delete(key);
@@ -1426,6 +1624,9 @@ document.addEventListener("click", async (e) => {
   if (featAll) return approveAll(featAll.dataset);
   const featList = t.closest("[data-feat-backfill]");
   if (featList) return listFeatures(featList.dataset.featBackfill);
+  // A document chosen on the product's Documents tab (0.4.11).
+  const docRow = t.closest("[data-doc]");
+  if (docRow && state.view === "product" && state.docs) { state.docs.sel = docRow.dataset.doc; return drawProduct(); }
   const featCell = t.closest("[data-feat-cell]");
   if (featCell) {
     const to = cellTarget(featCell.dataset);

@@ -73,7 +73,7 @@ Full text, below its summary, and an artifact's only file is open.
 
 ## The Board
 
-Board, at the top of the rail, shows every build as a card in the column of
+Board, in the top bar, shows every build as a card in the column of
 the phase its current stage belongs to (Define, Make, Ship, Prove, Use, Run,
 Change), with a Done column at the end for the builds that finished, stopped
 or were archived. A card gives the build's name and version, its stage, its
@@ -94,7 +94,7 @@ on you and one at Code.
 
 ## The Dashboard
 
-Dashboard, below Board in the rail, shows three things read from the build
+Dashboard, in the top bar, shows three things read from the build
 records, never estimated:
 
 - How long each stage takes: the median across builds, from each build's
@@ -112,7 +112,7 @@ GET /builds/:id, and refreshes while any build is working.
 
 ## Analytics
 
-Analytics, below Dashboard in the rail, asks questions over time of a service
+Analytics, in the top bar, asks questions over time of a service
 that keeps a history of its builds. It is shown only when the service answers
 GET /v1/lifecycle/analytics, a route outside the lifecycle API standard that
 Product Factory adds; for any other service it stays hidden. Choose the window
